@@ -157,9 +157,11 @@ data class IntakeEntity(
 )
 data class PendingChangeEntity(
     @PrimaryKey val drugId: String,
+    /** Не обнуляемая: запись без версии пачки отправить нельзя, сервер ответит 428. */
+    val drugVersion: Long,
     val consumed: String? = null,
     val claimAfter: String? = null,
-    val drugVersion: Long? = null,
+    /** `null` значит «своей брони ещё не было», а не «версию потеряли». */
     val claimsVersion: Long? = null,
     /** Ключ идемпотентности: тот же `syncId` в маршруте синхронизации при повторной отправке. */
     val syncId: String

@@ -4,9 +4,12 @@ import com.kert0n.medapp.data.remote.dto.DrugPatchRequest
 import com.kert0n.medapp.data.remote.dto.DrugSyncRequest
 import com.kert0n.medapp.data.remote.dto.ReservationSyncRequest
 import com.kert0n.medapp.data.remote.dto.UserSnapshotDTO
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -40,6 +43,30 @@ class WireContractTest {
         assertEquals("40.000000", drug.reservations.total)
         assertEquals("20.000000", drug.reservations.mine)
         assertEquals(5L, drug.reservations.version)
+    }
+
+    /**
+     * Строгость разбора — часть правила, а не настройка.
+     *
+     * Проверяется тем же образцом с одним лишним полем: `ignoreUnknownKeys = true` пропустил бы
+     * его молча, и переименованное сервером поле приезжало бы как `null` до первого падения в
+     * приложении.
+     */
+    @Test
+    fun `неизвестное поле роняет разбор`() {
+        val withExtraField = USER_SNAPSHOT.replace(
+            "\"name\": \"Aspirin\",",
+            "\"name\": \"Aspirin\", \"nameLat\": \"Aspirin\","
+        )
+
+        val failure = assertThrows(SerializationException::class.java) {
+            strict.decodeFromString<UserSnapshotDTO>(withExtraField)
+        }
+
+        assertTrue(
+            "разбор упал не на неизвестном поле: ${failure.message}",
+            failure.message.orEmpty().contains("nameLat")
+        )
     }
 
     /** Своей брони нет — поле не приезжает вовсе, а не приезжает нулём. */
