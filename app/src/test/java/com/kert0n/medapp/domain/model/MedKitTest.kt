@@ -69,7 +69,7 @@ class MedKitTest {
         publication: KitPublication = KitPublication.LOCAL,
         participants: Long = 1,
         syncedAt: Instant? = null
-    ) = MedKit(
+    ) = MedKit.restore(
         id = HOME_KIT,
         name = name,
         location = location,

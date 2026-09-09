@@ -19,8 +19,13 @@ enum class KitPublication {
  * Сервер знает о ней только существование, участие и число участников. Название и место
  * хранения не уезжают никуда и не передаются обходными «конвертами» в описании препарата
  * (PLAN C0, E5).
+ *
+ * **Это сущность, а не величина.** Переименованная аптечка — та же аптечка, и в ней лежат те же
+ * пачки. Тождество — [id], равенство идёт по нему; `data class` утверждал бы обратное, что смена
+ * названия даёт другую аптечку. Собрать её можно двумя названными путями: [create] заводит
+ * локальную, [restore] восстанавливает сохранённую.
  */
-data class MedKit(
+class MedKit private constructor(
     val id: Uuid,                   // придуман клиентом; он же серверный
     val name: String,               // 1..200, только на устройстве
     val location: String?,          // ≤300, место хранения; только на устройстве
@@ -47,4 +52,44 @@ data class MedKit(
      * на сервере уже есть, а часть нет: приглашённый увидел бы половину аптечки (PLAN D2).
      */
     val acceptsInvitations: Boolean get() = publication == KitPublication.PUBLISHED
+
+    /** Тождество — [id]: переименованная аптечка остаётся той же аптечкой. */
+    override fun equals(other: Any?): Boolean =
+        this === other || (other is MedKit && other.id == id)
+
+    override fun hashCode(): Int = id.hashCode()
+
+    override fun toString(): String = "MedKit(id=$id, name=$name, publication=$publication)"
+
+    companion object {
+
+        /**
+         * Заведение локальной аптечки. Публикация — отдельный сценарий (PLAN E5), поэтому новая
+         * аптечка всегда `LOCAL` с единственным участником, а не «пока непонятно какая».
+         */
+        fun create(id: Uuid, name: String, location: String?, createdAt: Instant): MedKit =
+            MedKit(
+                id = id,
+                name = name,
+                location = location,
+                publication = KitPublication.LOCAL,
+                participantCount = 1,
+                createdAt = createdAt,
+                syncedAt = null
+            )
+
+        /**
+         * Восстановление сохранённого состояния: строка базы вместе с числом участников из
+         * снимка. Не бизнес-переход — оно ничего не решает, а возвращает уже решённое.
+         */
+        fun restore(
+            id: Uuid,
+            name: String,
+            location: String?,
+            publication: KitPublication,
+            participantCount: Long,
+            createdAt: Instant,
+            syncedAt: Instant?
+        ): MedKit = MedKit(id, name, location, publication, participantCount, createdAt, syncedAt)
+    }
 }

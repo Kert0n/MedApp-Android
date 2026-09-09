@@ -22,8 +22,9 @@ val SHARED_KIT: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000012")
 val PACK: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000021")
 
 /**
- * Пачка со всеми обязательными полями и без единого необязательного: тест называет только то,
- * что проверяет, и не тонет в двадцати аргументах.
+ * Пачка в любом сохранённом состоянии: тест называет только то, что проверяет, и не тонет в
+ * двадцати аргументах. Идёт через [Package.restore], потому что тестам нужны и архивные пачки,
+ * и пачки с версией — то, чего [Package.create] по построению не даёт.
  */
 fun pack(
     id: Uuid = PACK,
@@ -46,7 +47,7 @@ fun pack(
     claims: Claims? = null,
     status: PackageStatus = PackageStatus.ACTIVE,
     syncedAt: Instant? = null
-) = Package(
+) = Package.restore(
     id = id,
     medKitId = medKitId,
     name = name,

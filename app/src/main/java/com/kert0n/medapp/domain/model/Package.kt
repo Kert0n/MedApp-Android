@@ -26,9 +26,19 @@ enum class PackageStatus {
  * намерений очереди считается отдельно и здесь не хранится, иначе она разъехалась бы с очередью.
  *
  * Часть полей знает сервер, часть — только устройство (PLAN C0). Граница проведена в
- * [PackagePostNetworkDTO]: локальные поля не уезжают физически, а не по договорённости.
+ * `PackagePostNetworkDTO`: локальные поля не уезжают физически, а не по договорённости.
+ *
+ * **Это сущность, а не величина.** Пачка, из которой приняли таблетку, — та же самая пачка;
+ * содержимое уменьшается, её переносят, она кончается, и ни одно из этих событий не делает её
+ * другой пачкой. Поэтому тождество — это [id], равенство идёт по нему, и `data class` здесь был
+ * бы неверен: он утверждает, что смена поля даёт другой объект.
+ *
+ * Из этого же следует отсутствие `copy()`. Состояние меняют только переходы ниже, а собрать
+ * пачку можно двумя названными путями: [create] заводит новую, [restore] восстанавливает
+ * сохранённую. Иначе правило «пересчёт не оживляет архив» соблюдалось бы по дисциплине
+ * вызывающего кода, а не сущностью.
  */
-data class Package(
+class Package private constructor(
     val id: Uuid,                 // придуман клиентом; он же серверный
     val medKitId: Uuid,
 
@@ -125,7 +135,7 @@ data class Package(
     /** Принимает сведения целиком — и серверные поля, и локальные (PLAN D3). */
     fun describe(facts: PackageFacts): Package {
         requireActive("правка описания")
-        return copy(
+        return changed(
             name = facts.name,
             formId = facts.formId,
             category = facts.category,
@@ -151,7 +161,7 @@ data class Package(
     fun moveTo(medKitId: Uuid): Package {
         requireActive("перенос")
         require(medKitId != this.medKitId) { "пачка уже лежит в этой аптечке" }
-        return copy(medKitId = medKitId)
+        return changed(medKitId = medKitId)
     }
 
     /**
@@ -162,7 +172,7 @@ data class Package(
      * доступ к которой потерян.
      */
     fun archive(): Package =
-        if (status == PackageStatus.ARCHIVED) this else copy(status = PackageStatus.ARCHIVED)
+        if (status == PackageStatus.ARCHIVED) this else changed(status = PackageStatus.ARCHIVED)
 
     /**
      * Доступ утрачен: вышли из аптечки, унесли её или удалили.
@@ -180,10 +190,10 @@ data class Package(
         check(status != PackageStatus.ARCHIVED) {
             "архивная пачка доступ не теряет: её история уже закрыта"
         }
-        return copy(status = PackageStatus.INACCESSIBLE, claims = null)
+        return changed(status = PackageStatus.INACCESSIBLE, claims = null)
     }
 
-    private fun withQuantity(left: Quantity): Package = copy(
+    private fun withQuantity(left: Quantity): Package = changed(
         quantity = left,
         status = if (left.isZero) PackageStatus.ARCHIVED else status
     )
@@ -197,5 +207,163 @@ data class Package(
      */
     private fun requireActive(action: String) {
         check(status == PackageStatus.ACTIVE) { "$action недоступен для пачки в состоянии $status" }
+    }
+
+    /**
+     * Единственный способ получить изменённый экземпляр, и он приватный: снаружи состояние меняют
+     * только переходы выше.
+     *
+     * [id] и [addedAt] в списке отсутствуют — тождество и момент появления пачки не меняются
+     * никогда. Значения по умолчанию берутся из текущего состояния, поэтому явный `claims = null`
+     * очищает брони, а непереданный аргумент их сохраняет.
+     */
+    private fun changed(
+        medKitId: Uuid = this.medKitId,
+        name: String = this.name,
+        quantity: Quantity = this.quantity,
+        formId: Uuid? = this.formId,
+        category: String? = this.category,
+        manufacturer: String? = this.manufacturer,
+        country: String? = this.country,
+        description: String? = this.description,
+        expiresOn: LocalDate? = this.expiresOn,
+        defaultIntakeAmount: Quantity? = this.defaultIntakeAmount,
+        note: String? = this.note,
+        price: Money? = this.price,
+        purchasedOn: LocalDate? = this.purchasedOn,
+        openedOn: LocalDate? = this.openedOn,
+        templateId: Uuid? = this.templateId,
+        version: Long? = this.version,
+        claims: Claims? = this.claims,
+        status: PackageStatus = this.status,
+        syncedAt: Instant? = this.syncedAt
+    ): Package = Package(
+        id = id,
+        medKitId = medKitId,
+        name = name,
+        quantity = quantity,
+        formId = formId,
+        category = category,
+        manufacturer = manufacturer,
+        country = country,
+        description = description,
+        expiresOn = expiresOn,
+        defaultIntakeAmount = defaultIntakeAmount,
+        note = note,
+        price = price,
+        purchasedOn = purchasedOn,
+        openedOn = openedOn,
+        addedAt = addedAt,
+        templateId = templateId,
+        version = version,
+        claims = claims,
+        status = status,
+        syncedAt = syncedAt
+    )
+
+    /** Тождество — [id]. Пачка, из которой приняли таблетку, та же самая пачка. */
+    override fun equals(other: Any?): Boolean =
+        this === other || (other is Package && other.id == id)
+
+    override fun hashCode(): Int = id.hashCode()
+
+    override fun toString(): String = "Package(id=$id, name=$name, status=$status)"
+
+    companion object {
+
+        /**
+         * Заведение новой пачки: её ещё не было ни на сервере, ни в базе.
+         *
+         * Пустой она быть не может — заводить нечего, и начальный остаток на проводе строго
+         * положителен (PLAN B2). Версии и броней у неё нет по построению, а не по забывчивости
+         * вызывающего: пачка появится на сервере отдельной операцией.
+         */
+        fun create(
+            id: Uuid,
+            medKitId: Uuid,
+            quantity: Quantity,
+            facts: PackageFacts,
+            addedAt: Instant,
+            templateId: Uuid? = null
+        ): Package {
+            require(!quantity.isZero) { "новая пачка не бывает пустой" }
+            return Package(
+                id = id,
+                medKitId = medKitId,
+                name = facts.name,
+                quantity = quantity,
+                formId = facts.formId,
+                category = facts.category,
+                manufacturer = facts.manufacturer,
+                country = facts.country,
+                description = facts.description,
+                expiresOn = facts.expiresOn,
+                defaultIntakeAmount = facts.defaultIntakeAmount,
+                note = facts.note,
+                price = facts.price,
+                purchasedOn = facts.purchasedOn,
+                openedOn = facts.openedOn,
+                addedAt = addedAt,
+                templateId = templateId,
+                version = null,
+                claims = null,
+                status = PackageStatus.ACTIVE,
+                syncedAt = null
+            )
+        }
+
+        /**
+         * Восстановление сохранённого состояния: строка базы или снимок сервера.
+         *
+         * Принимает любое допустимое состояние, включая архивную пачку с нулевым остатком, —
+         * и именно поэтому назван отдельно от [create]. Это не бизнес-переход: он ничего не
+         * решает, а только возвращает то, что уже было решено раньше.
+         */
+        @Suppress("LongParameterList")
+        fun restore(
+            id: Uuid,
+            medKitId: Uuid,
+            name: String,
+            quantity: Quantity,
+            formId: Uuid?,
+            category: String?,
+            manufacturer: String?,
+            country: String?,
+            description: String?,
+            expiresOn: LocalDate?,
+            defaultIntakeAmount: Quantity?,
+            note: String?,
+            price: Money?,
+            purchasedOn: LocalDate?,
+            openedOn: LocalDate?,
+            addedAt: Instant,
+            templateId: Uuid?,
+            version: Long?,
+            claims: Claims?,
+            status: PackageStatus,
+            syncedAt: Instant?
+        ): Package = Package(
+            id = id,
+            medKitId = medKitId,
+            name = name,
+            quantity = quantity,
+            formId = formId,
+            category = category,
+            manufacturer = manufacturer,
+            country = country,
+            description = description,
+            expiresOn = expiresOn,
+            defaultIntakeAmount = defaultIntakeAmount,
+            note = note,
+            price = price,
+            purchasedOn = purchasedOn,
+            openedOn = openedOn,
+            addedAt = addedAt,
+            templateId = templateId,
+            version = version,
+            claims = claims,
+            status = status,
+            syncedAt = syncedAt
+        )
     }
 }

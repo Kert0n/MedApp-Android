@@ -23,13 +23,16 @@ import org.junit.Test
  */
 class PackageNetworkMapperTest {
 
-    private val onServer = pack(
+    private fun onServer(version: Long? = 7, note: String? = null) = pack(
         name = "Парацетамол",
         formId = TABLET_FORM,
         category = "жаропонижающие",
         description = "по одной при температуре",
-        version = 7
+        note = note,
+        version = version
     )
+
+    private val onServer = onServer()
 
     @Test
     fun unchangedFormSendsNothing() {
@@ -66,7 +69,7 @@ class PackageNetworkMapperTest {
 
     @Test
     fun clearingTheFormOfAPackNotYetOnTheServerIsFine() {
-        val local = onServer.copy(version = null)
+        val local = onServer(version = null)
         val patch = factsOf(local).copy(formId = null).toPatchNetworkMapping(local)
         assertFalse(patch.formIdClearUnsupported)
     }
@@ -89,7 +92,7 @@ class PackageNetworkMapperTest {
 
     @Test
     fun creationCarriesTheServerHalfOnly() {
-        val fields = onServer.copy(note = "в машине").toPostNetworkDTO()
+        val fields = onServer(note = "в машине").toPostNetworkDTO()
         assertEquals("Парацетамол", fields.name)
         assertEquals(tablets("20"), fields.quantity)
         assertEquals(TABLET_FORM, fields.formId)
