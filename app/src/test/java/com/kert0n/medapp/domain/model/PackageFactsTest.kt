@@ -7,14 +7,14 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * `PackageEdit` — доменная величина: `null` значит «сведений нет». Противоположный смысл `null`
+ * `PackageFacts` — доменная величина: `null` значит «сведений нет». Противоположный смысл `null`
  * на проводе проверяется в `data/mapper`, и это разные тесты в разных слоях не случайно.
  */
-class PackageEditTest {
+class PackageFactsTest {
 
     @Test
     fun editCarriesEverythingDescriptive() {
-        val edit = PackageEdit(
+        val facts = PackageFacts(
             name = "Парацетамол",
             formId = TABLET_FORM,
             category = "жаропонижающие",
@@ -28,13 +28,13 @@ class PackageEditTest {
             purchasedOn = LocalDate.of(2026, 1, 10),
             openedOn = LocalDate.of(2026, 1, 12)
         )
-        assertEquals("Парацетамол", edit.name)
-        assertEquals(Money(BigDecimal("120.00")), edit.price)
+        assertEquals("Парацетамол", facts.name)
+        assertEquals(Money(BigDecimal("120.00")), facts.price)
     }
 
     @Test
     fun absenceOfInformationIsNull() {
-        val empty = editOf(pack())
+        val empty = factsOf(pack())
         assertNull(empty.category)
         assertNull(empty.expiresOn)
         assertNull(empty.price)
@@ -42,18 +42,18 @@ class PackageEditTest {
 
     @Test(expected = IllegalArgumentException::class)
     fun blankNameIsRejected() {
-        editOf(pack()).copy(name = "   ")
+        factsOf(pack()).copy(name = "   ")
     }
 
     @Test(expected = IllegalArgumentException::class)
     fun emptyStringIsNotAWayToSayThereIsNone() {
         // На проводе `""` означает очистку, в домене — ничего: два смысла в одном месте
         // разошлись бы при первом же маппинге.
-        editOf(pack()).copy(category = "")
+        factsOf(pack()).copy(category = "")
     }
 
     @Test(expected = IllegalArgumentException::class)
     fun overlongDescriptionIsRejected() {
-        editOf(pack()).copy(description = "я".repeat(PACKAGE_DESCRIPTION_MAX_LENGTH + 1))
+        factsOf(pack()).copy(description = "я".repeat(PACKAGE_DESCRIPTION_MAX_LENGTH + 1))
     }
 }

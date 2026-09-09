@@ -20,7 +20,7 @@ import kotlin.uuid.Uuid
  * Живёт в сетевом слое, а не в домене: это форма провода. Величины пока доменные (`Quantity`);
  * превращение в десятичные строки и `@Serializable` придут вместе с настоящим контрактом в PR 5.
  */
-data class PackageWireFields(
+data class PackagePostNetworkDTO(
     val name: String,
     val quantity: Quantity,
     val formId: Uuid?,
@@ -33,22 +33,22 @@ data class PackageWireFields(
         // Границы те же, что у домена: создание пачки посылает её поля как есть, и расхождение
         // между «влезло в модель» и «влезло в запрос» означало бы отказ сервера после успешного
         // сохранения.
-        requireText(name, PACKAGE_NAME_MAX_LENGTH, "PackageWireFields.name")
+        requireText(name, PACKAGE_NAME_MAX_LENGTH, "PackagePostNetworkDTO.name")
         requireOptionalText(
             category,
             PACKAGE_CATEGORY_MAX_LENGTH,
-            "PackageWireFields.category"
+            "PackagePostNetworkDTO.category"
         )
         requireOptionalText(
             manufacturer,
             PACKAGE_MANUFACTURER_MAX_LENGTH,
-            "PackageWireFields.manufacturer"
+            "PackagePostNetworkDTO.manufacturer"
         )
-        requireOptionalText(country, PACKAGE_COUNTRY_MAX_LENGTH, "PackageWireFields.country")
+        requireOptionalText(country, PACKAGE_COUNTRY_MAX_LENGTH, "PackagePostNetworkDTO.country")
         requireOptionalText(
             description,
             PACKAGE_DESCRIPTION_MAX_LENGTH,
-            "PackageWireFields.description"
+            "PackagePostNetworkDTO.description"
         )
     }
 }
@@ -56,13 +56,13 @@ data class PackageWireFields(
 /**
  * Намерение PATCH: `null` — не изменять, текст `""` — очистить.
  *
- * Это **не** семантика локальной формы. У текущего PATCH и отсутствие поля, и `null` означают
+ * Это **не** семантика доменных сведений. У текущего PATCH и отсутствие поля, и `null` означают
  * «не трогать», поэтому очистка выражается пустой строкой (PLAN D3, H2). В доменной форме
- * `PackageEdit` тот же `null` значит ровно обратное — «сведений нет», — и именно поэтому тип
+ * `PackageFacts` тот же `null` значит ровно обратное — «сведений нет», — и именно поэтому тип
  * отдельный и лежит в другом слое: одно поле с двумя противоположными смыслами `null` рано или
  * поздно прочитали бы не по той стороне границы.
  */
-data class PackageWireEdit(
+data class PackagePatchNetworkDTO(
     val name: String? = null,
     val quantity: Quantity? = null,
     val unitId: Uuid? = null,
@@ -75,19 +75,19 @@ data class PackageWireEdit(
     init {
         require(name == null || name.isNotBlank()) { "название нельзя очистить" }
         require(name == null || name.length <= PACKAGE_NAME_MAX_LENGTH) {
-            "PackageWireEdit.name: длиннее $PACKAGE_NAME_MAX_LENGTH символов"
+            "PackagePatchNetworkDTO.name: длиннее $PACKAGE_NAME_MAX_LENGTH символов"
         }
-        requireClearable(category, PACKAGE_CATEGORY_MAX_LENGTH, "PackageWireEdit.category")
+        requireClearable(category, PACKAGE_CATEGORY_MAX_LENGTH, "PackagePatchNetworkDTO.category")
         requireClearable(
             manufacturer,
             PACKAGE_MANUFACTURER_MAX_LENGTH,
-            "PackageWireEdit.manufacturer"
+            "PackagePatchNetworkDTO.manufacturer"
         )
-        requireClearable(country, PACKAGE_COUNTRY_MAX_LENGTH, "PackageWireEdit.country")
+        requireClearable(country, PACKAGE_COUNTRY_MAX_LENGTH, "PackagePatchNetworkDTO.country")
         requireClearable(
             description,
             PACKAGE_DESCRIPTION_MAX_LENGTH,
-            "PackageWireEdit.description"
+            "PackagePatchNetworkDTO.description"
         )
     }
 

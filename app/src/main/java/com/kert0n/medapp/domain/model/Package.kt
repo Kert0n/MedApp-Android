@@ -26,7 +26,7 @@ enum class PackageStatus {
  * намерений очереди считается отдельно и здесь не хранится, иначе она разъехалась бы с очередью.
  *
  * Часть полей знает сервер, часть — только устройство (PLAN C0). Граница проведена в
- * [PackageWireFields]: локальные поля не уезжают физически, а не по договорённости.
+ * [PackagePostNetworkDTO]: локальные поля не уезжают физически, а не по договорённости.
  */
 data class Package(
     val id: Uuid,                 // придуман клиентом; он же серверный
@@ -122,22 +122,22 @@ data class Package(
         return withQuantity(actual)
     }
 
-    /** Применяет сохранённую форму целиком — и серверные поля, и локальные (PLAN D3). */
-    fun describe(edit: PackageEdit): Package {
+    /** Принимает сведения целиком — и серверные поля, и локальные (PLAN D3). */
+    fun describe(facts: PackageFacts): Package {
         requireActive("правка описания")
         return copy(
-            name = edit.name,
-            formId = edit.formId,
-            category = edit.category,
-            manufacturer = edit.manufacturer,
-            country = edit.country,
-            description = edit.description,
-            expiresOn = edit.expiresOn,
-            defaultIntakeAmount = edit.defaultIntakeAmount,
-            note = edit.note,
-            price = edit.price,
-            purchasedOn = edit.purchasedOn,
-            openedOn = edit.openedOn
+            name = facts.name,
+            formId = facts.formId,
+            category = facts.category,
+            manufacturer = facts.manufacturer,
+            country = facts.country,
+            description = facts.description,
+            expiresOn = facts.expiresOn,
+            defaultIntakeAmount = facts.defaultIntakeAmount,
+            note = facts.note,
+            price = facts.price,
+            purchasedOn = facts.purchasedOn,
+            openedOn = facts.openedOn
         )
     }
 

@@ -70,7 +70,7 @@ class PackageTransitionsTest {
 
     @Test(expected = IllegalStateException::class)
     fun inaccessiblePackIsNotEdited() {
-        pack(status = PackageStatus.INACCESSIBLE).describe(editOf(pack()))
+        pack(status = PackageStatus.INACCESSIBLE).describe(factsOf(pack()))
     }
 
     @Test(expected = IllegalStateException::class)
@@ -81,7 +81,7 @@ class PackageTransitionsTest {
     @Test
     fun editReplacesTheWholeDescriptiveState() {
         val described = pack().describe(
-            editOf(pack()).copy(
+            factsOf(pack()).copy(
                 name = "Парацетамол-Дарница",
                 category = "жаропонижающие",
                 expiresOn = LocalDate.of(2027, 3, 31),
@@ -99,7 +99,7 @@ class PackageTransitionsTest {
     @Test
     fun editClearsWhatWasCleared() {
         val filled = pack(category = "жаропонижающие", expiresOn = LocalDate.of(2027, 3, 31))
-        val cleared = filled.describe(editOf(filled).copy(category = null, expiresOn = null))
+        val cleared = filled.describe(factsOf(filled).copy(category = null, expiresOn = null))
         assertNull(cleared.category)
         assertNull(cleared.expiresOn)
     }
@@ -107,7 +107,7 @@ class PackageTransitionsTest {
     @Test
     fun editDoesNotTouchQuantityOrOwnership() {
         val moved = pack(quantity = tablets("20"), version = 3)
-        val described = moved.describe(editOf(moved).copy(name = "другое"))
+        val described = moved.describe(factsOf(moved).copy(name = "другое"))
         assertEquals(tablets("20"), described.quantity)
         assertEquals(HOME_KIT, described.medKitId)
         assertEquals(3L, described.version)

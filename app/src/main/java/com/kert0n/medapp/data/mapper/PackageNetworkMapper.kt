@@ -1,9 +1,9 @@
 package com.kert0n.medapp.data.mapper
 
-import com.kert0n.medapp.data.remote.dto.PackageWireEdit
-import com.kert0n.medapp.data.remote.dto.PackageWireFields
+import com.kert0n.medapp.data.remote.dto.PackagePatchNetworkDTO
+import com.kert0n.medapp.data.remote.dto.PackagePostNetworkDTO
 import com.kert0n.medapp.domain.model.Package
-import com.kert0n.medapp.domain.model.PackageEdit
+import com.kert0n.medapp.domain.model.PackageFacts
 
 /**
  * Что из локальной правки уезжает на сервер и что уехать не может.
@@ -13,18 +13,18 @@ import com.kert0n.medapp.domain.model.PackageEdit
  * тогда экран обязан объяснить ограничение — иначе неудалённая серверная форма выдавалась бы за
  * очищенную (PLAN D3).
  */
-data class PackageWirePatch(
-    val edit: PackageWireEdit?,          // null — серверных полей не изменилось
+data class PackagePatchNetworkMapping(
+    val dto: PackagePatchNetworkDTO?,          // null — серверных полей не изменилось
     val formIdClearUnsupported: Boolean
 )
 
 /**
  * Серверная часть упаковки для создания: домен → провод.
  *
- * Здесь и заканчивается граница данных (PLAN C0): всё, чего нет в [PackageWireFields], остаётся
+ * Здесь и заканчивается граница данных (PLAN C0): всё, чего нет в [PackagePostNetworkDTO], остаётся
  * на устройстве, потому что взять это на проводе просто негде.
  */
-fun Package.toWireFields(): PackageWireFields = PackageWireFields(
+fun Package.toPostNetworkDTO(): PackagePostNetworkDTO = PackagePostNetworkDTO(
     name = name,
     quantity = quantity,
     formId = formId,
@@ -44,8 +44,8 @@ fun Package.toWireFields(): PackageWireFields = PackageWireFields(
  * Количество и единица здесь не заполняются вовсе — это отдельные сценарии пересчёта и смены
  * единицы (PLAN D3, E1), у них свои операции и свои предупреждения.
  */
-fun PackageEdit.toWirePatch(current: Package): PackageWirePatch {
-    val edit = PackageWireEdit(
+fun PackageFacts.toPatchNetworkMapping(current: Package): PackagePatchNetworkMapping {
+    val dto = PackagePatchNetworkDTO(
         name = name.takeIf { it != current.name },
         formId = formId.takeIf { it != null && it != current.formId },
         category = clearableText(current.category, category),
@@ -54,8 +54,8 @@ fun PackageEdit.toWirePatch(current: Package): PackageWirePatch {
         description = clearableText(current.description, description)
     )
     val formCleared = current.formId != null && formId == null
-    return PackageWirePatch(
-        edit = edit.takeIf { !it.isEmpty },
+    return PackagePatchNetworkMapping(
+        dto = dto.takeIf { !it.isEmpty },
         formIdClearUnsupported = formCleared && current.version != null
     )
 }

@@ -74,7 +74,7 @@ val TABLET_FORM: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000041")
 val CAPSULE_FORM: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000042")
 
 /** Форма, загруженная из пачки: круговой тест начинается с того, что уже сохранено. */
-fun editOf(pkg: Package) = PackageEdit(
+fun factsOf(pkg: Package) = PackageFacts(
     name = pkg.name,
     formId = pkg.formId,
     category = pkg.category,

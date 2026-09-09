@@ -8,7 +8,7 @@ import kotlin.uuid.Uuid
  *
  * **Это доменная величина, а не DTO.** Направлений у DTO три, и ни одно из них не здесь: форма
  * провода живёт в `data/remote/dto`, форма строки базы — в `data/local/entity`, состояние экрана
- * с несохранённым вводом — в своём `feature`. `PackageEdit` — то, чем домен принимает решение
+ * с несохранённым вводом — в своём `feature`. `PackageFacts` — то, чем домен принимает решение
  * «пачка теперь описана так»: у него есть инварианты (границы длин), и он ничего не знает ни про
  * PATCH, ни про колонки, ни про поля ввода.
  *
@@ -20,7 +20,7 @@ import kotlin.uuid.Uuid
  * Количества здесь нет: оно меняется отдельным экраном пересчёта, а смена единицы — отдельный
  * сценарий без автоматической конверсии (PLAN D3, H3 №8, №9).
  */
-data class PackageEdit(
+data class PackageFacts(
     val name: String,
     val formId: Uuid?,
     val category: String?,
@@ -35,15 +35,15 @@ data class PackageEdit(
     val openedOn: LocalDate?
 ) {
     init {
-        requireText(name, PACKAGE_NAME_MAX_LENGTH, "PackageEdit.name")
-        requireOptionalText(category, PACKAGE_CATEGORY_MAX_LENGTH, "PackageEdit.category")
+        requireText(name, PACKAGE_NAME_MAX_LENGTH, "PackageFacts.name")
+        requireOptionalText(category, PACKAGE_CATEGORY_MAX_LENGTH, "PackageFacts.category")
         requireOptionalText(
             manufacturer,
             PACKAGE_MANUFACTURER_MAX_LENGTH,
-            "PackageEdit.manufacturer"
+            "PackageFacts.manufacturer"
         )
-        requireOptionalText(country, PACKAGE_COUNTRY_MAX_LENGTH, "PackageEdit.country")
-        requireOptionalText(description, PACKAGE_DESCRIPTION_MAX_LENGTH, "PackageEdit.description")
-        requireOptionalText(note, PACKAGE_NOTE_MAX_LENGTH, "PackageEdit.note")
+        requireOptionalText(country, PACKAGE_COUNTRY_MAX_LENGTH, "PackageFacts.country")
+        requireOptionalText(description, PACKAGE_DESCRIPTION_MAX_LENGTH, "PackageFacts.description")
+        requireOptionalText(note, PACKAGE_NOTE_MAX_LENGTH, "PackageFacts.note")
     }
 }
