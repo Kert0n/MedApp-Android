@@ -1,0 +1,71 @@
+"area: docs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.md"
+          - ".github/ISSUE_TEMPLATE/**"
+          - ".github/PULL_REQUEST_TEMPLATE.md"
+
+"type: docs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.md"
+          - ".github/ISSUE_TEMPLATE/**"
+          - ".github/PULL_REQUEST_TEMPLATE.md"
+
+"area: build":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.gradle"
+          - "**/*.gradle.kts"
+          - "gradle/**"
+          - ".github/workflows/**"
+
+"area: domain":
+  - changed-files:
+      - any-glob-to-any-file: "app/src/**/domain/**"
+
+"area: storage":
+  - changed-files:
+      - any-glob-to-any-file: "app/src/**/data/local/**"
+
+"area: network":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "app/src/**/data/remote/**"
+
+"area: sync":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "app/src/**/data/sync/**"
+
+"area: ui":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "app/src/**/feature/**"
+          - "app/src/**/ui/**"
+
+"area: platform":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "app/src/**/platform/**"
+          - "app/src/main/AndroidManifest.xml"
+
+"area: scanner":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "app/src/**/scanner/**"
+
+"area: notifications":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "app/src/**/notifications/**"
+
+"area: analytics":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "app/src/**/analytics/**"
+
+"area: ci":
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/workflows/**"
