@@ -309,7 +309,12 @@ UUID и проверяем принадлежность; недоступнос�
 | **Место хранения аптечки**     | набросок D2 называл поле `description`           | `MedKit.location` — место хранения                                                | ТЗ 4.1.1.1.2, F1, E5 и H3 №3 называют его местом хранения; слово «описание» остаётся за препаратом, которое уезжает на сервер            |
 | **Переходы упаковки**          | состояние на входе перехода не оговорено         | `consume`, `correctTo`, `describe`, `moveTo` требуют `ACTIVE`                      | пересчёт не должен оживлять архив: «удалена человеком» не отменяется числом. Возврат из архива — отдельное явное действие                 |
 | **Разрядность цены**           | `scale <= 2` константой, код валюты строкой      | `Currency.defaultFractionDigits`, поле типа `Currency`                            | указание пользователя: два знака — свойство рубля, а не денег. Компонент отдаёт и код, и разрядность; расширение не требует правки модели |
-| **Место форм провода**         | `PackageWire*` стояли в блоке D3, в домене        | `data/remote/dto` и `data/mapper`                                                 | указание пользователя: направлений у DTO три — сеть, база, представление, — и домен не одно из них. `PackageEdit` остаётся доменной величиной |
+| **Место форм провода**         | `PackageWire*` стояли в блоке D3, в домене        | `data/remote/dto`, `data/mapper`, `presentation/*`                                | указание пользователя: направлений у DTO три — сеть, база, представление, — и домен не одно из них. `PackageFacts` остаётся доменной величиной |
+| **Разбор ввода**               | `parse` у доменных значений, тексты по-русски     | `presentation/dto` + `presentation/mapper`, причина — перечисление                | указание пользователя: домен требует готовые типы. Иначе смена способа ввода правит домен, а домен решает, на каком языке говорит приложение   |
+| **Формат провода и колонки**   | `toWire()` у величины                            | сетевой маппер и конвертер хранения                                              | контракт представления принадлежит адаптеру: смена формата API или БД не должна трогать модель                                                |
+| **Сущность против величины**   | `Package` и `MedKit` — `data class`               | обычные классы с тождеством по `id`, `create`/`restore`                           | смена поля не делает пачку другой пачкой. `copy()` обходил переходы: воспроизведены оживление архива и пустая активная пачка                  |
+| **Предел целой части цены**    | брался из `QUANTITY_MAX_INTEGER_DIGITS`          | свой `MONEY_MAX_INTEGER_DIGITS`, серверный предел принят как продуктовый          | решение пользователя: цена на сервер не уезжает, и её граница — решение продукта, а не побочный эффект общей константы                        |
+| **Имена типов**                | придумывались под каждый случай                   | сущность + назначение + слой: `PackagePatchNetworkDTO`                            | решение пользователя: по имени видно, что это и чьё, без чтения KDoc                                                                          |
 | **Нижняя граница Android**     | Android 8.0 (`minSdk` 26)                        | **Android 10 (`minSdk` 29)**                                                      | решение пользователя 2026-09-09; ТЗ 4.5–4.6 называет 8.0, но доля 8.x не оправдывает поддержку, а 29 снимает часть ограничений платформы  |
 
 ## C2. Чего в первой законченной версии нет
@@ -362,8 +367,7 @@ UUID и проверяем принадлежность; недоступнос�
 package com.kert0n.medapp.domain.model
 
 const val QUANTITY_SCALE = 6
-const val QUANTITY_MAX_INTEGER_DIGITS = 13
-const val QUANTITY_MAX_INPUT_LENGTH = 21   // 13 + точка + 6, плюс запас на ведущий ноль
+const val QUANTITY_MAX_INTEGER_DIGITS = 13   // серверный предел, принятый как продуктовый (C1)
 
 /**
  * Количество вместе с единицей: величины в разных единицах не складываются даже случайно.
@@ -395,34 +399,23 @@ data class Quantity(val amount: BigDecimal, val unitId: Uuid) {
 
     val isZero: Boolean
 
-    /** Ровно то, что уходит на провод: без экспоненты, без знака. */
-    fun toWire(): String = amount.toPlainString()
-
     override fun equals(other: Any?): Boolean   // unitId + compareTo == 0
     override fun hashCode(): Int                // по stripTrailingZeros
 
     companion object {
-        /**
-         * Запятая → точка. Отвергает: экспоненту, знак, пустое, > QUANTITY_MAX_INPUT_LENGTH,
-         * больше шести знаков после точки, больше тринадцати до неё.
-         */
-        fun parse(input: String, unitId: Uuid): Result<Quantity>
         fun zero(unitId: Uuid): Quantity
     }
 }
 
-/** Цена всей пачки. Хранится и считается десятичной строкой — тем же правилом, что количества. */
+/** Цена всей пачки. Одно правило с количеством, без «минимальных единиц» и целых копеек. */
 data class Money(val amount: BigDecimal, val currency: Currency = DEFAULT_CURRENCY) {
     init {
         require(amount.signum() >= 0)
         require(amount.scale() <= currency.defaultFractionDigits)
+        require(целая часть <= MONEY_MAX_INTEGER_DIGITS)   // свой предел: цена не уезжает (C1)
     }
     val currencyCode: String   // то, что ложится в колонку F1
-    fun toWire(): String
     override fun equals(other: Any?): Boolean   // валюта + compareTo == 0
-    companion object {
-        fun parse(input: String, currency: Currency = DEFAULT_CURRENCY): Result<Money>
-    }
 }
 
 data class QuantityUnit(val id: Uuid, val name: String)
@@ -503,7 +496,7 @@ data class Claims(
     val version: Long
 )
 
-data class Package(
+class Package private constructor(        // СУЩНОСТЬ: тождество переживает изменение полей
     val id: Uuid,                 // придуман клиентом; он же серверный
     val medKitId: Uuid,
 
@@ -537,14 +530,20 @@ data class Package(
 
     fun consume(amount: Quantity): Package      // до нуля → ARCHIVED
     fun correctTo(actual: Quantity): Package    // ноль → ARCHIVED
-    fun describe(edit: PackageEdit): Package
+    fun describe(facts: PackageFacts): Package
     fun moveTo(medKitId: Uuid): Package
     fun archive(): Package
     fun loseAccess(): Package
+
+    override fun equals(other: Any?): Boolean   // по id
+    companion object {
+        fun create(...): Package                // новая пачка: ACTIVE, без версии, не пустая
+        fun restore(...): Package               // сохранённое состояние; не бизнес-переход
+    }
 }
 
 /** Описательные сведения об упаковке целиком — аргумент describe. null = сведений нет. */
-data class PackageEdit(
+data class PackageFacts(
     val name: String,
     val formId: Uuid?,
     val category: String?,
@@ -560,13 +559,23 @@ data class PackageEdit(
 )
 ```
 
-**Формы провода живут в сетевом слое, а не в домене.** `PackageWireFields` (ровно то, что
-принимает `DrugCreateRequest`) и `PackageWireEdit` (намерение PATCH) объявлены в
-`data/remote/dto`; сравнение состояний и `PackageWirePatch` — в `data/mapper`. Направлений у DTO
-три — сеть, база и представление, — и ни одно из них не домен: `PackageEdit` остаётся доменной
-величиной с инвариантами, ничего не знающей ни про PATCH, ни про колонки, ни про поля ввода.
+**Упаковка и аптечка — сущности, а не величины.** Пачка, из которой приняли таблетку, — та же
+пачка; переименованная аптечка — та же аптечка. Тождество — `id`, равенство по нему, `data class`
+здесь неверен: он утверждает, что смена поля даёт другой объект. Отсюда и отсутствие `copy()`:
+состояние меняют только переходы, а собрать сущность можно двумя названными путями — `create`
+заводит новое (пачка активна, версии нет, пустой быть не может), `restore` возвращает сохранённое,
+включая архивную пачку с нулём. Без этого правило «пересчёт не оживляет архив» соблюдалось бы
+дисциплиной вызывающего кода: `copy(status = ACTIVE)` его обходил, а `copy(quantity = zero)`
+оставлял пустую пачку активной.
 
-**Nullable-поля формы не кодируют команду PATCH.** Редактор загружает полный `PackageEdit` и
+**Три направления представлений, и ни одно из них не домен.** Сеть — `PackagePostNetworkDTO` и
+`PackagePatchNetworkDTO` в `data/remote/dto`, сравнение состояний и `PackagePatchNetworkMapping` —
+в `data/mapper`. Хранение — `data/local/entity` и его конвертеры (PR 4). Представление —
+`presentation/dto` (величины строками, как их держит экран) и `presentation/mapper` с `toDomain()`.
+`PackageFacts` остаётся доменной величиной с инвариантами, ничего не знающей ни про PATCH, ни про
+колонки, ни про поля ввода.
+
+**Nullable-поля сведений не кодируют команду PATCH.** Редактор загружает полный `PackageFacts` и
 сохраняет его целиком: `expiresOn = null` очищает срок, `price = null` очищает цену. Это обычные
 nullable-типы Kotlin, отдельный трёхвариантный тип локальному редактору не нужен.
 На проводе `null` значит ровно обратное — «не трогать», — и перевод делает маппер: неизменённое
@@ -1239,9 +1248,9 @@ sealed interface SyncIntent {
     data class LeaveMedKit(val medKitId: Uuid) : SyncIntent
     data class CreatePackage(
         val packageId: Uuid, val medKitId: Uuid,
-        val fields: PackageWireFields
+        val fields: PackagePostNetworkDTO
     ) : SyncIntent
-    data class PatchPackage(val packageId: Uuid, val edit: PackageWireEdit) : SyncIntent
+    data class PatchPackage(val packageId: Uuid, val dto: PackagePatchNetworkDTO) : SyncIntent
     data class MovePackage(val packageId: Uuid, val targetMedKitId: Uuid) : SyncIntent
     data class DeletePackage(val packageId: Uuid) : SyncIntent
     data class Consume(
@@ -1682,7 +1691,8 @@ ui  →  domain  ←  data (local | remote | sync)
 ```
 com.kert0n.medapp
 ├─ app/        MedApp(@HiltAndroidApp), MainActivity, navigation/
-├─ core/       result/, time/(Clock), text/, format/
+├─ core/       result/, time/(Clock), text/
+├─ presentation/  dto/ (величины строками), mapper/ (toDomain, PresentationMapping)
 ├─ di/         NetworkModule, DatabaseModule, RepositoryModule, WorkModule, DispatcherModule
 ├─ domain/
 │   ├─ model/      Quantity, MedKit, Package, Course, Intake, StockAdjustment, ...
@@ -2088,7 +2098,7 @@ enum class PackageSort { NAME, EXPIRY, ADDED_AT, QUANTITY }
 
 | # | коммит                                                      | содержание                                                                         |
 |---|-------------------------------------------------------------|------------------------------------------------------------------------------------|
-| 1 | `Количество не теряет разрядов и не смешивает единицы`      | `Quantity`, `QUANTITY_*`, `parse`, `toWire`, `equals`/`hashCode`                   |
+| 1 | `Количество не теряет разрядов и не смешивает единицы`      | `Quantity`, `QUANTITY_*`, `equals`/`hashCode`; разбор ввода — в `presentation`      |
 | 2 | `Нехватка при вычитании — ошибка, а не ноль`                | `minus` бросает, `minusOrZero` зажимает; `covers`, `dosesIn`, `times`              |
 | 3 | `Цена живёт по тому же правилу, что количество`             | `Money`                                                                            |
 | 4 | `Словари — часть домена, а не строки из ответа`             | `QuantityUnit`, `DosageForm`                                                       |
@@ -2096,7 +2106,7 @@ enum class PackageSort { NAME, EXPIRY, ADDED_AT, QUANTITY }
 | 6 | `Упаковка отвечает на вопрос о годности по названной дате`  | `Package`, `isExpiredOn`, `expiresWithin`                                          |
 | 7 | `Кончившаяся упаковка архивируется, а не исчезает`          | `consume`, `correctTo`, `archive`, `loseAccess`, `moveTo`, `describe`              |
 | 8 | `Claims отделены от брони на проводе`                       | `Claims`                                                                           |
-| 9 | `Форма хранит отсутствие полей, история хранит движения`    | полный `PackageEdit`, `PackageWireEdit`, `StockAdjustment`; очистка nullable-полей |
+| 9 | `Форма хранит отсутствие полей, история хранит движения`    | `PackageFacts`, `Package*NetworkDTO`, `StockAdjustment`; очистка nullable-полей     |
 
 **Тесты:** `0.1 + 0.2 == 0.3`; семь знаков после точки отвергнуты; запятая принята; экспонента,
 знак, четырнадцать разрядов и слишком длинный ввод отвергнуты; `1 == 1.000000` и хеши равны;
