@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -6,6 +7,26 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     id("com.google.devtools.ksp")
     alias(libs.plugins.hilt)
+}
+
+/**
+ * Параметры сборки приходят из local.properties или из переменных окружения CI и в
+ * репозиторий не попадают (G1). Регистрационный токен неизбежно присутствует в APK —
+ * приложение само отправляет его при регистрации, — поэтому достижимое требование
+ * именно такое: токена нет в истории git и в логах.
+ */
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
+fun buildSecret(key: String, fallback: String): String {
+    val value = localProperties.getProperty(key) ?: System.getenv(key)
+    if (value.isNullOrBlank()) {
+        logger.warn("$key не задан: взято значение по умолчанию. Настоящее значение задаётся в local.properties или в окружении CI.")
+        return fallback
+    }
+    return value
 }
 
 android {
@@ -23,6 +44,21 @@ android {
 
         testInstrumentationRunner = "com.kert0n.medapp.HiltTestRunner"
 
+        buildConfigField(
+            "String",
+            "REGISTRATION_TOKEN",
+            "\"${buildSecret("MEDAPP_REGISTRATION_TOKEN", "dev-secret")}\""
+        )
+        buildConfigField(
+            "String",
+            "BASE_URL",
+            "\"${buildSecret("MEDAPP_BASE_URL", "https://medapp.ru.net")}\""
+        )
+        buildConfigField(
+            "String",
+            "CRPT_BASE_URL",
+            "\"${buildSecret("MEDAPP_CRPT_BASE_URL", "https://mobile.api.crpt.ru")}\""
+        )
     }
 
     buildTypes {
