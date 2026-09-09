@@ -68,6 +68,9 @@ class QuantityParseTest {
     fun overlongInputIsRejectedByItsRealFault() {
         // Предел длины на один символ больше самого длинного осмысленного ввода: он отсекает
         // мусор, а разряды у ввода правильной формы считаются точнее и называются точнее.
-        assertEquals(QuantityFormatReason.TOO_MANY_INTEGER_DIGITS, reasonOf("01234567890123.123456"))
+        assertEquals(
+            QuantityFormatReason.TOO_MANY_INTEGER_DIGITS,
+            reasonOf("01234567890123.123456")
+        )
     }
 }

@@ -11,7 +11,8 @@ class StockAdjustmentTest {
     @Test
     fun consumptionAndArrivalDifferOnlyBySign() {
         assertEquals(-1, adjustment(delta = BigDecimal("-2")).delta.signum())
-        assertEquals(1, adjustment(kind = AdjustmentKind.INITIAL, delta = BigDecimal("20")).delta.signum())
+        val added = adjustment(kind = AdjustmentKind.INITIAL, delta = BigDecimal("20"))
+        assertEquals(1, added.delta.signum())
     }
 
     @Test
@@ -38,8 +39,10 @@ class StockAdjustmentTest {
 
     @Test
     fun momentOfSomeoneElsesChangeMayBeUnknown() {
-        assertEquals(null, adjustment(kind = AdjustmentKind.REMOTE_CHANGE, occurredAt = null).occurredAt)
-        assertEquals(null, adjustment(kind = AdjustmentKind.ACCESS_LOST, occurredAt = null).occurredAt)
+        val remote = adjustment(kind = AdjustmentKind.REMOTE_CHANGE, occurredAt = null)
+        val lost = adjustment(kind = AdjustmentKind.ACCESS_LOST, occurredAt = null)
+        assertEquals(null, remote.occurredAt)
+        assertEquals(null, lost.occurredAt)
     }
 
     @Test(expected = IllegalArgumentException::class)

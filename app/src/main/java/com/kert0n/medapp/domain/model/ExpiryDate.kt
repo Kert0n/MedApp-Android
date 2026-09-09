@@ -53,11 +53,14 @@ object ExpiryDate {
 
     private fun endOfMonth(year: Int, month: Int): Result<LocalDate> =
         runCatching { YearMonth.of(year, month).atEndOfMonth() }
-            .recoverCatching { throw ExpiryDateFormatException(ExpiryDateFormatReason.IMPOSSIBLE_DATE) }
+            .recoverCatching { throw impossible() }
 
     private fun exactDay(year: Int, month: Int, day: Int): Result<LocalDate> =
         runCatching { LocalDate.of(year, month, day) }
-            .recoverCatching { throw ExpiryDateFormatException(ExpiryDateFormatReason.IMPOSSIBLE_DATE) }
+            .recoverCatching { throw impossible() }
+
+    private fun impossible() =
+        ExpiryDateFormatException(ExpiryDateFormatReason.IMPOSSIBLE_DATE)
 
     private fun failure(reason: ExpiryDateFormatReason): Result<LocalDate> =
         Result.failure(ExpiryDateFormatException(reason))

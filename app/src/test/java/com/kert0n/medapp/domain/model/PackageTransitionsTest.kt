@@ -143,7 +143,8 @@ class PackageTransitionsTest {
     fun losingAccessDropsTheClaimsSnapshot() {
         // Сервер снял брони каскадом по участию: держать их снимок значило бы показывать
         // чужие брони на пачке, которой у нас больше нет.
-        val lost = pack(claims = Claims(BigDecimal("5"), BigDecimal("2"), 4), version = 3).loseAccess()
+        val shared = pack(claims = Claims(BigDecimal("5"), BigDecimal("2"), 4), version = 3)
+        val lost = shared.loseAccess()
         assertEquals(PackageStatus.INACCESSIBLE, lost.status)
         assertNull(lost.claims)
         assertEquals(3L, lost.version)

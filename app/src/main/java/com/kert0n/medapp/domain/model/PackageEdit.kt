@@ -92,7 +92,11 @@ data class PackageWireEdit(
     init {
         require(name == null || name.isNotBlank()) { "название нельзя очистить" }
         requireWireText(category, PACKAGE_CATEGORY_MAX_LENGTH, "PackageWireEdit.category")
-        requireWireText(manufacturer, PACKAGE_MANUFACTURER_MAX_LENGTH, "PackageWireEdit.manufacturer")
+        requireWireText(
+            manufacturer,
+            PACKAGE_MANUFACTURER_MAX_LENGTH,
+            "PackageWireEdit.manufacturer"
+        )
         requireWireText(country, PACKAGE_COUNTRY_MAX_LENGTH, "PackageWireEdit.country")
         requireWireText(description, PACKAGE_DESCRIPTION_MAX_LENGTH, "PackageWireEdit.description")
         require(name == null || name.length <= PACKAGE_NAME_MAX_LENGTH) {

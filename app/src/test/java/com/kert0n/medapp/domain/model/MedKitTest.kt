@@ -10,7 +10,8 @@ class MedKitTest {
     @Test
     fun publishingKitDoesNotHandOutInvitationsYet() {
         // Половина пачек уже на сервере, половина ещё нет: приглашённый увидел бы половину.
-        assertFalse(kit(publication = KitPublication.PUBLISHING, participants = 1).acceptsInvitations)
+        val publishing = kit(publication = KitPublication.PUBLISHING, participants = 1)
+        assertFalse(publishing.acceptsInvitations)
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.kert0n.medapp.domain.model
 
+import java.math.BigDecimal
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -70,7 +71,7 @@ class PackageEditTest {
     fun localOnlyFieldsNeverReachTheWire() {
         // Срок годности, заметка, цена и даты остаются только на устройстве (PLAN C0, E5).
         val patch = editOf(onServer)
-            .copy(note = "в машине", price = Money(java.math.BigDecimal("120.00")))
+            .copy(note = "в машине", price = Money(BigDecimal("120.00")))
             .wirePatchFrom(onServer)
         assertNull(patch.edit)
     }
