@@ -1,0 +1,47 @@
+name: Проверка
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Тесты, lint, сборка
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      # Настоящие значения приходят из секретов репозитория. Их отсутствие не должно
+      # ронять сборку форка: BuildConfig тогда получает значения по умолчанию.
+      - name: Проверка
+        env:
+          MEDAPP_REGISTRATION_TOKEN: ${{ secrets.MEDAPP_REGISTRATION_TOKEN }}
+          MEDAPP_BASE_URL: ${{ secrets.MEDAPP_BASE_URL }}
+        run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+
+      - name: Отчёты
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: |
+            app/build/reports/
+            app/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
