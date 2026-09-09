@@ -29,7 +29,60 @@ class StockAdjustmentTest {
     @Test(expected = IllegalArgumentException::class)
     fun transferWithoutTheSourceKitIsRejected() {
         // Иначе перенос неотличим от расхода, и история перестаёт сходиться.
-        adjustment(kind = AdjustmentKind.TRANSFER_IN, from = null, to = SHARED_KIT)
+        adjustment(
+            kind = AdjustmentKind.TRANSFER_IN,
+            delta = BigDecimal("20"),
+            from = null,
+            to = SHARED_KIT
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun transferIntoTheSameKitIsRejected() {
+        // Остаток от такого переноса не меняется, а в истории он выглядел бы событием.
+        adjustment(
+            kind = AdjustmentKind.TRANSFER_OUT,
+            from = HOME_KIT,
+            to = HOME_KIT
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun negativeArrivalIsRejected() {
+        // Отрицательный приход сходится в сумме, но означает противоположное своему виду.
+        adjustment(kind = AdjustmentKind.INITIAL, delta = BigDecimal("-20"))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun positiveDisposalIsRejected() {
+        adjustment(kind = AdjustmentKind.DISPOSAL, delta = BigDecimal("2"))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun positiveAccessLossIsRejected() {
+        adjustment(kind = AdjustmentKind.ACCESS_LOST, delta = BigDecimal("2"), occurredAt = null)
+    }
+
+    @Test
+    fun recountAndRemoteChangeGoBothWays() {
+        // Пересчёт находит и больше, и меньше; причину чужого изменения мы не знаем вовсе.
+        val found = adjustment(kind = AdjustmentKind.CORRECTION, delta = BigDecimal("3"))
+        val lost = adjustment(kind = AdjustmentKind.CORRECTION, delta = BigDecimal("-3"))
+        assertEquals(1, found.delta.signum())
+        assertEquals(-1, lost.delta.signum())
+
+        val remoteUp = adjustment(
+            kind = AdjustmentKind.REMOTE_CHANGE,
+            delta = BigDecimal("3"),
+            occurredAt = null
+        )
+        val remoteDown = adjustment(
+            kind = AdjustmentKind.REMOTE_CHANGE,
+            delta = BigDecimal("-3"),
+            occurredAt = null
+        )
+        assertEquals(1, remoteUp.delta.signum())
+        assertEquals(-1, remoteDown.delta.signum())
     }
 
     @Test(expected = IllegalArgumentException::class)

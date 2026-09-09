@@ -20,8 +20,8 @@ data class Claims(
 ) {
 
     init {
-        requireClaimAmount(total, "Claims.total")
-        mine?.let { requireClaimAmount(it, "Claims.mine") }
+        requireNonNegativeDecimal(total, "Claims.total")
+        mine?.let { requireNonNegativeDecimal(it, "Claims.mine") }
         require(version >= 0) { "версия картины броней не бывает отрицательной" }
     }
 
@@ -37,12 +37,3 @@ data class Claims(
         get() = (total - (mine ?: BigDecimal.ZERO)).coerceAtLeast(BigDecimal.ZERO)
 }
 
-private fun requireClaimAmount(amount: BigDecimal, field: String) {
-    require(amount.signum() >= 0) { "$field: бронь не бывает отрицательной" }
-    require(amount.scale() <= QUANTITY_SCALE) {
-        "$field: после точки не больше $QUANTITY_SCALE знаков"
-    }
-    require(amount.precision() - amount.scale() <= QUANTITY_MAX_INTEGER_DIGITS) {
-        "$field: до точки не больше $QUANTITY_MAX_INTEGER_DIGITS разрядов"
-    }
-}

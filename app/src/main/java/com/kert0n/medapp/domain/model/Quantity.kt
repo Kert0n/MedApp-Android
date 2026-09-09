@@ -41,13 +41,7 @@ private val MAX_DOSES = BigDecimal(Int.MAX_VALUE)
 data class Quantity(val amount: BigDecimal, val unitId: Uuid) {
 
     init {
-        require(amount.signum() >= 0) { "количество не бывает отрицательным" }
-        require(amount.scale() <= QUANTITY_SCALE) {
-            "после точки не больше $QUANTITY_SCALE знаков"
-        }
-        require(amount.precision() - amount.scale() <= QUANTITY_MAX_INTEGER_DIGITS) {
-            "до точки не больше $QUANTITY_MAX_INTEGER_DIGITS разрядов"
-        }
+        requireNonNegativeDecimal(amount, "количество")
     }
 
     val isZero: Boolean get() = amount.signum() == 0

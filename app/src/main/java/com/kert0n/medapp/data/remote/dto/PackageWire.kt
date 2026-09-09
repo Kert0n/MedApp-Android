@@ -6,6 +6,8 @@ import com.kert0n.medapp.domain.model.PACKAGE_DESCRIPTION_MAX_LENGTH
 import com.kert0n.medapp.domain.model.PACKAGE_MANUFACTURER_MAX_LENGTH
 import com.kert0n.medapp.domain.model.PACKAGE_NAME_MAX_LENGTH
 import com.kert0n.medapp.domain.model.Quantity
+import com.kert0n.medapp.domain.model.requireOptionalText
+import com.kert0n.medapp.domain.model.requireText
 import kotlin.uuid.Uuid
 
 /**
@@ -28,15 +30,22 @@ data class PackageWireFields(
     val description: String?
 ) {
     init {
-        requireWireValue(name, PACKAGE_NAME_MAX_LENGTH, "PackageWireFields.name")
-        requireOptionalWireValue(category, PACKAGE_CATEGORY_MAX_LENGTH, "PackageWireFields.category")
-        requireOptionalWireValue(
+        // Границы те же, что у домена: создание пачки посылает её поля как есть, и расхождение
+        // между «влезло в модель» и «влезло в запрос» означало бы отказ сервера после успешного
+        // сохранения.
+        requireText(name, PACKAGE_NAME_MAX_LENGTH, "PackageWireFields.name")
+        requireOptionalText(
+            category,
+            PACKAGE_CATEGORY_MAX_LENGTH,
+            "PackageWireFields.category"
+        )
+        requireOptionalText(
             manufacturer,
             PACKAGE_MANUFACTURER_MAX_LENGTH,
             "PackageWireFields.manufacturer"
         )
-        requireOptionalWireValue(country, PACKAGE_COUNTRY_MAX_LENGTH, "PackageWireFields.country")
-        requireOptionalWireValue(
+        requireOptionalText(country, PACKAGE_COUNTRY_MAX_LENGTH, "PackageWireFields.country")
+        requireOptionalText(
             description,
             PACKAGE_DESCRIPTION_MAX_LENGTH,
             "PackageWireFields.description"
@@ -69,9 +78,17 @@ data class PackageWireEdit(
             "PackageWireEdit.name: длиннее $PACKAGE_NAME_MAX_LENGTH символов"
         }
         requireClearable(category, PACKAGE_CATEGORY_MAX_LENGTH, "PackageWireEdit.category")
-        requireClearable(manufacturer, PACKAGE_MANUFACTURER_MAX_LENGTH, "PackageWireEdit.manufacturer")
+        requireClearable(
+            manufacturer,
+            PACKAGE_MANUFACTURER_MAX_LENGTH,
+            "PackageWireEdit.manufacturer"
+        )
         requireClearable(country, PACKAGE_COUNTRY_MAX_LENGTH, "PackageWireEdit.country")
-        requireClearable(description, PACKAGE_DESCRIPTION_MAX_LENGTH, "PackageWireEdit.description")
+        requireClearable(
+            description,
+            PACKAGE_DESCRIPTION_MAX_LENGTH,
+            "PackageWireEdit.description"
+        )
     }
 
     val isEmpty: Boolean
@@ -79,16 +96,11 @@ data class PackageWireEdit(
                 category == null && manufacturer == null && country == null && description == null
 }
 
-private fun requireWireValue(value: String, maxLength: Int, field: String) {
-    require(value.isNotBlank()) { "$field: пустое значение не является сведением" }
-    require(value.length <= maxLength) { "$field: длиннее $maxLength символов" }
-}
-
-private fun requireOptionalWireValue(value: String?, maxLength: Int, field: String) {
-    if (value != null) requireWireValue(value, maxLength, field)
-}
-
-/** Пустая строка здесь законна — это очистка. Пробелы не значат ни того, ни другого. */
+/**
+ * Пустая строка здесь законна — это очистка, и только поэтому у PATCH своя проверка, а не
+ * доменная: `requireText` пустую строку отвергает, потому что в домене она не значит ничего.
+ * Пробелы не значат ни того, ни другого ни там, ни здесь.
+ */
 private fun requireClearable(value: String?, maxLength: Int, field: String) {
     if (value == null || value.isEmpty()) return
     require(value.isNotBlank()) { "$field: пробелы не являются ни значением, ни очисткой" }

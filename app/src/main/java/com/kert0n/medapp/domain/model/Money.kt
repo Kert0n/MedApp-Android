@@ -47,15 +47,9 @@ private val DECIMAL_FORMATS: List<DecimalFormat> = listOf('.', ',').map { separa
 data class Money(val amount: BigDecimal, val currency: Currency = DEFAULT_CURRENCY) {
 
     init {
-        require(amount.signum() >= 0) { "цена не бывает отрицательной" }
         val fractionDigits = currency.defaultFractionDigits
         require(fractionDigits >= 0) { "у ${currency.currencyCode} нет расчётной дробной части" }
-        require(amount.scale() <= fractionDigits) {
-            "у ${currency.currencyCode} после точки не больше $fractionDigits знаков"
-        }
-        require(amount.precision() - amount.scale() <= QUANTITY_MAX_INTEGER_DIGITS) {
-            "до точки не больше $QUANTITY_MAX_INTEGER_DIGITS разрядов"
-        }
+        requireNonNegativeDecimal(amount, "цена в ${currency.currencyCode}", fractionDigits)
     }
 
     /** Для хранения и провода: код валюты — то, что ложится в колонку (PLAN F1). */

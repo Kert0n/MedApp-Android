@@ -45,12 +45,8 @@ data class StockAdjustment(
 ) {
 
     init {
-        require(delta.scale() <= QUANTITY_SCALE) {
-            "после точки не больше $QUANTITY_SCALE знаков"
-        }
-        require(delta.precision() - delta.scale() <= QUANTITY_MAX_INTEGER_DIGITS) {
-            "до точки не больше $QUANTITY_MAX_INTEGER_DIGITS разрядов"
-        }
+        // Знак у движения бывает любой, поэтому неотрицательности здесь нет — только границы.
+        requireDecimalWithinLimits(delta, "StockAdjustment.delta")
         requireOptionalText(note, ADJUSTMENT_NOTE_MAX_LENGTH, "StockAdjustment.note")
 
         val transfer = kind == AdjustmentKind.TRANSFER_IN || kind == AdjustmentKind.TRANSFER_OUT
@@ -58,10 +54,27 @@ data class StockAdjustment(
             require(fromMedKitId != null && toMedKitId != null) {
                 "перенос без обеих аптечек нельзя ни показать, ни отличить от расхода"
             }
+            require(fromMedKitId != toMedKitId) {
+                "перенос внутри одной аптечки остаток не меняет"
+            }
         } else {
             require(fromMedKitId == null && toMedKitId == null) {
                 "аптечки переноса заполняются только у переносов"
             }
+        }
+
+        // Направление задано видом движения, и запись против него ломает историю тихо:
+        // отрицательный приход и положительная утилизация сходятся в сумме, но означают
+        // противоположное тому, что написано в их виде (PLAN D7, ТЗ 4.1.1.10.2).
+        when (kind) {
+            AdjustmentKind.INITIAL, AdjustmentKind.TRANSFER_IN ->
+                require(delta.signum() >= 0) { "приход не бывает отрицательным: $kind" }
+
+            AdjustmentKind.DISPOSAL, AdjustmentKind.TRANSFER_OUT, AdjustmentKind.ACCESS_LOST ->
+                require(delta.signum() <= 0) { "расход не бывает положительным: $kind" }
+
+            // Пересчёт находит и больше, и меньше; чужое изменение идёт в обе стороны.
+            AdjustmentKind.CORRECTION, AdjustmentKind.REMOTE_CHANGE -> Unit
         }
 
         // Момент своего действия нам известен всегда; неизвестен он только у того, что сделали
