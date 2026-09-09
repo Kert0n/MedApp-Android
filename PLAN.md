@@ -308,6 +308,7 @@ UUID и проверяем принадлежность; недоступнос�
 | **Повтор по остатку**          | неоднозначность при любом изменении версии       | больший фактический остаток считаем недоставкой, повторяем исходный запрос        | решение пользователя 2026-09-09; редкое совпадение с увеличивающим PATCH принято как RK-SYNC-01, E3                                       |
 | **Место хранения аптечки**     | набросок D2 называл поле `description`           | `MedKit.location` — место хранения                                                | ТЗ 4.1.1.1.2, F1, E5 и H3 №3 называют его местом хранения; слово «описание» остаётся за препаратом, которое уезжает на сервер            |
 | **Переходы упаковки**          | состояние на входе перехода не оговорено         | `consume`, `correctTo`, `describe`, `moveTo` требуют `ACTIVE`                      | пересчёт не должен оживлять архив: «удалена человеком» не отменяется числом. Возврат из архива — отдельное явное действие                 |
+| **Разрядность цены**           | `scale <= 2` константой, код валюты строкой      | `Currency.defaultFractionDigits`, поле типа `Currency`                            | указание пользователя: два знака — свойство рубля, а не денег. Компонент отдаёт и код, и разрядность; расширение не требует правки модели |
 | **Нижняя граница Android**     | Android 8.0 (`minSdk` 26)                        | **Android 10 (`minSdk` 29)**                                                      | решение пользователя 2026-09-09; ТЗ 4.5–4.6 называет 8.0, но доля 8.x не оправдывает поддержку, а 29 снимает часть ограничений платформы  |
 
 ## C2. Чего в первой законченной версии нет
@@ -410,9 +411,16 @@ data class Quantity(val amount: BigDecimal, val unitId: Uuid) {
 }
 
 /** Цена всей пачки. Хранится и считается десятичной строкой — тем же правилом, что количества. */
-data class Money(val amount: BigDecimal, val currencyCode: String = "RUB") {
+data class Money(val amount: BigDecimal, val currency: Currency = DEFAULT_CURRENCY) {
     init {
-        require(amount.signum() >= 0); require(amount.scale() <= 2)
+        require(amount.signum() >= 0)
+        require(amount.scale() <= currency.defaultFractionDigits)
+    }
+    val currencyCode: String   // то, что ложится в колонку F1
+    fun toWire(): String
+    override fun equals(other: Any?): Boolean   // валюта + compareTo == 0
+    companion object {
+        fun parse(input: String, currency: Currency = DEFAULT_CURRENCY): Result<Money>
     }
 }
 
@@ -428,6 +436,19 @@ data class DosageForm(val id: Uuid, val name: String)
 **Время — `java.time` и только оно.** `minSdk` 29 даёт его без десугаринга; держать рядом
 `kotlinx-datetime` значило бы конвертировать на каждой границе. `Instant`, `LocalDate`, `LocalTime`,
 `DayOfWeek`, `ZoneId`.
+
+**Разрядность цены называет валюта, а не константа.** У рубля два знака, у иены ноль, у динара
+три, и знает это `java.util.Currency.defaultFractionDigits`. Поэтому валюта — `Currency`, а не
+строка с проверкой по шаблону: `Currency.getInstance` сам отвергает выдуманный код, и своя
+регулярка рядом была бы вторым мнением о том, какие коды существуют. Всё считается в рублях
+(`DEFAULT_CURRENCY`), но расширение не требует правки `Money`.
+
+**Ввод разбирают компоненты платформы, а не свои разборщики.** Цену читает `DecimalFormat` с
+`parseBigDecimal` — по одному формату на точку и на запятую, с проверкой, что прочитан весь ввод.
+Срок годности читает `DateTimeFormatter` со `ResolverStyle.STRICT`, а последний день месяца
+называет `YearMonth.atEndOfMonth`: длину месяца и правило високосного года знает календарь.
+Исключение одно — `Quantity.parse`: там шаблон и есть контракт B2, который обязан отвергать знак,
+экспоненту и лишние разряды ровно так же, как это сделает сервер.
 
 ## D2. Аптечка
 
