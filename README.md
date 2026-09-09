@@ -1,3 +1,5 @@
+<img src="art/icon.png" alt="" width="120" align="right" />
+
 # MedApp — Android-клиент
 
 Мобильный клиент [MedApp](https://github.com/Kert0n/MedApp): учёт домашней аптечки, общие аптечки,
