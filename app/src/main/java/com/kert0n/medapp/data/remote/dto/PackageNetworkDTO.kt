@@ -5,7 +5,6 @@ import com.kert0n.medapp.domain.model.PACKAGE_COUNTRY_MAX_LENGTH
 import com.kert0n.medapp.domain.model.PACKAGE_DESCRIPTION_MAX_LENGTH
 import com.kert0n.medapp.domain.model.PACKAGE_MANUFACTURER_MAX_LENGTH
 import com.kert0n.medapp.domain.model.PACKAGE_NAME_MAX_LENGTH
-import com.kert0n.medapp.domain.model.Quantity
 import com.kert0n.medapp.domain.model.requireOptionalText
 import com.kert0n.medapp.domain.model.requireText
 import kotlin.uuid.Uuid
@@ -17,12 +16,15 @@ import kotlin.uuid.Uuid
  * сюда не попадают **физически**, а не по договорённости. Список полей здесь и список на экране
  * последствий публикации (PLAN E5) — одно и то же.
  *
- * Живёт в сетевом слое, а не в домене: это форма провода. Величины пока доменные (`Quantity`);
- * превращение в десятичные строки и `@Serializable` придут вместе с настоящим контрактом в PR 5.
+ * Живёт в сетевом слое, а не в домене: это форма провода, и величины в ней уже проводные.
+ * Количество — десятичная строка по шаблону B2 и отдельный идентификатор единицы, потому что
+ * именно это принимает сервер; доменный `Quantity` в тело запроса не попадает. `@Serializable`
+ * и точные имена полей придут вместе с настоящим контрактом в PR 5.
  */
 data class PackagePostNetworkDTO(
     val name: String,
-    val quantity: Quantity,
+    val amount: String,
+    val unitId: Uuid,
     val formId: Uuid?,
     val category: String?,
     val manufacturer: String?,
@@ -34,6 +36,7 @@ data class PackagePostNetworkDTO(
         // между «влезло в модель» и «влезло в запрос» означало бы отказ сервера после успешного
         // сохранения.
         requireText(name, PACKAGE_NAME_MAX_LENGTH, "PackagePostNetworkDTO.name")
+        requireWireAmount(amount, "PackagePostNetworkDTO.amount")
         requireOptionalText(
             category,
             PACKAGE_CATEGORY_MAX_LENGTH,
@@ -61,10 +64,13 @@ data class PackagePostNetworkDTO(
  * `PackageFacts` тот же `null` значит ровно обратное — «сведений нет», — и именно поэтому тип
  * отдельный и лежит в другом слое: одно поле с двумя противоположными смыслами `null` рано или
  * поздно прочитали бы не по той стороне границы.
+ *
+ * Количество и единица идут порознь и обе необязательны: сервер принимает их независимо, а
+ * доменное `Quantity` держало бы единицу дважды — внутри величины и рядом с ней.
  */
 data class PackagePatchNetworkDTO(
     val name: String? = null,
-    val quantity: Quantity? = null,
+    val amount: String? = null,
     val unitId: Uuid? = null,
     val formId: Uuid? = null,
     val category: String? = null,
@@ -74,6 +80,7 @@ data class PackagePatchNetworkDTO(
 ) {
     init {
         require(name == null || name.isNotBlank()) { "название нельзя очистить" }
+        amount?.let { requireWireAmount(it, "PackagePatchNetworkDTO.amount") }
         require(name == null || name.length <= PACKAGE_NAME_MAX_LENGTH) {
             "PackagePatchNetworkDTO.name: длиннее $PACKAGE_NAME_MAX_LENGTH символов"
         }
@@ -92,8 +99,18 @@ data class PackagePatchNetworkDTO(
     }
 
     val isEmpty: Boolean
-        get() = name == null && quantity == null && unitId == null && formId == null &&
+        get() = name == null && amount == null && unitId == null && formId == null &&
                 category == null && manufacturer == null && country == null && description == null
+}
+
+/**
+ * Шаблон количества на проводе (PLAN B2): не больше 13 разрядов до точки и 6 после, без знака и
+ * экспоненты. Проверяется здесь, потому что обещание даёт запрос, а не величина.
+ */
+private val WIRE_AMOUNT = Regex("""^\d{1,13}(\.\d{1,6})?$""")
+
+private fun requireWireAmount(amount: String, field: String) {
+    require(WIRE_AMOUNT.matches(amount)) { "$field: не десятичная строка контракта B2" }
 }
 
 /**

@@ -26,7 +26,8 @@ data class PackagePatchNetworkMapping(
  */
 fun Package.toPostNetworkDTO(): PackagePostNetworkDTO = PackagePostNetworkDTO(
     name = name,
-    quantity = quantity,
+    amount = quantity.toNetworkAmount(),
+    unitId = quantity.unitId,
     formId = formId,
     category = category,
     manufacturer = manufacturer,

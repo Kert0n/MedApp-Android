@@ -8,7 +8,7 @@ import com.kert0n.medapp.domain.model.PACKAGE_DESCRIPTION_MAX_LENGTH
 import com.kert0n.medapp.domain.model.TABLET_FORM
 import com.kert0n.medapp.domain.model.factsOf
 import com.kert0n.medapp.domain.model.pack
-import com.kert0n.medapp.domain.model.tablets
+import com.kert0n.medapp.domain.model.TABLETS
 import java.math.BigDecimal
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -92,10 +92,32 @@ class PackageNetworkMapperTest {
 
     @Test
     fun creationCarriesTheServerHalfOnly() {
-        val fields = onServer(note = "в машине").toPostNetworkDTO()
-        assertEquals("Парацетамол", fields.name)
-        assertEquals(tablets("20"), fields.quantity)
-        assertEquals(TABLET_FORM, fields.formId)
+        val dto = onServer(note = "в машине").toPostNetworkDTO()
+        assertEquals("Парацетамол", dto.name)
+        assertEquals(TABLET_FORM, dto.formId)
+    }
+
+    @Test
+    fun quantityBecomesADecimalStringAndAUnitOfItsOwn() {
+        // Величина уходит на провод разложенной: строка по шаблону B2 и идентификатор единицы,
+        // потому что именно это принимает сервер.
+        val dto = onServer().toPostNetworkDTO()
+        assertEquals("20", dto.amount)
+        assertEquals(TABLETS, dto.unitId)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun amountOutsideTheContractIsRejectedByTheRequest() {
+        PackagePostNetworkDTO(
+            name = "Парацетамол",
+            amount = "1E+3",
+            unitId = TABLETS,
+            formId = null,
+            category = null,
+            manufacturer = null,
+            country = null,
+            description = null
+        )
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -117,7 +139,8 @@ class PackageNetworkMapperTest {
     fun wireFieldsRefuseAnOverlongDescription() {
         PackagePostNetworkDTO(
             name = "Парацетамол",
-            quantity = tablets("20"),
+            amount = "20",
+            unitId = TABLETS,
             formId = null,
             category = null,
             manufacturer = null,
