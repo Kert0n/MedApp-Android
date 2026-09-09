@@ -9,11 +9,13 @@ import com.kert0n.medapp.domain.model.TABLET_FORM
 import com.kert0n.medapp.domain.model.factsOf
 import com.kert0n.medapp.domain.model.pack
 import com.kert0n.medapp.domain.model.TABLETS
+import com.kert0n.medapp.domain.model.Quantity
 import java.math.BigDecimal
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 /**
@@ -22,6 +24,25 @@ import org.junit.Test
  * и здесь же проверяется.
  */
 class PackageNetworkMapperTest {
+
+    @Test
+    fun postRejectsEverySpellingOfZero() {
+        for (amount in listOf("0", "0.0", "000.000000")) {
+            assertThrows(IllegalArgumentException::class.java) {
+                onServer.toPostNetworkDTO().copy(amount = amount)
+            }
+        }
+    }
+
+    @Test
+    fun postAcceptsTheSmallestPositiveAmount() {
+        assertEquals("0.000001", onServer.toPostNetworkDTO().copy(amount = "0.000001").amount)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun exhaustedPackCannotBecomeACreationRequest() {
+        onServer.correctTo(Quantity.zero(TABLETS)).toPostNetworkDTO()
+    }
 
     private fun onServer(version: Long? = 7, note: String? = null) = pack(
         name = "Парацетамол",

@@ -81,20 +81,26 @@ class PackageIdentityTest {
         assertEquals(PackageStatus.ARCHIVED, restored.status)
     }
 
+    @Test(expected = IllegalArgumentException::class)
+    fun restoringDoesNotBypassTheActiveStockInvariant() {
+        pack(quantity = Quantity.zero(TABLETS), status = PackageStatus.ACTIVE)
+    }
+
+    @Test
+    fun inaccessiblePackWithNothingLeftCanBeRestored() {
+        val restored = pack(quantity = Quantity.zero(TABLETS), status = PackageStatus.INACCESSIBLE)
+        assertTrue(restored.quantity.isZero)
+        assertEquals(PackageStatus.INACCESSIBLE, restored.status)
+    }
+
     @Test
     fun renamedKitIsTheSameKit() {
         val created = MedKit.create(HOME_KIT, "Домашняя", null, Instant.EPOCH)
-        val renamed = MedKit.restore(
-            id = HOME_KIT,
-            name = "Дачная",
-            location = "верхняя полка",
-            publication = KitPublication.LOCAL,
-            participantCount = 1,
-            createdAt = Instant.EPOCH,
-            syncedAt = null
-        )
+        val renamed = created.describe(name = "Дачная", location = "верхняя полка")
         assertEquals(created, renamed)
         assertEquals(created.hashCode(), renamed.hashCode())
+        assertEquals("Дачная", renamed.name)
+        assertEquals("верхняя полка", renamed.location)
     }
 
     @Test

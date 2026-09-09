@@ -1,11 +1,41 @@
 package com.kert0n.medapp.domain.model
 
 import java.time.Instant
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MedKitTest {
+
+    @Test
+    fun describingKeepsPublicationAndClearsLocation() {
+        val original = kit(
+            publication = KitPublication.PUBLISHED,
+            participants = 3,
+            syncedAt = Instant.ofEpochSecond(100)
+        )
+        val edited = original.describe(name = "Дачная", location = null)
+        assertEquals("Дачная", edited.name)
+        assertNull(edited.location)
+        assertEquals(original.id, edited.id)
+        assertEquals(original.publication, edited.publication)
+        assertEquals(original.participantCount, edited.participantCount)
+        assertEquals(original.createdAt, edited.createdAt)
+        assertEquals(original.syncedAt, edited.syncedAt)
+        assertEquals("Домашняя", original.name)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun describingRejectsBlankName() {
+        kit().describe(" ", null)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun describingRejectsBlankLocation() {
+        kit().describe("Домашняя", " ")
+    }
 
     @Test
     fun publishingKitDoesNotHandOutInvitationsYet() {

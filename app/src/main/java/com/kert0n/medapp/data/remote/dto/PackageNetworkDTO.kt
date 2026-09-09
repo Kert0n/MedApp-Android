@@ -37,6 +37,9 @@ data class PackagePostNetworkDTO(
         // сохранения.
         requireText(name, PACKAGE_NAME_MAX_LENGTH, "PackagePostNetworkDTO.name")
         requireWireAmount(amount, "PackagePostNetworkDTO.amount")
+        require(amount.any { it in '1'..'9' }) {
+            "PackagePostNetworkDTO.amount: начальный остаток должен быть положительным"
+        }
         requireOptionalText(
             category,
             PACKAGE_CATEGORY_MAX_LENGTH,

@@ -313,6 +313,9 @@ UUID и проверяем принадлежность; недоступнос�
 | **Разбор ввода**               | `parse` у доменных значений, тексты по-русски     | `presentation/dto` + `presentation/mapper`, причина — перечисление                | указание пользователя: домен требует готовые типы. Иначе смена способа ввода правит домен, а домен решает, на каком языке говорит приложение   |
 | **Формат провода и колонки**   | `toWire()` у величины                            | сетевой маппер и конвертер хранения                                              | контракт представления принадлежит адаптеру: смена формата API или БД не должна трогать модель                                                |
 | **Сущность против величины**   | `Package` и `MedKit` — `data class`               | обычные классы с тождеством по `id`, `create`/`restore`                           | смена поля не делает пачку другой пачкой. `copy()` обходил переходы: воспроизведены оживление архива и пустая активная пачка                  |
+| **Состояние экрана**           | сущность внутри `StateFlow` сравнивалась по `id` | `PackagePresentationDTO` / `MedKitPresentationDTO` с равенством по содержимому, преобразование до подавления равных значений | исправление по ревью: расход 20 → 19 не должен оставлять на экране 20; тождество домена сохраняется |
+| **Восстановление сущности**    | положительный остаток проверял только `create`  | `ACTIVE` с нулём отвергается и при `restore`; личные сведения аптечки меняет `describe` | восстановление не выполняет переходы, но соблюдает инварианты состояния; изменение не маскируется под чтение из базы |
+| **Намерение и HTTP-запрос**    | `SyncIntent` содержал сетевые DTO               | доменные значения в намерении; DTO и `PreparedRequest` только в `data` | доменные проекции и вычислители не зависят от способа отправки; неизменность подготовленного запроса E3 сохраняется |
 | **Предел целой части цены**    | брался из `QUANTITY_MAX_INTEGER_DIGITS`          | свой `MONEY_MAX_INTEGER_DIGITS`, серверный предел принят как продуктовый          | решение пользователя: цена на сервер не уезжает, и её граница — решение продукта, а не побочный эффект общей константы                        |
 | **Имена типов**                | придумывались под каждый случай                   | сущность + назначение + слой: `PackagePatchNetworkDTO`                            | решение пользователя: по имени видно, что это и чьё, без чтения KDoc                                                                          |
 | **Нижняя граница Android**     | Android 8.0 (`minSdk` 26)                        | **Android 10 (`minSdk` 29)**                                                      | решение пользователя 2026-09-09; ТЗ 4.5–4.6 называет 8.0, но доля 8.x не оправдывает поддержку, а 29 снимает часть ограничений платформы  |
@@ -441,8 +444,8 @@ data class DosageForm(val id: Uuid, val name: String)
 `parseBigDecimal` — по одному формату на точку и на запятую, с проверкой, что прочитан весь ввод.
 Срок годности читает `DateTimeFormatter` со `ResolverStyle.STRICT`, а последний день месяца
 называет `YearMonth.atEndOfMonth`: длину месяца и правило високосного года знает календарь.
-Исключение одно — `Quantity.parse`: там шаблон и есть контракт B2, который обязан отвергать знак,
-экспоненту и лишние разряды ровно так же, как это сделает сервер.
+Шаблон ввода количества проверяет `QuantityPresentationDTO.toDomain()` в `presentation/mapper`.
+Доменные значения принимают готовые числа и даты; проверка строки запроса принадлежит сети.
 
 ## D2. Аптечка
 
@@ -453,7 +456,7 @@ enum class KitPublication {
     PUBLISHED     // существует на сервере
 }
 
-data class MedKit(
+class MedKit private constructor(
     val id: Uuid,                      // придуман клиентом; он же серверный
     val name: String,                  // 1..200, только на устройстве
     val location: String?,             // ≤300, место хранения; только на устройстве
@@ -464,8 +467,14 @@ data class MedKit(
 ) {
     val isShared: Boolean get() = participantCount > 1
     val acceptsInvitations: Boolean get() = publication == KitPublication.PUBLISHED
+
+    fun describe(name: String, location: String?): MedKit
 }
 ```
+
+`describe` изменяет название и место хранения, проверяя их доменные ограничения. Идентификатор,
+даты, число участников и состояние публикации сохраняются. `restore` служит восстановлению,
+а не редактированию сведений.
 
 **`PUBLISHING` — не косметика.** Пока группа операций публикации не завершена целиком, часть пачек
 на сервере уже есть, а часть нет; приглашение в этом состоянии выдавать нельзя — второй участник
@@ -567,6 +576,10 @@ data class PackageFacts(
 включая архивную пачку с нулём. Без этого правило «пересчёт не оживляет архив» соблюдалось бы
 дисциплиной вызывающего кода: `copy(status = ACTIVE)` его обходил, а `copy(quantity = zero)`
 оставлял пустую пачку активной.
+
+Инвариант `status == ACTIVE → quantity > 0` проверяется в общем конструкторе и действует при
+`restore`. Нулевой остаток допустим у `ARCHIVED` и `INACCESSIBLE`. Восстановление не оживляет
+архив и не нормализует противоречивое состояние молча: такие данные отвергаются на входе в домен.
 
 **Три направления представлений, и ни одно из них не домен.** Сеть — `PackagePostNetworkDTO` и
 `PackagePatchNetworkDTO` в `data/remote/dto`, сравнение состояний и `PackagePatchNetworkMapping` —
@@ -673,10 +686,8 @@ sealed interface StockViewState {
         StockViewState
 }
 
-data class PackageView(
+data class PackageStock(
     val pkg: Package,
-    val unitName: String,
-    val formName: String?,
     val pendingIntents: List<SyncIntent>, // незакрытые локальные намерения, в порядке sequence
     val myAllocation: Quantity,         // из course_sources активных курсов
     val course: CourseBrief?,           // курс, которому назначена пачка
@@ -693,6 +704,12 @@ data class PackageView(
 
 data class CourseBrief(val id: Uuid, val title: String, val allocatedDoses: Int)
 ```
+
+`PackageStock` — доменная проекция для расчётов, а не состояние экрана. Она использует только
+доменные намерения E2, не знает DTO, HTTP и названий из словарей. Адаптер представления добавляет
+названия единицы/формы и преобразует результат в состояние с равенством по содержимому (H1).
+Эта проекция запланирована; текущий `PackagePresentationDTO` представляет сохранённую упаковку,
+и его `quantity` не подменяет будущий расчёт `effective`.
 
 ## D5. Курс
 
@@ -1214,7 +1231,7 @@ data class NotificationSettings(
 | намерение                    | проекция                                                                                                   |
 |------------------------------|------------------------------------------------------------------------------------------------------------|
 | `Consume(amount)`            | вычесть `amount` один раз                                                                                  |
-| `PatchPackage` с количеством | заменить на введённый фактический остаток; это не дельта                                                   |
+| `CorrectStock(actual)`       | заменить на введённый фактический остаток; это не дельта                                                   |
 | `DeletePackage`              | ноль и состояние ожидающего архивирования                                                                  |
 | описательная правка, бронь   | количества не меняют                                                                                       |
 | `CreatePackage`              | начальная база уже зафиксирована локально; второй приход не создаётся                                      |
@@ -1241,16 +1258,36 @@ data class NotificationSettings(
 
 ## E2. Очередь: намерение, запрос, исход
 
+**Граница слоёв.** `SyncIntent`, `PackageDescription` и `SyncOperationStatus` — доменные типы
+без зависимостей от DTO и HTTP. `PackageDescription` — описательные сведения о препарате:
+название, форма, категория, производитель, страна и описание, с теми же инвариантами, что в D3.
+Личные срок, заметка и цена остаются в локальных сведениях упаковки и не дублируются в намерении
+отправки. Эти типы пока запланированы в PR 3.
+
 ```kotlin
+// domain/model — смысл действия, не формат запроса
+data class PackageDescription(
+    val name: String,
+    val formId: Uuid?,
+    val category: String?,
+    val manufacturer: String?,
+    val country: String?,
+    val description: String?
+) // инварианты текста из D3; это значение, а не сетевой DTO
+
 sealed interface SyncIntent {
     data class CreateMedKit(val medKitId: Uuid) : SyncIntent
     data class DeleteMedKit(val medKitId: Uuid, val transferTo: Uuid?) : SyncIntent
     data class LeaveMedKit(val medKitId: Uuid) : SyncIntent
     data class CreatePackage(
         val packageId: Uuid, val medKitId: Uuid,
-        val fields: PackagePostNetworkDTO
+        val quantity: Quantity, val description: PackageDescription
     ) : SyncIntent
-    data class PatchPackage(val packageId: Uuid, val dto: PackagePatchNetworkDTO) : SyncIntent
+    data class DescribePackage(
+        val packageId: Uuid,
+        val before: PackageDescription, val after: PackageDescription
+    ) : SyncIntent
+    data class CorrectStock(val packageId: Uuid, val actual: Quantity) : SyncIntent
     data class MovePackage(val packageId: Uuid, val targetMedKitId: Uuid) : SyncIntent
     data class DeletePackage(val packageId: Uuid) : SyncIntent
     data class Consume(
@@ -1265,6 +1302,7 @@ sealed interface SyncIntent {
     ) : SyncIntent
 }
 
+// data/sync — технический запрос, недоступный доменным вычислителям
 data class PreparedRequest(
     val method: String,
     val path: String,
@@ -1277,6 +1315,7 @@ data class PreparedRequest(
     val preparedAt: Instant
 )
 
+// domain/model — состояние исхода, нужное проекциям
 enum class SyncOperationStatus {
     PENDING,         // ожидает; prepared != null означает сохранённый запрос, который менять нельзя
     SENDING,         // запрос выполняется
@@ -1289,6 +1328,7 @@ enum class SyncOperationStatus {
     ACCESS_LOST
 }
 
+// data/sync — запись очереди связывает доменное намерение и подготовленный запрос
 data class SyncOperation(
     val id: Uuid,                       // syncId для Consume по курсу
     val intent: SyncIntent,
@@ -1305,6 +1345,18 @@ data class SyncOperation(
     val reconciledBy: Uuid?             // операция ручного пересчёта
 )
 ```
+
+Сетевой маппер переводит доменное намерение в `PackagePostNetworkDTO` / `PackagePatchNetworkDTO`
+только при подготовке запроса. `DescribePackage.before/after` сохраняют исходное и желаемое
+описание: неизменённые поля не отправляются, очистка текста становится `""`, ограничение очистки
+формы не теряется. Проверка исходной версии и конфликт описания остаются по E3. `CorrectStock`
+выражает абсолютный пересчёт; ноль переводится в DELETE. Создание требует положительного остатка
+и в доменном сценарии, и в DTO POST, включая записи `"0.0"` и `"000.000000"`.
+
+`SyncOperation` и `PreparedRequest` не входят в аргументы доменных вычислителей. Слой data
+передаёт туда доменные намерения в порядке sequence и сведения об установленности исхода.
+Сохранённый `PreparedRequest` по-прежнему замораживается до отправки и не пересобирается на повторе.
+Разделение слоёв не меняет политику E3 и принятое допущение RK-SYNC-01.
 
 `claimAfter = null` — внеплановый расход через `POST .../intakes`; положительный `claimAfter` —
 курсовой `sync` с расходом и абсолютной новой бронью; нулевой `claimAfter` — курсовой `sync`
@@ -1692,7 +1744,7 @@ ui  →  domain  ←  data (local | remote | sync)
 com.kert0n.medapp
 ├─ app/        MedApp(@HiltAndroidApp), MainActivity, navigation/
 ├─ core/       result/, time/(Clock), text/
-├─ presentation/  dto/ (величины строками), mapper/ (toDomain, PresentationMapping)
+├─ presentation/  dto/ (ввод и состояние по содержимому), mapper/ (toDomain, toPresentationDTO)
 ├─ di/         NetworkModule, DatabaseModule, RepositoryModule, WorkModule, DispatcherModule
 ├─ domain/
 │   ├─ model/      Quantity, MedKit, Package, Course, Intake, StockAdjustment, ...
@@ -1713,6 +1765,16 @@ com.kert0n.medapp
 **Один Gradle-модуль `:app`.** Границы задаются пакетами и интерфейсами; модуль не дробится без
 отдельного обоснования. ViewModel не читает DAO и HTTP. Сохранённые данные приходят из Room,
 несохранённые поля и диалоги — из состояния формы.
+
+**Тождество сущности не равно равенству состояния экрана.** `Package` и `MedKit` сравниваются
+по `id`. Сохранённые данные преобразуются через `toPresentationDTO()` до `stateIn`, `StateFlow`
+и `distinctUntilChanged`: после подавления равных сущностей восстановить изменение нельзя.
+Репозиторий отдаёт `Flow` актуальных доменных состояний без подавления по тождеству; адаптер
+представления строит `PackagePresentationDTO` / `MedKitPresentationDTO`, затем состояние экрана.
+Вложить саму сущность в `data class UiState` недостаточно: его `equals` снова сравнит только id.
+DTO состояния не содержат сущностей; доменные перечисления допустимы как общий словарь состояний.
+Числа при отображении сохранённого состояния нормализуются, чтобы `1` и `1.000000` не создавали
+ложных изменений. Несохранённый ввод остаётся как напечатан, без такой нормализации.
 
 Чистые вычислители получают все входы явно, без Room и системных часов:
 
@@ -1757,7 +1819,7 @@ interface ForecastCalculator {
     // Дата включительно в reportZone; горизонт не больше трёх календарных месяцев.
     fun remainingOn(
         date: LocalDate, reportZone: ZoneId, now: Instant,
-        packages: List<PackageView>, courses: List<Course>,
+        packages: List<PackageStock>, courses: List<Course>,
         resolved: List<Intake>
     ): List<PackageForecast>
 }
@@ -1777,7 +1839,7 @@ interface ForecastCalculator {
 
 ```kotlin
 data class XxxUiState(
-    val content: Xxx? = null,
+    val content: XxxPresentationDTO? = null,
     val isLoading: Boolean = false,
     val message: UiMessage? = null      // одноразовое: ошибка, подтверждение, предупреждение
 )
@@ -1786,7 +1848,7 @@ class XxxViewModel @Inject constructor(
     private val repository: XxxRepository,
     savedState: SavedStateHandle        // аргументы маршрута; переживают смерть процесса
 ) : ViewModel() {
-    val state: StateFlow<XxxUiState>    // stateIn(WhileSubscribed(5_000))
+    val state: StateFlow<XxxUiState>    // map(toPresentationDTO) → stateIn(WhileSubscribed(5_000))
     fun onAction(action: XxxAction)
 }
 ```
@@ -2114,7 +2176,10 @@ enum class PackageSort { NAME, EXPIRY, ADDED_AT, QUANTITY }
 нулевой дозе — ошибка; `consume` до нуля даёт `ARCHIVED`; **`isExpiredOn` на границе: годен «до 31
 марта» — 31 марта
 ещё годен, 1 апреля просрочен**; **ввод «03.2027» разворачивается в 31 марта 2027**;
-`correctTo(0)` архивирует.
+`correctTo(0)` архивирует. `restore(ACTIVE, 0)` отвергается, архив с нулём восстанавливается.
+`MedKit.describe` сохраняет публикацию и допускает очистку места хранения. DTO POST отвергает
+все записи нуля. Преобразование перед `stateIn` сохраняет обновления остатка, заметки и статуса
+упаковки, названия и места хранения аптечки; разные масштабы одного числа дают равные DTO.
 
 ---
 
@@ -2136,7 +2201,7 @@ enum class PackageSort { NAME, EXPIRY, ADDED_AT, QUANTITY }
 | 10 | `Пропуск освобождает выделение, а не оставляет бронь`          | пересчёт при `SKIPPED`, `MISSED`, частичной дозе                                                        |
 | 11 | `Нехватка зажимает выделение, не трогая расписания`            | формула пересчёта и все события изменения её входов (D5, F5)                                            |
 | 12 | `Прогноз считается формулой, а не строками`                    | сигнатуры H1, `ForecastCalculator`                                                                      |
-| 13 | `Приём и его учёт имеют явные состояния`                       | `Intake`, `IntakeAccounting`, переходы D6; модели `SyncIntent`/`SyncOperation`, используемые базой PR 4 |
+| 13 | `Приём и его учёт имеют явные состояния`                       | `Intake`, `IntakeAccounting`, переходы D6; доменные `SyncIntent`, `PackageDescription`, `SyncOperationStatus`; запись очереди `SyncOperation` и `PreparedRequest` — data в PR 4 |
 
 **Тесты:** окно расписания через месяц и год; **несуществующее и повторяющееся время** в дни
 перехода — по названному правилу; пустая маска дней отвергнута; потребность 28 при выделении 5 и 4
@@ -2233,7 +2298,7 @@ enum class PackageSort { NAME, EXPIRY, ADDED_AT, QUANTITY }
 |---|------------------------------------------------------------|----------------------------|
 | 1 | `Аптечка заводится и переименовывается без сети`           | экраны 2 и 3               |
 | 2 | `Упаковку можно завести, зная только четыре поля`          | экран 7, валидация         |
-| 3 | `Карточка показывает, сколько свободно и чем занято`       | экран 6, `PackageView`     |
+| 3 | `Карточка показывает, сколько свободно и чем занято`       | экран 6, доменный `PackageStock` → DTO представления     |
 | 4 | `Правка не трогает количество`                             | экран 8                    |
 | 5 | `Пересчёт и утилизация оставляют след в истории`           | экран 9, `StockAdjustment` |
 | 6 | `Перенос между локальными аптечками — одна транзакция`     | экран 11                   |
@@ -2638,13 +2703,13 @@ TalkBack; отсутствие связи при запуске уже наст�
 | REQ-045 | Разрешение конфликта количества                                     | ТЗ 4.1.1.13; C1                         | E3, D5     | 13, 15    | сценарий J2.3                              | —         |
 | REQ-046 | Уведомление об изменении обеспечения                                | ТЗ 4.1.1.13; C1                         | D8         | 11, 15    | `COVERAGE_SHORT`                           | —         |
 |         | **Входные данные**                                                  |                                         |            |           |                                            |           |
-| REQ-047 | Проверка типов, длин, бизнес-логики                                 | ТЗ 4.1.2                                | D1, H3     | 2, 7      | `Quantity.parse`, лимиты полей             | PR 2      |
+| REQ-047 | Проверка типов, длин, бизнес-логики                                 | ТЗ 4.1.2                                | D1, H3     | 2, 7      | мапперы ввода, лимиты, инварианты create/restore | PR 2      |
 | REQ-048 | «Реалистично некорректные» данные принимаются и отрабатываются      | ТЗ 4.1.2                                | D3         | 7         | просроченная дата вводится                 | —         |
 |         | **Интерфейс**                                                       |                                         |            |           |                                            |           |
 | REQ-049 | Десять обязательных экранов                                         | ТЗ 4.2                                  | H3         | 6–17      | навигационный тест                         | —         |
 | REQ-050 | Подтверждения опасных действий                                      | ТЗ 4.2                                  | H3         | 7–14      | список из девяти                           | —         |
 |         | **Надёжность**                                                      |                                         |            |           |                                            |           |
-| REQ-051 | Не падает ни на каком вводе                                         | ТЗ 4.3                                  | D1, H2     | 2, 5      | `parse` возвращает `Result`; битый JSON    | PR 2      |
+| REQ-051 | Не падает ни на каком вводе                                         | ТЗ 4.3                                  | D1, H2     | 2, 5      | ввод возвращает `PresentationMapping`; битый JSON — PR 5 | PR 2      |
 |         | **Совместимость**                                                   |                                         |            |           |                                            |           |
 | REQ-052 | Android 10 и выше                                                   | ТЗ 4.5–4.6; решение C1 от 2026-09-09    | H2         | 1         | запуск на API 29                           | ✔ PR 1    |
 | REQ-053 | Камера обязательна для сканирования                                 | ТЗ 4.5–4.6                              | H5         | 16        | отказ ведёт к ручному вводу                | —         |

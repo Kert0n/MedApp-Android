@@ -75,6 +75,9 @@ class Package private constructor(
         requireOptionalText(description, PACKAGE_DESCRIPTION_MAX_LENGTH, "Package.description")
         requireOptionalText(note, PACKAGE_NOTE_MAX_LENGTH, "Package.note")
         require(version == null || version >= 0) { "версия пачки не бывает отрицательной" }
+        require(status != PackageStatus.ACTIVE || !quantity.isZero) {
+            "активная пачка не бывает пустой"
+        }
         // Подсказка — это «сколько я обычно принимаю из ЭТОЙ пачки»: величина в чужой единице
         // не подставится в форму приёма и молча притворилась бы подходящей.
         require(defaultIntakeAmount == null || defaultIntakeAmount.unitId == quantity.unitId) {

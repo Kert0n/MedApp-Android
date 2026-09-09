@@ -53,6 +53,17 @@ class MedKit private constructor(
      */
     val acceptsInvitations: Boolean get() = publication == KitPublication.PUBLISHED
 
+    /** Меняет личные сведения, сохраняя тождество и состояние публикации аптечки. */
+    fun describe(name: String, location: String?): MedKit = MedKit(
+        id = id,
+        name = name,
+        location = location,
+        publication = publication,
+        participantCount = participantCount,
+        createdAt = createdAt,
+        syncedAt = syncedAt
+    )
+
     /** Тождество — [id]: переименованная аптечка остаётся той же аптечкой. */
     override fun equals(other: Any?): Boolean =
         this === other || (other is MedKit && other.id == id)
