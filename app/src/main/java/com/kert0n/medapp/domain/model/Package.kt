@@ -93,4 +93,109 @@ data class Package(
         if (expires.isBefore(date)) return false
         return !expires.isAfter(date.plusDays(days))
     }
+
+    /**
+     * Расход: приём, плановый или разовый.
+     *
+     * Нехватка бросает — через [Quantity.minus], — потому что списание в минус запрещено
+     * (PLAN D5). Пачка, израсходованная до нуля, архивируется, а не удаляется: строка остаётся,
+     * и приёмы с движениями продолжают читаться по ней (PLAN D3).
+     */
+    fun consume(amount: Quantity): Package {
+        requireActive("расход")
+        require(!amount.isZero) { "расход нулевого количества не является приёмом" }
+        return withQuantity(quantity - amount)
+    }
+
+    /**
+     * Пересчёт: «пересчитал и увидел столько».
+     *
+     * Замена значения, а не дельта (PLAN E1), поэтому фактический остаток может оказаться и
+     * больше прежнего. Единица обязана совпадать: смена единицы — отдельный сценарий пересчёта
+     * без автоматической конверсии (PLAN D3), а не побочный эффект исправления числа.
+     */
+    fun correctTo(actual: Quantity): Package {
+        requireActive("пересчёт")
+        require(actual.unitId == quantity.unitId) {
+            "пересчёт не меняет единицу: это отдельный сценарий"
+        }
+        return withQuantity(actual)
+    }
+
+    /** Применяет сохранённую форму целиком — и серверные поля, и локальные (PLAN D3). */
+    fun describe(edit: PackageEdit): Package {
+        requireActive("правка описания")
+        return copy(
+            name = edit.name,
+            formId = edit.formId,
+            category = edit.category,
+            manufacturer = edit.manufacturer,
+            country = edit.country,
+            description = edit.description,
+            expiresOn = edit.expiresOn,
+            defaultIntakeAmount = edit.defaultIntakeAmount,
+            note = edit.note,
+            price = edit.price,
+            purchasedOn = edit.purchasedOn,
+            openedOn = edit.openedOn
+        )
+    }
+
+    /**
+     * Перенос в другую аптечку.
+     *
+     * Меняется только принадлежность. Что делать с серверной версией и бронями при переносе
+     * через границу публикации, решает сценарий переноса (PLAN E6): домен не знает, опубликована
+     * ли целевая аптечка, и притворяться, что знает, здесь нельзя.
+     */
+    fun moveTo(medKitId: Uuid): Package {
+        requireActive("перенос")
+        require(medKitId != this.medKitId) { "пачка уже лежит в этой аптечке" }
+        return copy(medKitId = medKitId)
+    }
+
+    /**
+     * Утилизация или удаление человеком.
+     *
+     * Идемпотентно: повторное нажатие не должно превращаться в ошибку. Из [INACCESSIBLE]
+     * [PackageStatus.INACCESSIBLE] тоже разрешено — так человек убирает из списка пачку,
+     * доступ к которой потерян.
+     */
+    fun archive(): Package =
+        if (status == PackageStatus.ARCHIVED) this else copy(status = PackageStatus.ARCHIVED)
+
+    /**
+     * Доступ утрачен: вышли из аптечки, унесли её или удалили.
+     *
+     * Брони снимаются: сервер снимает их каскадом по участию (PLAN D5), и держать их снимок
+     * значило бы показывать чужие брони на пачке, которой у нас больше нет. [version]
+     * сохраняется как последнее наблюдённое, но предусловием больше не служит — связанные
+     * операции очереди снимает сценарий синхронизации.
+     *
+     * Из [ARCHIVED][PackageStatus.ARCHIVED] переход запрещён: он ничего не добавляет к истории,
+     * а пачку из неё спрятал бы.
+     */
+    fun loseAccess(): Package {
+        if (status == PackageStatus.INACCESSIBLE) return this
+        check(status != PackageStatus.ARCHIVED) {
+            "архивная пачка доступ не теряет: её история уже закрыта"
+        }
+        return copy(status = PackageStatus.INACCESSIBLE, claims = null)
+    }
+
+    private fun withQuantity(left: Quantity): Package = copy(
+        quantity = left,
+        status = if (left.isZero) PackageStatus.ARCHIVED else status
+    )
+
+    /**
+     * Пересчёт не оживляет архив, а описание недоступной пачки не правится.
+     *
+     * `ARCHIVED` означает «израсходована, утилизирована или удалена человеком»; отменять
+     * осознанное удаление новым числом нельзя. Возврат из архива, если он понадобится, будет
+     * отдельным явным действием со своим экраном подтверждения.
+     */
+    private fun requireActive(action: String) {
+        check(status == PackageStatus.ACTIVE) { "$action недоступен для пачки в состоянии $status" }
+    }
 }
