@@ -3,24 +3,21 @@ package com.kert0n.medapp.domain.model
 import java.math.BigDecimal
 
 /**
- * Границы, в которых величина помещается в серверный `numeric(19, 6)` (PLAN B2).
+ * Механизм проверки десятичной величины. Пределы называет владелец правила и передаёт их явно.
  *
- * Одно место на все десятичные величины домена — количество, цену, бронь и движение остатка.
- * Порознь эти три `require` уже стояли в четырёх конструкторах, и разъехались бы они молча:
- * изменение `QUANTITY_SCALE` в одном из них прошло бы, а остальные продолжали бы жить по
- * прежнему правилу.
- *
- * [maxScale] отдельным параметром, потому что разрядность после точки — свойство величины:
- * у количества шесть знаков, у цены столько, сколько у её валюты.
+ * Значений по умолчанию здесь нет намеренно. Пока они были, цена проверялась серверным
+ * `QUANTITY_MAX_INTEGER_DIGITS`, хотя на сервер она не уезжает вовсе: изменение предела количества
+ * молча изменило бы допустимые цены. Помощник обязан не знать, чью величину он проверяет.
  */
 internal fun requireDecimalWithinLimits(
     amount: BigDecimal,
     field: String,
-    maxScale: Int = QUANTITY_SCALE
+    maxScale: Int,
+    maxIntegerDigits: Int
 ) {
     require(amount.scale() <= maxScale) { "$field: после точки не больше $maxScale знаков" }
-    require(amount.precision() - amount.scale() <= QUANTITY_MAX_INTEGER_DIGITS) {
-        "$field: до точки не больше $QUANTITY_MAX_INTEGER_DIGITS разрядов"
+    require(amount.precision() - amount.scale() <= maxIntegerDigits) {
+        "$field: до точки не больше $maxIntegerDigits разрядов"
     }
 }
 
@@ -28,8 +25,9 @@ internal fun requireDecimalWithinLimits(
 internal fun requireNonNegativeDecimal(
     amount: BigDecimal,
     field: String,
-    maxScale: Int = QUANTITY_SCALE
+    maxScale: Int,
+    maxIntegerDigits: Int
 ) {
     require(amount.signum() >= 0) { "$field: значение не бывает отрицательным" }
-    requireDecimalWithinLimits(amount, field, maxScale)
+    requireDecimalWithinLimits(amount, field, maxScale, maxIntegerDigits)
 }

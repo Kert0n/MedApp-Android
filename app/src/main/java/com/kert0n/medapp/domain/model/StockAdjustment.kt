@@ -54,7 +54,12 @@ data class StockAdjustment private constructor(
 
     init {
         // Знак у движения бывает любой, поэтому неотрицательности здесь нет — только границы.
-        requireDecimalWithinLimits(delta, "StockAdjustment.delta")
+        requireDecimalWithinLimits(
+            amount = delta,
+            field = "StockAdjustment.delta",
+            maxScale = QUANTITY_SCALE,
+            maxIntegerDigits = QUANTITY_MAX_INTEGER_DIGITS
+        )
         requireOptionalText(note, ADJUSTMENT_NOTE_MAX_LENGTH, "StockAdjustment.note")
 
         val transfer = kind == AdjustmentKind.TRANSFER_IN || kind == AdjustmentKind.TRANSFER_OUT

@@ -6,6 +6,11 @@ import kotlin.uuid.Uuid
 /** Разрядность величин у сервера — `numeric(19, 6)`; шесть знаков это деление таблетки и капли. */
 const val QUANTITY_SCALE = 6
 
+/**
+ * Предел целой части. Взят у серверного `numeric(19, 6)` и **принят как продуктовый**: величины
+ * такого размера в учёте лекарств не встречаются, и держать разные пределы для уезжающих и
+ * неуезжающих величин значило бы объяснять человеку два разных ограничения (решение PLAN C1).
+ */
 const val QUANTITY_MAX_INTEGER_DIGITS = 13
 
 /** Потолок числа доз: расписание такого размера отвергается задолго до этого (PLAN H1). */
@@ -27,7 +32,12 @@ private val MAX_DOSES = BigDecimal(Int.MAX_VALUE)
 data class Quantity(val amount: BigDecimal, val unitId: Uuid) {
 
     init {
-        requireNonNegativeDecimal(amount, "количество")
+        requireNonNegativeDecimal(
+            amount = amount,
+            field = "количество",
+            maxScale = QUANTITY_SCALE,
+            maxIntegerDigits = QUANTITY_MAX_INTEGER_DIGITS
+        )
     }
 
     val isZero: Boolean get() = amount.signum() == 0

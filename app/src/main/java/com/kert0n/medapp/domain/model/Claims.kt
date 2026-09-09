@@ -20,8 +20,8 @@ data class Claims(
 ) {
 
     init {
-        requireNonNegativeDecimal(total, "Claims.total")
-        mine?.let { requireNonNegativeDecimal(it, "Claims.mine") }
+        requireClaimAmount(total, "Claims.total")
+        mine?.let { requireClaimAmount(it, "Claims.mine") }
         require(version >= 0) { "версия картины броней не бывает отрицательной" }
     }
 
@@ -37,3 +37,12 @@ data class Claims(
         get() = (total - (mine ?: BigDecimal.ZERO)).coerceAtLeast(BigDecimal.ZERO)
 }
 
+/** Бронь живёт по серверным пределам: она приходит с сервера и туда же уезжает (PLAN B2). */
+private fun requireClaimAmount(amount: BigDecimal, field: String) {
+    requireNonNegativeDecimal(
+        amount = amount,
+        field = field,
+        maxScale = QUANTITY_SCALE,
+        maxIntegerDigits = QUANTITY_MAX_INTEGER_DIGITS
+    )
+}
