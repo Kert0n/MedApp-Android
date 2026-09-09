@@ -8,24 +8,6 @@ const val QUANTITY_SCALE = 6
 
 const val QUANTITY_MAX_INTEGER_DIGITS = 13
 
-/** 13 разрядов, точка и 6 знаков, плюс запас на ведущий ноль. */
-const val QUANTITY_MAX_INPUT_LENGTH = 21
-
-/** Почему введённая строка не стала количеством. Экран показывает причину, а не «неверный ввод». */
-enum class QuantityFormatReason(internal val reason: String) {
-    EMPTY("количество не введено"),
-    TOO_LONG("ввод длиннее $QUANTITY_MAX_INPUT_LENGTH символов"),
-    NOT_A_DECIMAL("количество — десятичное число без знака и экспоненты"),
-    TOO_MANY_FRACTION_DIGITS("после точки не больше $QUANTITY_SCALE знаков"),
-    TOO_MANY_INTEGER_DIGITS("до точки не больше $QUANTITY_MAX_INTEGER_DIGITS разрядов")
-}
-
-class QuantityFormatException(val formatReason: QuantityFormatReason) :
-    IllegalArgumentException(formatReason.reason)
-
-/** Разбор идёт до `BigDecimal`, чтобы длинный или чужой ввод не дошёл до конструктора вовсе. */
-private val DECIMAL_INPUT = Regex("""^\d+(\.\d+)?$""")
-
 /** Потолок числа доз: расписание такого размера отвергается задолго до этого (PLAN H1). */
 private val MAX_DOSES = BigDecimal(Int.MAX_VALUE)
 
@@ -37,6 +19,10 @@ private val MAX_DOSES = BigDecimal(Int.MAX_VALUE)
  *
  * Ноль допустим: остаток бывает нулевым. Строгая положительность — правило **операции**
  * (приём, бронь, начальный остаток), а не значения, и живёт на сетевой границе.
+ *
+ * Разбора строк здесь нет: величина требует готовое число, а как его получили из ввода — забота
+ * `core/format`. Формата для провода и базы здесь тоже нет: строку запроса задаёт сетевой маппер,
+ * строку колонки — конвертер хранения (PLAN H1).
  */
 data class Quantity(val amount: BigDecimal, val unitId: Uuid) {
 
@@ -57,9 +43,7 @@ data class Quantity(val amount: BigDecimal, val unitId: Uuid) {
      */
     operator fun minus(other: Quantity): Quantity {
         requireSameUnit(other)
-        require(amount >= other.amount) {
-            "нехватка: ${toWire()} меньше ${other.toWire()}"
-        }
+        require(amount >= other.amount) { "нехватка: $this меньше $other" }
         return Quantity(amount - other.amount, unitId)
     }
 
@@ -101,9 +85,6 @@ data class Quantity(val amount: BigDecimal, val unitId: Uuid) {
         }
     }
 
-    /** Ровно то, что уходит на провод и ложится в базу: без экспоненты, без знака (PLAN B2, F3). */
-    fun toWire(): String = amount.toPlainString()
-
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is Quantity) return false
@@ -116,43 +97,10 @@ data class Quantity(val amount: BigDecimal, val unitId: Uuid) {
      */
     override fun hashCode(): Int = 31 * unitId.hashCode() + amount.stripTrailingZeros().hashCode()
 
-    override fun toString(): String = "${toWire()} @$unitId"
+    override fun toString(): String = "${amount.toPlainString()} @$unitId"
 
     companion object {
 
         fun zero(unitId: Uuid): Quantity = Quantity(BigDecimal.ZERO, unitId)
-
-        /**
-         * Запятая становится точкой. Отвергает пустое, слишком длинное, знак, экспоненту,
-         * больше шести знаков после точки и больше тринадцати до неё.
-         *
-         * Возвращает `Result`, а не бросает: ввод — обычное состояние формы, а не сбой программы
-         * (ТЗ 4.3, PLAN J4 REQ-051).
-         */
-        fun parse(input: String, unitId: Uuid): Result<Quantity> {
-            val text = input.trim().replace(',', '.')
-            val reason = reject(text)
-            return if (reason != null) {
-                Result.failure(QuantityFormatException(reason))
-            } else {
-                Result.success(Quantity(BigDecimal(text), unitId))
-            }
-        }
-
-        private fun reject(text: String): QuantityFormatReason? {
-            if (text.isEmpty()) return QuantityFormatReason.EMPTY
-            if (text.length > QUANTITY_MAX_INPUT_LENGTH) return QuantityFormatReason.TOO_LONG
-            if (!DECIMAL_INPUT.matches(text)) return QuantityFormatReason.NOT_A_DECIMAL
-            val dot = text.indexOf('.')
-            val integerDigits = if (dot < 0) text.length else dot
-            val fractionDigits = if (dot < 0) 0 else text.length - dot - 1
-            if (fractionDigits > QUANTITY_SCALE) {
-                return QuantityFormatReason.TOO_MANY_FRACTION_DIGITS
-            }
-            if (integerDigits > QUANTITY_MAX_INTEGER_DIGITS) {
-                return QuantityFormatReason.TOO_MANY_INTEGER_DIGITS
-            }
-            return null
-        }
     }
 }

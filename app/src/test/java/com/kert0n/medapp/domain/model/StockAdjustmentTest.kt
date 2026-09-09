@@ -98,7 +98,8 @@ class StockAdjustmentTest {
 
     @Test
     fun accessLossTakesTheWholeRemainderOut() {
-        val lost = StockAdjustment.accessLost(id, PACK, tablets("7"), SHARED_KIT, observedAt = moment)
+        val lost =
+            StockAdjustment.accessLost(id, PACK, tablets("7"), SHARED_KIT, observedAt = moment)
         assertEquals(BigDecimal("-7"), lost.delta)
         assertNull(lost.occurredAt)
     }

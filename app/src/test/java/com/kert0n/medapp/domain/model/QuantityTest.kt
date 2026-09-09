@@ -37,9 +37,10 @@ class QuantityTest {
     }
 
     @Test
-    fun wireFormHasNoExponentAndNoSign() {
-        assertEquals("0.000001", tablets("0.000001").toWire())
-        assertEquals("1000000000000", tablets("1E+12").toWire())
+    fun largeAndSmallAmountsKeepTheirValue() {
+        // Формат строки задаёт адаптер; величина хранит число и не теряет его на границах.
+        assertEquals(BigDecimal("0.000001"), tablets("0.000001").amount)
+        assertEquals(0, tablets("1E+12").amount.compareTo(BigDecimal("1000000000000")))
     }
 
     @Test(expected = IllegalArgumentException::class)
