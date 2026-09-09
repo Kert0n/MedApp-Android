@@ -29,6 +29,21 @@ class ExpiryDateTest {
     }
 
     @Test
+    fun singleDigitMonthAndDayAreAccepted() {
+        // На упаковках печатают и «3.2027», и «03.2027».
+        assertEquals(LocalDate.of(2027, 3, 31), ExpiryDate.parse("3.2027").getOrThrow())
+        assertEquals(LocalDate.of(2027, 3, 1), ExpiryDate.parse("1.3.2027").getOrThrow())
+    }
+
+    @Test
+    fun leapYearRulesComeFromTheCalendarAndNotFromUs() {
+        // 2000 — високосный, 1900 — нет, хотя оба делятся на четыре и на сто.
+        assertEquals(LocalDate.of(2000, 2, 29), ExpiryDate.parse("02.2000").getOrThrow())
+        assertEquals(LocalDate.of(1900, 2, 28), ExpiryDate.parse("02.1900").getOrThrow())
+        assertEquals(ExpiryDateFormatReason.IMPOSSIBLE_DATE, reasonOf("29.02.1900"))
+    }
+
+    @Test
     fun isoMonthIsAlsoAMonth() {
         assertEquals(LocalDate.of(2027, 3, 31), ExpiryDate.parse("2027-03").getOrThrow())
     }
