@@ -26,6 +26,9 @@ class QuantityFormatException(val formatReason: QuantityFormatReason) :
 /** Разбор идёт до `BigDecimal`, чтобы длинный или чужой ввод не дошёл до конструктора вовсе. */
 private val DECIMAL_INPUT = Regex("""^\d+(\.\d+)?$""")
 
+/** Потолок числа доз: расписание такого размера отвергается задолго до этого (PLAN H1). */
+private val MAX_DOSES = BigDecimal(Int.MAX_VALUE)
+
 /**
  * Количество вместе с единицей: величины в разных единицах не складываются даже случайно.
  *
@@ -48,6 +51,61 @@ data class Quantity(val amount: BigDecimal, val unitId: Uuid) {
     }
 
     val isZero: Boolean get() = amount.signum() == 0
+
+    operator fun plus(other: Quantity): Quantity {
+        requireSameUnit(other)
+        return Quantity(amount + other.amount, unitId)
+    }
+
+    /**
+     * Бросает при нехватке: приём пяти таблеток из остатка в три не должен выглядеть успешным,
+     * а списание в минус запрещено (PLAN D1, D5).
+     */
+    operator fun minus(other: Quantity): Quantity {
+        requireSameUnit(other)
+        require(amount >= other.amount) {
+            "нехватка: ${toWire()} меньше ${other.toWire()}"
+        }
+        return Quantity(amount - other.amount, unitId)
+    }
+
+    /** Для показа доступности, где отрицательное просто не показывается (PLAN D4). */
+    fun minusOrZero(other: Quantity): Quantity {
+        requireSameUnit(other)
+        return if (amount >= other.amount) Quantity(amount - other.amount, unitId) else zero(unitId)
+    }
+
+    /**
+     * Умножение только на целое число доз: количество умножается на счётчик приёмов, а не на
+     * другую величину — произведение таблеток на таблетки смысла не имеет.
+     */
+    operator fun times(count: Int): Quantity {
+        require(count >= 0) { "число доз не бывает отрицательным" }
+        return Quantity(amount * count.toBigDecimal(), unitId)
+    }
+
+    fun covers(dose: Quantity): Boolean {
+        requireSameUnit(dose)
+        return amount >= dose.amount
+    }
+
+    /**
+     * Сколько целых доз помещается. Именно целых: доза берётся из одной упаковки и между пачками
+     * не делится, поэтому по одной таблетке в двух пачках при дозе в две таблетки дают ноль доз,
+     * а не одну (PLAN D5). Нулевая доза — ошибка, делить на неё нечего.
+     */
+    fun dosesIn(dose: Quantity): Int {
+        requireSameUnit(dose)
+        require(!dose.isZero) { "нулевая доза не делит остаток" }
+        val whole = amount.divideToIntegralValue(dose.amount)
+        return if (whole > MAX_DOSES) Int.MAX_VALUE else whole.toInt()
+    }
+
+    private fun requireSameUnit(other: Quantity) {
+        require(unitId == other.unitId) {
+            "величины в разных единицах не считаются вместе: $unitId и ${other.unitId}"
+        }
+    }
 
     /** Ровно то, что уходит на провод и ложится в базу: без экспоненты, без знака (PLAN B2, F3). */
     fun toWire(): String = amount.toPlainString()
