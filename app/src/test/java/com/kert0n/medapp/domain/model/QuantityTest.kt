@@ -31,6 +31,14 @@ class QuantityTest {
     }
 
     @Test
+    fun zeroIsZeroWhateverItsExponent() {
+        // `0E+13` — тот же ноль, что `0`, и у него один разряд до точки. Считать разряды по
+        // `precision() - scale()` значило бы отвергнуть величину за запись её нуля.
+        assertTrue(tablets("0E+13").isZero)
+        assertEquals(tablets("0"), tablets("0E+13"))
+    }
+
+    @Test
     fun zeroIsAllowedBecauseStockRunsOut() {
         assertTrue(Quantity.zero(TABLETS).isZero)
         assertFalse(tablets("0.000001").isZero)

@@ -1,5 +1,6 @@
 package com.kert0n.medapp.presentation.mapper
 
+import com.kert0n.medapp.domain.model.MONEY_MAX_INTEGER_DIGITS
 import com.kert0n.medapp.domain.model.Money
 import com.kert0n.medapp.presentation.dto.MoneyPresentationDTO
 import java.math.BigDecimal
@@ -9,7 +10,18 @@ import java.text.ParsePosition
 import java.util.Currency
 import java.util.Locale
 
-const val MONEY_MAX_INPUT_LENGTH = 16
+/**
+ * Предельная длина ввода следует из валюты, а не из одной константы.
+ *
+ * У рубля два знака после точки, у динара три, у иены нет ни одного — и общая «16» отвергала бы
+ * `9999999999999.999`, которое для динара законно, как слишком длинное. Запас на ведущий ноль
+ * оставлен: «0.50» человек печатает чаще, чем «.50».
+ */
+private fun maxInputLength(currency: Currency): Int {
+    val fractionDigits = currency.defaultFractionDigits.coerceAtLeast(0)
+    val separator = if (fractionDigits > 0) 1 else 0
+    return MONEY_MAX_INTEGER_DIGITS + separator + fractionDigits + 1
+}
 
 enum class MoneyPresentationError {
     EMPTY,
@@ -39,11 +51,13 @@ private val DECIMAL_INPUT = Regex("""^\d+([.,]\d+)?$""")
 fun MoneyPresentationDTO.toDomain(): PresentationMapping<Money, MoneyPresentationError> {
     val text = amount.trim()
     if (text.isEmpty()) return rejected(MoneyPresentationError.EMPTY)
-    if (text.length > MONEY_MAX_INPUT_LENGTH) return rejected(MoneyPresentationError.TOO_LONG)
-    if (!DECIMAL_INPUT.matches(text)) return rejected(MoneyPresentationError.NOT_A_DECIMAL)
 
+    // Валюта разбирается первой: без неё неизвестно, какая длина ввода допустима.
     val currency = runCatching { Currency.getInstance(currencyCode) }.getOrNull()
         ?: return rejected(MoneyPresentationError.UNKNOWN_CURRENCY)
+
+    if (text.length > maxInputLength(currency)) return rejected(MoneyPresentationError.TOO_LONG)
+    if (!DECIMAL_INPUT.matches(text)) return rejected(MoneyPresentationError.NOT_A_DECIMAL)
 
     val separator = if (text.contains(',')) ',' else '.'
     val parsed = decimalFormat(separator).parseFully(text)

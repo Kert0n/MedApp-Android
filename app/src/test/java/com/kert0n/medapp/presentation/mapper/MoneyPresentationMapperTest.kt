@@ -3,6 +3,7 @@ package com.kert0n.medapp.presentation.mapper
 import com.kert0n.medapp.domain.model.Money
 import com.kert0n.medapp.presentation.dto.MoneyPresentationDTO
 import java.math.BigDecimal
+import java.util.Currency
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -49,10 +50,24 @@ class MoneyPresentationMapperTest {
         assertEquals(MoneyPresentationError.NOT_A_DECIMAL, errorOf("1 200"))
         assertEquals(MoneyPresentationError.NOT_A_DECIMAL, errorOf("сто"))
         assertEquals(MoneyPresentationError.EMPTY, errorOf("   "))
+        assertEquals(MoneyPresentationError.TOO_LONG, errorOf("1".repeat(64)))
+    }
+
+    @Test
+    fun boundaryPriceOfAThreeDigitCurrencyFits() {
+        // 13 разрядов до точки и три после — законная цена для динара; общий предел длины в 16
+        // символов отвергал её как «слишком длинную», хотя домен её принимает.
+        val boundary = "9999999999999.999"
         assertEquals(
-            MoneyPresentationError.TOO_LONG,
-            errorOf("1".repeat(MONEY_MAX_INPUT_LENGTH + 1))
+            Money(BigDecimal(boundary), Currency.getInstance("KWD")),
+            mapped(boundary, "KWD").valueOrNull
         )
+    }
+
+    @Test
+    fun lengthLimitFollowsTheCurrency() {
+        // У иены дробной части нет, поэтому точка в её вводе не помещается вовсе.
+        assertEquals(MoneyPresentationError.TOO_LONG, errorOf("9999999999999.999", "JPY"))
     }
 
     @Test

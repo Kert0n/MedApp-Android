@@ -16,7 +16,10 @@ internal fun requireDecimalWithinLimits(
     maxIntegerDigits: Int
 ) {
     require(amount.scale() <= maxScale) { "$field: после точки не больше $maxScale знаков" }
-    require(amount.precision() - amount.scale() <= maxIntegerDigits) {
+    // У нуля один разряд до точки при любом показателе степени: `0E+13` — тот же ноль, что `0`,
+    // и `precision() - scale()` дал бы для него 14. Отвергать величину за запись её нуля нельзя.
+    val integerDigits = if (amount.signum() == 0) 1 else amount.precision() - amount.scale()
+    require(integerDigits <= maxIntegerDigits) {
         "$field: до точки не больше $maxIntegerDigits разрядов"
     }
 }
