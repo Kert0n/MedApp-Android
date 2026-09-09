@@ -20,14 +20,38 @@ val localProperties = Properties().apply {
     if (file.exists()) file.inputStream().use { load(it) }
 }
 
-fun buildSecret(key: String, fallback: String): String {
-    val value = localProperties.getProperty(key) ?: System.getenv(key)
-    if (value.isNullOrBlank()) {
-        logger.warn("$key не задан: взято значение по умолчанию. Настоящее значение задаётся в local.properties или в окружении CI.")
-        return fallback
-    }
-    return value
+fun secretOrNull(key: String): String? =
+    (localProperties.getProperty(key) ?: System.getenv(key))?.takeIf { it.isNotBlank() }
+
+/** Значение по умолчанию допустимо только в debug: release без настроенного токена не собирается. */
+fun debugSecret(key: String, fallback: String): String = secretOrNull(key) ?: run {
+    logger.warn("$key не задан: debug-сборка взяла значение по умолчанию. Настоящее значение задаётся в local.properties или в окружении CI.")
+    fallback
 }
+
+/**
+ * Release не должен уезжать с публичным dev-значением токена. Проверка отложена до самой
+ * сборки release, а не сделана на конфигурации: иначе отсутствие секрета роняло бы и
+ * debug-сборку, и разбор проекта в IDE.
+ */
+val secretsMissingForRelease = listOf("MEDAPP_REGISTRATION_TOKEN").filter { secretOrNull(it) == null }
+
+val verifyReleaseSecrets = tasks.register("verifyReleaseSecrets") {
+    group = "verification"
+    description = "Не даёт собрать release без настроенных секретов (G1)."
+    doLast {
+        if (secretsMissingForRelease.isNotEmpty()) {
+            throw GradleException(
+                "Release-сборка требует секреты: ${secretsMissingForRelease.joinToString()}. " +
+                    "Задайте их в local.properties или в окружении CI. " +
+                    "Значение по умолчанию существует только для debug."
+            )
+        }
+    }
+}
+
+tasks.matching { it.name == "assembleRelease" || it.name == "bundleRelease" }
+    .configureEach { dependsOn(verifyReleaseSecrets) }
 
 android {
     namespace = "com.kert0n.medapp"
@@ -44,29 +68,39 @@ android {
 
         testInstrumentationRunner = "com.kert0n.medapp.HiltTestRunner"
 
-        buildConfigField(
-            "String",
-            "REGISTRATION_TOKEN",
-            "\"${buildSecret("MEDAPP_REGISTRATION_TOKEN", "dev-secret")}\""
-        )
+        // Адреса секретами не являются: у них есть законное значение по умолчанию.
         buildConfigField(
             "String",
             "BASE_URL",
-            "\"${buildSecret("MEDAPP_BASE_URL", "https://medapp.ru.net")}\""
+            "\"${secretOrNull("MEDAPP_BASE_URL") ?: "https://medapp.ru.net"}\""
         )
         buildConfigField(
             "String",
             "CRPT_BASE_URL",
-            "\"${buildSecret("MEDAPP_CRPT_BASE_URL", "https://mobile.api.crpt.ru")}\""
+            "\"${secretOrNull("MEDAPP_CRPT_BASE_URL") ?: "https://mobile.api.crpt.ru"}\""
         )
     }
 
     buildTypes {
+        debug {
+            buildConfigField(
+                "String",
+                "REGISTRATION_TOKEN",
+                "\"${debugSecret("MEDAPP_REGISTRATION_TOKEN", "dev-secret")}\""
+            )
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
+            )
+            // Пусто, если секрет не задан; собрать release с таким значением не даст
+            // verifyReleaseSecrets. Публичного dev-значения здесь нет и быть не должно.
+            buildConfigField(
+                "String",
+                "REGISTRATION_TOKEN",
+                "\"${secretOrNull("MEDAPP_REGISTRATION_TOKEN").orEmpty()}\""
             )
         }
     }
