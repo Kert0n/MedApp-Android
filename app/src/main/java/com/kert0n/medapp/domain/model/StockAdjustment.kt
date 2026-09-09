@@ -22,6 +22,13 @@ enum class AdjustmentKind {
  * Без движений история «всё добавленное минус оставшееся» (ТЗ 4.1.1.10.2) не сходится: перенос
  * между аптечками выглядел бы расходом, а утилизация просрочки — приёмом.
  *
+ * **Свершившийся факт, поэтому величина, а не сущность:** другая дельта означает другое событие,
+ * а не изменённое. Но смысл полей задаёт вид, и произвольный их набор события не выражает.
+ * Поэтому конструктор приватный, а собрать движение можно только фабрикой своего вида: у неё в
+ * подписи ровно то, что для этого вида осмысленно, и знак с аптечками получаются сами.
+ * Утилизация с приходом или перенос, «уехавший» из аптечки назначения, здесь не отвергаются —
+ * их **нельзя записать**.
+ *
  * [REMOTE_CHANGE][AdjustmentKind.REMOTE_CHANGE] записывает **остаток** расхождения, а не всё
  * расхождение целиком:
  * `remoteDelta = serverQuantity − (lastKnownQuantity + Σ наши установленные изменения)`.
@@ -29,7 +36,8 @@ enum class AdjustmentKind {
  * числа. Причина при этом не выдумывается: сервер истории не хранит и сказать, что это было,
  * не может (PLAN D7).
  */
-data class StockAdjustment(
+@ConsistentCopyVisibility
+data class StockAdjustment private constructor(
     val id: Uuid,
     val packageId: Uuid,
     val kind: AdjustmentKind,
@@ -57,15 +65,22 @@ data class StockAdjustment(
             require(fromMedKitId != toMedKitId) {
                 "перенос внутри одной аптечки остаток не меняет"
             }
+            // Событие происходит там, где остаток изменился: уехало — из аптечки-источника,
+            // приехало — в аптечку назначения. Несогласованное поле сделало бы отчёт по аптечке
+            // неверным, не нарушив при этом ни одного другого правила.
+            val where = if (kind == AdjustmentKind.TRANSFER_OUT) fromMedKitId else toMedKitId
+            require(medKitId == where) {
+                "$kind произошёл в $where, а записан в $medKitId"
+            }
         } else {
             require(fromMedKitId == null && toMedKitId == null) {
                 "аптечки переноса заполняются только у переносов"
             }
         }
 
-        // Направление задано видом движения, и запись против него ломает историю тихо:
-        // отрицательный приход и положительная утилизация сходятся в сумме, но означают
-        // противоположное тому, что написано в их виде (PLAN D7, ТЗ 4.1.1.10.2).
+        // Второй рубеж к фабрикам: направление задано видом движения, и запись против него ломает
+        // историю тихо — отрицательный приход и положительная утилизация сходятся в сумме, но
+        // означают противоположное написанному (PLAN D7, ТЗ 4.1.1.10.2).
         when (kind) {
             AdjustmentKind.INITIAL, AdjustmentKind.TRANSFER_IN ->
                 require(delta.signum() >= 0) { "приход не бывает отрицательным: $kind" }
@@ -86,5 +101,160 @@ data class StockAdjustment(
                 "у собственного изменения момент известен: $kind"
             }
         }
+    }
+
+    companion object {
+
+        /** Пачка заведена: весь её начальный остаток — приход. */
+        fun initial(
+            id: Uuid,
+            packageId: Uuid,
+            amount: Quantity,
+            medKitId: Uuid,
+            occurredAt: Instant,
+            observedAt: Instant,
+            operationId: Uuid? = null,
+            note: String? = null
+        ): StockAdjustment = of(
+            id, packageId, AdjustmentKind.INITIAL, amount.amount, amount.unitId,
+            medKitId, null, null, occurredAt, observedAt, operationId, note
+        )
+
+        /**
+         * Пересчитали и увидели другое число.
+         *
+         * Принимает оба остатка, а не дельту: знак получается сам, единица берётся из величин и
+         * не может им противоречить. Пересчёт находит и больше, и меньше — это единственный
+         * вид движения, у которого сторона заранее неизвестна, вместе с [remoteChange].
+         */
+        fun correction(
+            id: Uuid,
+            packageId: Uuid,
+            from: Quantity,
+            to: Quantity,
+            medKitId: Uuid,
+            occurredAt: Instant,
+            observedAt: Instant,
+            operationId: Uuid? = null,
+            note: String? = null
+        ): StockAdjustment {
+            require(from.unitId == to.unitId) { "пересчёт не меняет единицу" }
+            return of(
+                id, packageId, AdjustmentKind.CORRECTION, to.amount - from.amount, to.unitId,
+                medKitId, null, null, occurredAt, observedAt, operationId, note
+            )
+        }
+
+        /** Выбросили: просрочка, порча. Списывается названное количество. */
+        fun disposal(
+            id: Uuid,
+            packageId: Uuid,
+            amount: Quantity,
+            medKitId: Uuid,
+            occurredAt: Instant,
+            observedAt: Instant,
+            operationId: Uuid? = null,
+            note: String? = null
+        ): StockAdjustment = of(
+            id, packageId, AdjustmentKind.DISPOSAL, amount.amount.negate(), amount.unitId,
+            medKitId, null, null, occurredAt, observedAt, operationId, note
+        )
+
+        /** Уехала: событие произошло в аптечке-источнике, поэтому `medKitId` — это [from]. */
+        fun transferOut(
+            id: Uuid,
+            packageId: Uuid,
+            amount: Quantity,
+            from: Uuid,
+            to: Uuid,
+            occurredAt: Instant,
+            observedAt: Instant,
+            operationId: Uuid? = null,
+            note: String? = null
+        ): StockAdjustment = of(
+            id, packageId, AdjustmentKind.TRANSFER_OUT, amount.amount.negate(), amount.unitId,
+            from, from, to, occurredAt, observedAt, operationId, note
+        )
+
+        /** Приехала: событие произошло в аптечке назначения, поэтому `medKitId` — это [to]. */
+        fun transferIn(
+            id: Uuid,
+            packageId: Uuid,
+            amount: Quantity,
+            from: Uuid,
+            to: Uuid,
+            occurredAt: Instant,
+            observedAt: Instant,
+            operationId: Uuid? = null,
+            note: String? = null
+        ): StockAdjustment = of(
+            id, packageId, AdjustmentKind.TRANSFER_IN, amount.amount, amount.unitId,
+            to, from, to, occurredAt, observedAt, operationId, note
+        )
+
+        /**
+         * Изменилось на сервере, и это не мы.
+         *
+         * Дельта знаковая и приходит из формулы D7, а не из величины: она уже остаток
+         * расхождения. Момент неизвестен — чужое действие замечено задним числом.
+         */
+        fun remoteChange(
+            id: Uuid,
+            packageId: Uuid,
+            delta: BigDecimal,
+            unitId: Uuid,
+            medKitId: Uuid,
+            observedAt: Instant,
+            occurredAt: Instant? = null,
+            operationId: Uuid? = null,
+            note: String? = null
+        ): StockAdjustment = of(
+            id, packageId, AdjustmentKind.REMOTE_CHANGE, delta, unitId,
+            medKitId, null, null, occurredAt, observedAt, operationId, note
+        )
+
+        /** Пачка перестала быть видимой: из учёта уходит весь остаток, что мы последним видели. */
+        fun accessLost(
+            id: Uuid,
+            packageId: Uuid,
+            amount: Quantity,
+            medKitId: Uuid,
+            observedAt: Instant,
+            occurredAt: Instant? = null,
+            operationId: Uuid? = null,
+            note: String? = null
+        ): StockAdjustment = of(
+            id, packageId, AdjustmentKind.ACCESS_LOST, amount.amount.negate(), amount.unitId,
+            medKitId, null, null, occurredAt, observedAt, operationId, note
+        )
+
+        @Suppress("LongParameterList")
+        private fun of(
+            id: Uuid,
+            packageId: Uuid,
+            kind: AdjustmentKind,
+            delta: BigDecimal,
+            unitId: Uuid,
+            medKitId: Uuid?,
+            fromMedKitId: Uuid?,
+            toMedKitId: Uuid?,
+            occurredAt: Instant?,
+            observedAt: Instant,
+            operationId: Uuid?,
+            note: String?
+        ): StockAdjustment = StockAdjustment(
+            id = id,
+            packageId = packageId,
+            kind = kind,
+            delta = delta,
+            unitId = unitId,
+            medKitId = medKitId,
+            fromMedKitId = fromMedKitId,
+            toMedKitId = toMedKitId,
+            occurredAt = occurredAt,
+            observedAt = observedAt,
+            operationId = operationId,
+            note = note
+        )
     }
 }
