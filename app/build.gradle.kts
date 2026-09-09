@@ -21,7 +21,7 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "com.kert0n.medapp.HiltTestRunner"
 
     }
 
@@ -105,6 +105,7 @@ dependencies {
     androidTestImplementation(libs.androidx.navigation.testing)
     androidTestImplementation(libs.androidx.work.testing)
     androidTestImplementation(libs.hilt.android.testing)
+    kspAndroidTest(libs.hilt.compiler)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
