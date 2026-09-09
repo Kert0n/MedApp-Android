@@ -1,19 +1,19 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
-   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Персональный ключ лежит в DataStore шифротекстом, но ключ расшифровки не покидает
+    AndroidKeyStore и в копию не уедет. Значит шифротекст в копии бесполезен, а в переносе
+    на новое устройство — обманчив: он выглядел бы учётной записью, которую нечем открыть.
+    Поэтому каталог DataStore исключён и из облачной копии, и из переноса (G2).
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+        <exclude
+            domain="file"
+            path="datastore" />
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <exclude
+            domain="file"
+            path="datastore" />
     </device-transfer>
-    -->
 </data-extraction-rules>
