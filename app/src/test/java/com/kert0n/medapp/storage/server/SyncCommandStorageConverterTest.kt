@@ -1,0 +1,131 @@
+package com.kert0n.medapp.storage.server
+
+import com.kert0n.medapp.domain.pack.PackageSharedFacts
+import com.kert0n.medapp.fixture.HOME_KIT
+import com.kert0n.medapp.fixture.INTAKE
+import com.kert0n.medapp.fixture.OTHER_PACK
+import com.kert0n.medapp.fixture.PACK
+import com.kert0n.medapp.fixture.SHARED_KIT
+import com.kert0n.medapp.fixture.TABLET_FORM
+import com.kert0n.medapp.fixture.dose
+import com.kert0n.medapp.fixture.tablets
+import com.kert0n.medapp.network.medkit.MedKitSyncCommand
+import com.kert0n.medapp.network.pack.PackageSyncCommand
+import com.kert0n.medapp.network.server.SyncCommand
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+/**
+ * Круговой тест по **всем двенадцати** видам команд: исчерпывающего `when` по обоим корням
+ * сразу у маркера нет, и закрытость набора держит именно этот перечень (PLAN E2, PR 4).
+ */
+class SyncCommandStorageConverterTest {
+
+    private val facts = PackageSharedFacts(
+        name = "Парацетамол",
+        formId = TABLET_FORM,
+        category = "Обезболивающие",
+        manufacturer = "Завод",
+        country = "Россия",
+        description = "Таблетки"
+    )
+
+    private val everyKind: List<SyncCommand> = listOf(
+        PackageSyncCommand.Create(PACK, HOME_KIT, tablets("20"), facts),
+        PackageSyncCommand.Describe(PACK, facts, facts.copy(name = "Paracetamol", category = null)),
+        PackageSyncCommand.CorrectStock(PACK, tablets("18.5")),
+        PackageSyncCommand.Move(PACK, SHARED_KIT),
+        PackageSyncCommand.Delete(PACK),
+        PackageSyncCommand.Consume(PACK, dose("1.5"), INTAKE),
+        PackageSyncCommand.Consume(PACK, dose("1.5"), INTAKE, claimAfter = tablets("4")),
+        PackageSyncCommand.SetClaim(PACK, tablets("6")),
+        PackageSyncCommand.ReleaseClaim(PACK),
+        PackageSyncCommand.Reconcile(PACK, tablets("11"), throughSequence = 42),
+        MedKitSyncCommand.Create(HOME_KIT),
+        MedKitSyncCommand.Delete(HOME_KIT),
+        MedKitSyncCommand.Delete(HOME_KIT, transferTo = SHARED_KIT),
+        MedKitSyncCommand.Leave(SHARED_KIT)
+    )
+
+    private fun roundTrip(command: SyncCommand): SyncCommand? = SyncCommandStorageConverter.commandOf(
+        kind = SyncCommandStorageConverter.kindOf(command),
+        payload = SyncCommandStorageConverter.payloadOf(command),
+        payloadVersion = SyncCommandStorageConverter.PAYLOAD_VERSION
+    )
+
+    @Test
+    fun everyCommandSurvivesTheRoundTrip() {
+        for (command in everyKind) {
+            assertEquals(command, roundTrip(command))
+        }
+    }
+
+    @Test
+    fun twelveKindsAndNoMore() {
+        assertEquals(
+            listOf(
+                "PACKAGE_CREATE", "PACKAGE_DESCRIBE", "PACKAGE_CORRECT_STOCK", "PACKAGE_MOVE",
+                "PACKAGE_DELETE", "PACKAGE_CONSUME", "PACKAGE_SET_CLAIM", "PACKAGE_RELEASE_CLAIM",
+                "PACKAGE_RECONCILE", "MEDKIT_CREATE", "MEDKIT_DELETE", "MEDKIT_LEAVE"
+            ),
+            everyKind.map(SyncCommandStorageConverter::kindOf).distinct()
+        )
+    }
+
+    /** Пустая бронь и заполненная — разные команды, и различать их должен именно payload. */
+    @Test
+    fun consumeWithAndWithoutClaimAreNotConfused() {
+        val plain = PackageSyncCommand.Consume(PACK, dose("1"), INTAKE)
+        val withClaim = PackageSyncCommand.Consume(PACK, dose("1"), INTAKE, claimAfter = tablets("0"))
+
+        assertNull((roundTrip(plain) as PackageSyncCommand.Consume).claimAfter)
+        assertEquals(tablets("0"), (roundTrip(withClaim) as PackageSyncCommand.Consume).claimAfter)
+    }
+
+    /** Очистка текста и его отсутствие — одно и то же в описании, и оба должны вернуться пустыми. */
+    @Test
+    fun describeKeepsBothSidesIncludingClearedFields() {
+        val command = PackageSyncCommand.Describe(
+            PACK,
+            before = facts,
+            after = PackageSharedFacts(name = "Парацетамол")
+        )
+        val restored = roundTrip(command) as PackageSyncCommand.Describe
+        assertEquals(facts, restored.before)
+        assertNull(restored.after.category)
+        assertNull(restored.after.formId)
+    }
+
+    @Test
+    fun commandNamesThePackageItTouchesAndMedKitCommandsDoNot() {
+        assertEquals(PACK, SyncCommandStorageConverter.packageIdOf(PackageSyncCommand.Delete(PACK)))
+        assertNull(SyncCommandStorageConverter.packageIdOf(MedKitSyncCommand.Leave(HOME_KIT)))
+        assertEquals(HOME_KIT, SyncCommandStorageConverter.medKitIdOf(MedKitSyncCommand.Create(HOME_KIT)))
+        assertEquals(
+            SHARED_KIT,
+            SyncCommandStorageConverter.medKitIdOf(PackageSyncCommand.Move(PACK, SHARED_KIT))
+        )
+    }
+
+    /** Чужая версия payload не роняет разбор: операция читается как нечитаемая. */
+    @Test
+    fun unknownPayloadVersionIsUnreadableRatherThanFatal() {
+        val command = PackageSyncCommand.Delete(OTHER_PACK)
+        assertNull(
+            SyncCommandStorageConverter.commandOf(
+                kind = SyncCommandStorageConverter.kindOf(command),
+                payload = SyncCommandStorageConverter.payloadOf(command),
+                payloadVersion = SyncCommandStorageConverter.PAYLOAD_VERSION + 1
+            )
+        )
+    }
+
+    @Test
+    fun unknownKindAndBrokenPayloadAreUnreadableToo() {
+        val version = SyncCommandStorageConverter.PAYLOAD_VERSION
+        assertNull(SyncCommandStorageConverter.commandOf("PACKAGE_EXPLODE", "{}", version))
+        assertNull(SyncCommandStorageConverter.commandOf("PACKAGE_DELETE", "не json", version))
+        assertNull(SyncCommandStorageConverter.commandOf("PACKAGE_DELETE", "{}", version))
+    }
+}

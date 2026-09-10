@@ -104,3 +104,6 @@ android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
+# Плагин Room отвечает за экспорт схемы: он же кладёт её в assets инструментальных тестов,
+# поэтому MigrationTestHelper находит прошлые версии без ручной настройки sourceSets.
+room = { id = "androidx.room", version.ref = "room" }

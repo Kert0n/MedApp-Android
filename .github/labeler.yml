@@ -29,17 +29,24 @@
 
 "area: storage":
   - changed-files:
-      - any-glob-to-any-file: "app/src/**/data/local/**"
+      - any-glob-to-any-file:
+          - "app/src/**/storage/**"
+          - "app/schemas/**"
 
 "area: network":
   - changed-files:
       - any-glob-to-any-file:
-          - "app/src/**/data/remote/**"
+          - "app/src/**/network/**"
 
+# Очередь описывает доставку и живёт в сети, поэтому метка следует за её файлами, а не за
+# каталогом: правка PackageSyncCommand это синхронизация, а правка PackagePostNetworkDTO — нет.
 "area: sync":
   - changed-files:
       - any-glob-to-any-file:
-          - "app/src/**/data/sync/**"
+          - "app/src/**/network/server/**"
+          - "app/src/**/*SyncCommand.kt"
+          - "app/src/**/*SyncState.kt"
+          - "app/src/**/*QueueState.kt"
 
 "area: ui":
   - changed-files:

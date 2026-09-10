@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     id("com.google.devtools.ksp")
     alias(libs.plugins.hilt)
+    alias(libs.plugins.room)
 }
 
 /**
@@ -112,6 +113,24 @@ android {
         compose = true
         buildConfig = true
     }
+
+    /**
+     * Фикстуры домена нужны обоим уровням: значения и сущности одни и те же, а база
+     * проверяется в androidTest (PLAN J1). Второй набор строителей разошёлся бы с первым.
+     */
+    sourceSets {
+        getByName("test").kotlin.srcDir("src/sharedTest/java")
+        getByName("androidTest").kotlin.srcDir("src/sharedTest/java")
+    }
+}
+
+/**
+ * Схема лежит в репозитории, а не только внутри APK: без прошлой версии рядом миграцию нечем
+ * проверить, а `MigrationTestHelper` берёт её из assets инструментальных тестов, куда её кладёт
+ * этот же плагин.
+ */
+room {
+    schemaDirectory("$projectDir/schemas")
 }
 
 kotlin {
@@ -166,9 +185,12 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.ktor.client.mock)
-    testImplementation(libs.androidx.room.testing)
 
+    // База проверяется в androidTest (PLAN J1): DAO, транзакции, ограничения и миграции идут
+    // против настоящего SQLite, а не против его подобия на JVM.
     androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.room.testing)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
