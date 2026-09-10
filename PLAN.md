@@ -324,7 +324,7 @@ UUID и проверяем принадлежность; недоступнос�
 | **Имена типов**                | придумывались под каждый случай                   | сущность + назначение + слой: `PackagePatchNetworkDTO`                            | решение пользователя: по имени видно, что это и чьё, без чтения KDoc                                                                          |
 | **Учёт расхода приёма**        | `accounting`, `operationId`, `reconciliationId` в доменном `Intake` | `IntakeSyncState` в `data/intake`                                             | решение PR 3: в локальной аптечке исходящих операций нет вовсе (E1), значит понятие существует только из-за сервера — тот же довод, что снял версию предусловия с упаковки. Инвариант «у `TAKEN` не бывает `NOT_APPLICABLE`» остаётся правилом транзакции F5 |
 | **Сведения о препарате**       | `PackageDescription` — второй плоский тип рядом с `PackageFacts`  | `PackageFacts(shared: PackageSharedFacts, …)` — композиция                        | решение PR 3: граница публикации C0 переезжает из комментария в структуру, шесть текстовых инвариантов объявлены один раз, а «правка была только локальной?» становится `before.shared == after.shared`, а не сравнением полей россыпью |
-| **Вычислители**                | интерфейсы, затем свободные функции над чужими типами             | вычисление о типе — его метод; свободным остаётся только связывающий несколько понятий прогноз `remainingOn` | решение PR 3: чистота не лишает правило владельца. Календарь отвечает за свои пункты, препарат курса — за обеспечение, пределы и расход; входы по-прежнему приходят аргументами |
+| **Вычислители**                | интерфейсы, затем свободные функции над чужими типами             | вычисление живёт у того, кто владеет обеими половинами данных; свободных функций в домене не осталось | решение PR 3: чистота не лишает правило владельца. Календарь отвечает за свои пункты, курс — за обеспечение, пределы, зажим и расход (доза у него), пачка — за свой прогноз; входы по-прежнему приходят аргументами |
 | **Оценка количества**          | доменная проекция держала внутри саму пачку, дату и незакрытые команды | `PackageAvailability(pkg, amount, myAllocation)` строится из пачки, но хранит только значения | решение PR 3: сущность нужна при сборке, но не лежит внутри значения и не ломает равенство по содержимому. Очередь передаёт готовый `EffectiveAmount` |
 | **Количество в домене**        | `pending`, затем `Known.confirmed` и `NeedsRecount` с номерами операций | `EffectiveAmount.Known(quantity)` либо `Unknown`; `PackageQueueState` и номера операций остаются в `data/pack` | доменное поведение различает только «число известно» и «нужна сверка». Незакрытая правка описания не меняет число, а причина неизвестности и номера очереди не нужны ни одному доменному расчёту |
 | **Бесхозная бронь**            | своя бронь без локального курса вычиталась из доступного мне (`ClaimOwnership`, три случая) | броней два вида: свои и чужие; вычитается только чужое | замечание пользователя в PR 6: источник истины для моей брони — устройство, сервер принимает сказанное, а второго устройства и аккаунта в продукте нет. Различие, которого поведение не делает; расхождение чинит следующая команда брони, а не домен |
@@ -335,9 +335,12 @@ UUID и проверяем принадлежность; недоступнос�
 | **Комментарии**                | KDoc пересказывал прежние реализации и историю правок             | настоящее время: что это и какое правило держит; история остаётся в коммите      | комментарий должен помогать понять текущую модель. Третий абзац обычно означает, что тип делает две вещи |
 | **Срок годности**              | `LocalDate` в полях и `object ExpiryDate` с функциями над ней | `data class ExpiryDate(val lastDay: LocalDate)`; поля, ввод и проекция несут его, а не дату | указание пользователя: набор функций над чужим типом — не место для правила. Имя `lastDay` отвечает «включительно ли» за всех вызывающих, а `null` остаётся ровно одним вопросом — знаем ли мы срок |
 | **Целые дозы**                 | `Int` и девять `require(… >= 0)` в восьми файлах | величина `Doses`; редакция курса — `Revision`                                      | неотрицательность — правило самой единицы: десятое место забыли бы, и отрицательное выделение уехало бы в бронь. Признак того же класса — одинаковый текст `require` дважды |
-| **Приём и курс**               | один класс с одиннадцатью необязательными полями и восемью `require` по сочетаниям | `CourseIntake` / `UnplannedIntake`, `CourseDraft` / `PlannedCourse` | комбинацию, которую забыли запретить, нельзя отличить от законной. Вычислители принимают `PlannedCourse`, и четыре `requireNotNull(course.dose)` исчезли — курса без дозы к ним не приходит. Отменить теперь можно только назначенный курс: в черновике отменять нечего |
+| **Приём и курс**               | один класс с одиннадцатью необязательными полями и восемью `require` по сочетаниям | `CourseIntake` / `UnplannedIntake`, `CourseDraft` / `Course` / `CourseRecord` | комбинацию, которую забыли запретить, нельзя отличить от законной. Расчёты принимают назначенный курс, и четыре `requireNotNull(course.dose)` исчезли — курса без дозы к ним не приходит. Закончить можно только начатое лечение: в черновике заканчивать нечего |
 | **«Неизвестно» по пачке**      | `Map<Uuid, Quantity>` и правило «нет ключа — значит неизвестно» прозой в четырёх KDoc | тип `Availability`: `known`/`dosesOf` возвращают `null` | одно и то же соглашение читалось двумя способами — ноль в обеспечении, прежнее выделение у ползунка. Что делать с «неизвестно», решает вызывающий явно, а не читатель по памяти |
 | **Раскладка по понятиям**      | слой делился по видам файлов: `model/`, `calc/`, `sync/`, `mapper/`, `dto/`, `remote/` | `domain/pack`, `data/pack`, `presentation/pack` — одно деление на всех слоях | указание пользователя: `sync` и `calc` называли механизм тем же способом, что расформированный `model/sync/`. Слой читается по корню, вид файла — по имени типа. Инфраструктура без понятия — `data/server`, `data/database` |
+| **Конец лечения**              | `PlannedCourse` со `status` ACTIVE/COMPLETED/CANCELLED и семью `check(isActive)` | эпизод: живой `Course` без состояний и вечная `CourseRecord`; план при закрытии уничтожается | замечание пользователя в PR 6: запись заводится при активации ради аналитики, а закончившееся лечение планом быть перестаёт. Аналитика читает один тип с одним жизненным циклом, ссылка приёма не повисает, а «а действующий ли курс» перестаёт быть вопросом |
+| **Междоменные расчёты**        | раскладка приёмов у курса, прогноз у пачки — и оба тянули чужие агрегаты | курс отвечает `spendOrder`/`spending`, пачка — `forecastOn(ушло)`; сборку делает сценарий | понятия ссылались по кругу `course → pack → course` и `intake → course → intake`: границ агрегатов не было, и правка курса компилировалась в упаковку. Сборка «спросить курсы и раздать пачкам» принадлежит сценарию, а не домену |
+| **Идентификатор в сигнатуре**  | `moveTo(medKitId)`, `confirm(packageId, medKitId)`, `maxDoses(packageId)`      | на входе сущность, на выходе идентификатор                                        | указание пользователя: DDD работает, пока мы пользуемся сущностями. `formId` вместо `packageId` не падал, а тихо давал «неизвестно» — неверное число на ползунке. Обёрток над `Uuid` при этом не заводим: D1 остаётся, а одинаковые концы различают имена (`sourceMedKitId`) |
 | **Нижняя граница Android**     | Android 8.0 (`minSdk` 26)                        | **Android 10 (`minSdk` 29)**                                                      | решение пользователя 2026-09-09; ТЗ 4.5–4.6 называет 8.0, но доля 8.x не оправдывает поддержку, а 29 снимает часть ограничений платформы  |
 
 ## C2. Чего в первой законченной версии нет
@@ -455,6 +458,13 @@ data class DosageForm(val id: Uuid, val name: String)
 **Обёрток над идентификаторами нет.** Идентификатор — `kotlin.uuid.Uuid`, тот же тип, что на
 сервере; смысл несут имена свойств (`packageId`, `medKitId`), а лишний слой разворачивался бы на
 каждой границе — Room, Ktor, навигация.
+
+**Поэтому на входе — сущность, а не её идентификатор.** DDD работает, пока мы пользуемся
+сущностями: если в сигнатурах везде ходит `Uuid`, ни один из них не защищён — `formId` вместо
+`packageId` не падает, а тихо отвечает «неизвестно». Домен принимает вещь, когда вызывающий её
+держит (`moveTo(MedKit)`, `confirm(pkg)`, `maxDoses(pkg)`, `deltaIn(medKit)`), и отдаёт обратно
+идентификаторы: чужих сущностей он не хранит. Где типом не различить — оба конца переноса аптечки,
+— различают имена: `sourceMedKitId` и `targetMedKitId`, и вызов именует аргументы.
 
 **Время — `java.time` и только оно.** `minSdk` 29 даёт его без десугаринга; держать рядом
 `kotlinx-datetime` значило бы конвертировать на каждой границе. `Instant`, `LocalDate`, `LocalTime`,
@@ -795,14 +805,25 @@ data class PackageAvailability(
 
 ## D5. Курс
 
-```kotlin
-enum class CourseStatus {
-    DRAFT,        // ещё нет расписания или источников
-    ACTIVE,
-    COMPLETED,    // календарь закончился, неотвеченных пунктов нет
-    CANCELLED
-}
+**Лечение — эпизод, и у него два представления.** При активации рождаются двое: **живой план**
+`Course`, которым пользуются, и **запись** `CourseRecord`, которая останется. Планом пользуются,
+пока лечение идёт; кончившись, план **уничтожается**, а запись живёт вечно.
 
+Отсюда всё остальное. Аналитика читает только записи: идущее и законченное лечение для неё
+одинаковы по форме, и союза «курсы плюс архив» не нужно (H6). Ссылка приёма никогда не повисает:
+`CourseId` — тождество **эпизода**, общее у записи и плана, поэтому «что принималось по этому
+поводу» отвечается ею одной, без единого признака в самом приёме (D6). И у плана **не остаётся
+состояний**: живой план всегда действующий, поэтому ни `status`, ни проверок «а действующий ли»,
+ни переходов `complete`/`cancel` у него нет — закрывает лечение запись, одним `close`.
+
+Имя лечения живёт **только** в записи: так называют лечение, а не расписание, и второго места, где
+то же имя могло бы разойтись при переименовании, не существует. Назначение — снимок значения
+`Prescription`: пока план жив, оно то же самое в обоих, и разойтись не может — менять его после
+активации нечем; после плана оно остаётся только в записи, иначе история приёмов потеряла бы, что
+было назначено. Состав пачек с планом и уходит: из какой пачки фактически приняли, записано в
+самом приёме, а очередь расходования после конца лечения ничего не значит.
+
+```kotlin
 data class CourseSchedule(
     val start: LocalDate,
     val endInclusive: LocalDate,
@@ -855,54 +876,70 @@ data class CourseMedicine(
     fun dosesAfterIntake(packageId: Uuid, dose: Quantity, taken: Quantity, availableAfter: Quantity): Doses
 }
 
-/**
- * СУЩНОСТЬ: тождество по id, обычный класс, состояние меняют только переходы.
- *
- * Видов два, и различает их наличие плана, а не поле: у черновика доза и расписание могут
- * отсутствовать, у назначенного курса они есть по типу и неизменны.
- */
-sealed interface Course {
-    val id: Uuid
-    val title: String                // 1..200
-    val note: String?                // ≤500 — «что купить», запись от врача
-    val medicine: CourseMedicine
-    val status: CourseStatus
-    val revision: Revision           // редакция черновика и источников
-    val createdAt: Instant
-    val updatedAt: Instant
-    val dose: Quantity?              // null только у черновика
-    val schedule: CourseSchedule?    // null только у черновика
-    fun allocatedOf(packageId: Uuid): Quantity?   // выделение в единицах пачки = целевая бронь
-}
+/** Назначение: то, что после начала лечения неизменно. Лежит и у плана, и у записи. */
+data class Prescription(val dose: Quantity, val schedule: CourseSchedule)
 
+/** Черновик: лечение ещё не началось. Свой экран, свои правила, зонтика над ним нет. */
 class CourseDraft(
     /* id, title, note, medicine, revision, createdAt, updatedAt */
-    val doseAmount: BigDecimal? = null,   // «две штуки чего-то»: единицу задаст первый источник
-    override val schedule: CourseSchedule? = null
-) : Course {
+    val doseAmount: BigDecimal? = null,   // «две штуки чего-то»: единицу задаст первая пачка
+    val schedule: CourseSchedule? = null
+) {
+    val dose: Quantity?              // собирается, когда первая пачка принесла единицу
     fun rename(title: String, note: String?, at: Instant): CourseDraft
-    fun setDose(amount: BigDecimal, at: Instant): CourseDraft        // revision++
+    fun setDose(amount: BigDecimal, at: Instant): CourseDraft            // revision++
     fun setSchedule(schedule: CourseSchedule, at: Instant): CourseDraft  // revision++
     fun attach(pkg: Package, doses: Doses, at: Instant): Result<CourseDraft>
-    fun detach(packageId: Uuid, at: Instant): CourseDraft   // последний источник сбрасывает форму
+    fun detach(pkg: Package, at: Instant): CourseDraft   // последняя пачка сбрасывает форму
     fun reorder(from: Int, to: Int, at: Instant): CourseDraft
-    fun allocate(packageId: Uuid, doses: Doses, at: Instant): CourseDraft
-    fun activate(at: Instant): Result<PlannedCourse>  // требует расписания, дозы и источника
+    fun allocate(pkg: Package, doses: Doses, at: Instant): CourseDraft
+    fun maxDoses(pkg: Package, required: Doses, availability: Availability): Doses
+    fun activate(at: Instant): Result<Activation>  // требует расписания, дозы и пачки
+
+    /** План и запись одного эпизода: порознь они не рождаются, и забыть одно из двух нельзя. */
+    class Activation(val course: Course, val record: CourseRecord)
 }
 
-class PlannedCourse(
-    /* id, title, note, medicine, revision, createdAt, updatedAt */
-    override val dose: Quantity,          // есть по типу — и неизменна
-    override val schedule: CourseSchedule,
-    override val status: CourseStatus = CourseStatus.ACTIVE   // ACTIVE | COMPLETED | CANCELLED
-) : Course {
-    fun rename(title: String, note: String?, at: Instant): PlannedCourse
-    fun attach(pkg: Package, doses: Doses, at: Instant): Result<PlannedCourse>
-    fun detach(packageId: Uuid, at: Instant): PlannedCourse  // форму и единицу НЕ сбрасывает
-    fun reorder(from: Int, to: Int, at: Instant): PlannedCourse
-    fun allocate(packageId: Uuid, doses: Doses, at: Instant): PlannedCourse
-    fun complete(at: Instant): PlannedCourse   // выделения освобождаются, источники остаются историей
-    fun cancel(at: Instant): PlannedCourse
+/**
+ * Живой план. СУЩНОСТЬ: тождество — id эпизода. Состояний нет вовсе; **все вопросы о лечении
+ * задаются ему**, потому что он один владеет и дозой, и препаратом.
+ */
+class Course(
+    val id: Uuid,
+    val prescription: Prescription,
+    val medicine: CourseMedicine,
+    val revision: Revision,          // редакция плана и пачек
+    val createdAt: Instant,
+    val updatedAt: Instant
+) {
+    val dose: Quantity; val schedule: CourseSchedule
+    fun allocatedOf(pkg: Package): Quantity?   // выделение в единицах пачки = целевая бронь
+    fun attach(pkg: Package, doses: Doses, at: Instant): Result<Course>
+    fun detach(pkg: Package, at: Instant): Course   // форму и единицу НЕ сбрасывает
+    fun reorder(from: Int, to: Int, at: Instant): Course
+    fun allocate(pkg: Package, doses: Doses, at: Instant): Course
+    fun coverage(remaining: List<ScheduledOccurrence>, availability: Availability): CourseCoverage
+    fun maxDoses(pkg: Package, required: Doses, availability: Availability): Doses
+    fun clamped(required: Doses, availability: Availability, at: Instant): Course
+    fun dosesAfterIntake(pkg: Package, taken: Quantity, availableAfter: Quantity): Doses
+    fun spendOrder(doses: Doses, availability: Availability): List<Uuid?>  // по пачке на дозу
+    fun spending(doses: Doses, availability: Availability): Map<Uuid, Quantity>
+}
+
+/** Запись эпизода: заводится при активации, живёт вечно, переход один. */
+class CourseRecord(
+    val id: Uuid,                    // тождество эпизода: то же, что у плана
+    val title: String,               // 1..200 — имя лечения живёт здесь
+    val note: String?,               // ≤500 — «что купить», запись от врача
+    val prescription: Prescription,  // снимок: переживает план
+    val startedAt: Instant,
+    val outcome: Outcome? = null,    // null — лечение идёт
+    val closedAt: Instant? = null    // бывает только вместе с исходом
+) {
+    val isOpen: Boolean
+    fun rename(title: String, note: String?): CourseRecord
+    fun close(outcome: Outcome, at: Instant): CourseRecord
+    enum class Outcome { COMPLETED, CANCELLED }
 }
 
 /**
@@ -912,7 +949,7 @@ class PlannedCourse(
 class CourseRejected(val reason: Reason) : IllegalStateException(reason.name) {
     enum class Reason {
         PACKAGE_UNUSABLE, ALREADY_ATTACHED, FORM_UNKNOWN, FORM_MISMATCH, UNIT_MISMATCH,
-        COURSE_CLOSED, SCHEDULE_MISSING, DOSE_MISSING, SOURCES_MISSING
+        SCHEDULE_MISSING, DOSE_MISSING, SOURCES_MISSING
     }
 }
 
@@ -922,6 +959,12 @@ class CourseRejected(val reason: Reason) : IllegalStateException(reason.name) {
 
 `at: Instant` у переходов — не украшение: `updatedAt` обязан меняться на переходе, а часы домен
 получает аргументом, а не из системы (H1), иначе поведение курса непроверяемо тестом.
+
+**На входе — пачка, на выходе — её идентификатор.** Вызывающий пачку держит, и передавать вместо
+неё `Uuid` значит терять то, ради чего в домене есть сущности: подставить форму или единицу вместо
+пачки становится нечем, а прежде такая подстановка тихо давала «неизвестно» — то есть неверное
+число на ползунке. Обратно курс отдаёт идентификаторы: самих пачек он не хранит. Состав препарата
+адресуется идентификаторами и внутрь не пускает — публичная сторона у лечения одна, и это курс.
 
 ### Источник курса и серверная бронь — одно и то же
 
@@ -985,7 +1028,8 @@ class CourseRejected(val reason: Reason) : IllegalStateException(reason.name) {
 завтра». У черновика **броней нет и упаковку он не занимает**: подключённые источники —
 предварительный выбор. Брони и назначение появляются при `activate()`, которое требует расписания,
 дозы и хотя бы одного источника — и это **единственное место**, где их наличие проверяется: дальше
-за него отвечает тип `PlannedCourse`.
+за него отвечает тип `Course`. Активация возвращает пару: план и запись эпизода, поэтому завести
+лечение без записи невозможно.
 
 Доза черновика — число без единицы, и это честно: «две штуки чего-то» человек записывает раньше,
 чем выбрал пачку, а единицу задаёт первый источник. Величиной доза становится при активации.
@@ -1157,7 +1201,7 @@ sealed interface Intake {
 
 class CourseIntake(
     override val id: Uuid,
-    val courseId: Uuid,
+    val courseId: Uuid,               // ЭПИЗОД лечения: запись переживёт план (D5)
     val courseRevision: Revision,      // какой редакцией расписания порождён
     val slot: ScheduledOccurrence,     // исходные дата и время + разрешённый момент (F4)
     val plannedAmount: Quantity,
@@ -1258,17 +1302,22 @@ sealed interface StockMovement {
     ) : StockMovement {
         enum class Reason { EXPIRED, DAMAGED, OTHER }
     }
-    data class Transfer(val amount: Quantity, val from: Uuid, val to: Uuid, ...) : StockMovement
+    data class Transfer(
+        val amount: Quantity, val sourceMedKitId: Uuid, val targetMedKitId: Uuid, ...
+    ) : StockMovement
     data class RemoteChange(val delta: BigDecimal, override val unitId: Uuid, val medKitId: Uuid, ...) : StockMovement
     data class AccessLoss(val amount: Quantity, val medKitId: Uuid, ...) : StockMovement
 
-    fun deltaIn(medKitId: Uuid): BigDecimal
+    fun deltaIn(medKit: MedKit): BigDecimal
 
     companion object { const val NOTE_MAX_LENGTH = 200 }
 }
 ```
 
-**Перенос — одна запись с двумя концами.** `deltaIn(from)` даёт минус, `deltaIn(to)` — тот же плюс,
+**Перенос — одна запись с двумя концами.** Концы названы по смыслу, а не `from`/`to`: аптечка и
+там и там, типом их не различить, и перепутанные местами они молча перевернули бы знак в отчёте.
+`deltaIn` принимает саму аптечку по той же причине — чужой `Uuid` не упал бы, а тихо дал ноль.
+`deltaIn(источник)` даёт минус, `deltaIn(назначение)` — тот же плюс,
 для другой аптечки — ноль. Поэтому нельзя записать только приход, только расход или разные
 количества на концах. Целостность записи сохраняет доменный тип, а целостность перехода упаковки и
 записи движения — транзакция F5.
@@ -1542,7 +1591,8 @@ sealed interface MedKitSyncCommand {
 }
 
 // data/pack — очередь отдаёт домену оценку, а экрану отдельно свои признаки
-data class PackageQueueState(
+data class PackageQueueState(   // собирается из пачки: её тождество и подтверждённое число
+    val packageId: Uuid,        // сворачиваются только её команды — это инвариант
     val confirmed: Quantity,
     val unclosed: List<PackageSyncCommand> = emptyList(),
     val unresolvedOperationIds: List<Uuid> = emptyList()
@@ -1851,11 +1901,12 @@ sealed interface MedKitRemoval {
 | `quantity_units`              | `id` PK, `name`                                                                                                                                                                   | Словарь с **серверными** идентификаторами                                                                                                                                                                                                                                                  |
 | `form_types`                  | `id` PK, `name`                                                                                                                                                                   | То же                                                                                                                                                                                                                                                                                      |
 | `drug_templates`              | `id` PK, `name`, `name_lat?`, `active_substance?`, `form_id?`, `category?`, `quantity_unit_id?`, `manufacturer?`, `country?`, `description?`, `cached_at`                         | Кэш карточек справочника: повторный поиск работает без сети                                                                                                                                                                                                                                |
-| `courses`                     | `id` PK, `title`, `note?`, `dose_amount?`, `unit_id?`, `form_id?`, `start?`, `end_inclusive?`, `days_mask?`, `zone?`, `status`, `revision`, `created_at`, `updated_at`            | Расписание встроено колонками: отдельной жизни у него нет, отдельная таблица только добавила бы join                                                                                                                                                                                       |
+| `courses`                     | **живой план**: `id` PK, `dose_amount?`, `unit_id?`, `form_id?`, `start?`, `end_inclusive?`, `days_mask?`, `zone?`, `revision`, `created_at`, `updated_at`; черновик — та же таблица без назначения | Расписание встроено колонками: отдельной жизни у него нет, отдельная таблица только добавила бы join. Состояний нет: строка живёт, пока лечение идёт, и **удаляется** при его конце (D5) |
+| `course_records`              | **эпизод**: `id` PK (то же тождество, что у плана), `title`, `note?`, `dose_amount`, `unit_id`, `start`, `end_inclusive`, `days_mask`, `zone`, `started_at`, `outcome?`, `closed_at?` | Заводится при активации, живёт вечно. Аналитика читает только её: идущее и законченное лечение одной формы (H6). Снимок назначения переживает план — иначе история приёмов потеряет, что было назначено |
 | `course_times`                | `course_id` FK, `minutes_of_day`; UNIQUE(пара)                                                                                                                                    | Времена — список; уникальность пары не даёт завести одно время дважды                                                                                                                                                                                                                      |
 | `course_sources`              | `course_id` FK, `package_id` FK, `position`, `allocated_doses`; PK(`course_id`,`package_id`), UNIQUE(`course_id`,`position`)                                                      | Порядок = приоритет. Уникальность позиции ловит сбой перетаскивания                                                                                                                                                                                                                        |
 | `active_package_assignments`  | **`package_id` PRIMARY KEY**, `course_id` FK                                                                                                                                      | Это и есть механизм «одна пачка — один активный курс». Проверка «а нет ли уже» перед вставкой не годится: два экрана записали бы одновременно и оба увидели бы пусто. Строка появляется при `activate()`, исчезает при завершении, отмене и отвязке                                        |
-| `intakes`                     | поля `CourseIntake` и `UnplannedIntake` в одной таблице, вид различается наличием курса, **без колонок учёта**; `accounting`, `operation_id`, `reconciliation_id` — обвязка синхронизации (`IntakeSyncState`); UNIQUE(`course_id`,`scheduled_on`,`scheduled_time`); FK на плановую/фактическую `packages` **RESTRICT**, FK на `courses` **RESTRICT** | История не удаляется каскадом. Колонки учёта живут в той же строке, но доменная модель их не носит: их меняют только транзакционные сценарии F5, и правила о приёме их не читают (D6) |
+| `intakes`                     | поля `CourseIntake` и `UnplannedIntake` в одной таблице, вид различается наличием курса, **без колонок учёта**; `accounting`, `operation_id`, `reconciliation_id` — обвязка синхронизации (`IntakeSyncState`); UNIQUE(`course_id`,`scheduled_on`,`scheduled_time`); FK на плановую/фактическую `packages` **RESTRICT**, FK на `course_records` **RESTRICT** | История не удаляется каскадом. Колонки учёта живут в той же строке, но доменная модель их не носит: их меняют только транзакционные сценарии F5, и правила о приёме их не читают (D6) |
 | `stock_adjustments`           | поля `StockMovement`; FK на `packages` **RESTRICT**                                                                                                                               | Одна строка на движение; у `Transfer` обе аптечки и одно количество, поэтому концы переноса не расходятся                                                                                                                                                                                   |
 | `sync_operations`             | поля `SyncOperation`; `kind` + `payload` + `payload_version`; `package_id?`; `sequence` UNIQUE, монотонен                                                                                                                                | Очередь. Вид команды хранится дискриминатором колонки и её конвертером. `package_id` называет затронутую пачку и `NULL` у команд аптечки: порядок по одной упаковке строится запросом, а не доменной функцией |
 | `sync_operation_dependencies` | `operation_id` FK, `depends_on_id` FK; PK(пара)                                                                                                                                   | Зависимости отдельной таблицей, а не размазанными по payload                                                                                                                                                                                                                               |
@@ -2052,11 +2103,20 @@ DTO состояния не содержат сущностей; доменны�
 Числа при отображении сохранённого состояния нормализуются, чтобы `1` и `1.000000` не создавали
 ложных изменений. Несохранённый ввод остаётся как напечатан, без такой нормализации.
 
-**Вычисление живёт на типе, о котором формулирует правило** (решение PR 3). Методы остаются чистыми:
-получают остатки, даты и ответы аргументами, не читают Room и системные часы. `CourseSchedule`
-строит свои пункты, `CourseMedicine` отвечает за обеспечение и расход, `PackageAvailability` — за
-доступные величины. Свободным остаётся `remainingOn`: прогноз связывает пачки, курсы и уже
-отвеченные приёмы и не принадлежит одному из этих типов.
+**Вычисление живёт на типе, который владеет обеими половинами данных** (решение PR 3). Методы
+остаются чистыми: получают остатки, даты и ответы аргументами, не читают Room и системные часы.
+`CourseSchedule` строит свои пункты; **курс** отвечает за обеспечение, пределы, зажим и расход,
+потому что он один владеет и дозой, и препаратом; пачка отвечает за свой прогноз — сколько из неё
+уйдёт, ей говорят числом. Свободных функций в домене не осталось: прежний `remainingOn` связывал
+три понятия сразу и держал их в файле величины, из-за чего `pack` знал и курсы, и приёмы.
+
+**Понятия ссылаются в одну сторону:** `intake → course → pack → value`. Сборку «спросить каждый
+курс, сложить и раздать пачкам» делает сценарий — это его работа, и домен её не изображает. Отбор
+и порядок неотвеченных пунктов тоже принадлежат сценарию: курс отвечает, из чего возьмутся
+следующие N доз, и чужого агрегата в его сигнатурах нет.
+
+**На входе — сущность, на выходе — идентификатор.** Вызывающий пачку держит; `Uuid` вместо неё
+теряет то, ради чего в домене есть сущности, и молча проходит там, где ждут другое (D1).
 
 ```kotlin
 // domain/course
@@ -2069,18 +2129,18 @@ data class CourseSchedule(/* ... */) {
     fun countRemaining(from: Instant, resolved: Set<Pair<LocalDate, LocalTime>>): Int
 }
 
-data class CourseMedicine(/* sources, formId, unitId */) {
-    fun coverage(dose: Quantity, remaining: List<ScheduledOccurrence>, availability: Availability): CourseCoverage
-    fun maxDoses(packageId: Uuid, dose: Quantity, required: Doses, availability: Availability): Doses
-    fun clampedTo(dose: Quantity, required: Doses, availability: Availability): CourseMedicine
-    fun spend(dose: Quantity, doses: Doses, availability: Availability): Map<Uuid, Doses>
-    fun dosesAfterIntake(packageId: Uuid, dose: Quantity, taken: Quantity, availableAfter: Quantity): Doses
+class Course(/* prescription, medicine, revision, … */) {
+    // Дозу не просит: она у него. Пачку принимает саму, отвечает её идентификатором.
+    fun coverage(remaining: List<ScheduledOccurrence>, availability: Availability): CourseCoverage
+    fun maxDoses(pkg: Package, required: Doses, availability: Availability): Doses
+    fun clamped(required: Doses, availability: Availability, at: Instant): Course
+    fun dosesAfterIntake(pkg: Package, taken: Quantity, availableAfter: Quantity): Doses
+    fun spendOrder(doses: Doses, availability: Availability): List<Uuid?>
+    fun spending(doses: Doses, availability: Availability): Map<Uuid, Quantity>
 }
 
-class PlannedCourse(/* ... */) : Course {
-    // Проверяет принадлежность и состояние пунктов; расход пачек делегирует препарату.
-    fun assign(upcoming: List<CourseIntake>, availability: Availability): Map<Uuid, Uuid?>
-}
+// Состав: адресуется идентификаторами, потому что их и хранит; наружу — internal.
+data class CourseMedicine(/* sources, formId, unitId */)
 
 // domain/pack
 // pkg — аргумент, а не поле результата: сущность внутри значения сравнивалась бы по id (D4).
@@ -2106,12 +2166,11 @@ data class PackageForecast(
     val remaining: Quantity?          // null при требуемой сверке
     val requiresRecount: Boolean
 }
+// Прогноз — вопрос к пачке: сколько из неё уйдёт, считают курсы и говорят числом.
 // Дата включительно в reportZone; горизонт не больше трёх календарных месяцев.
-fun remainingOn(
-    date: LocalDate, reportZone: ZoneId, now: Instant,
-    packages: List<PackageAvailability>, courses: List<PlannedCourse>,
-    resolved: List<CourseIntake>
-): List<PackageForecast>
+fun PackageAvailability.forecastOn(
+    date: LocalDate, reportZone: ZoneId, now: Instant, spent: Quantity
+): PackageForecast
 ```
 
 Во всех четырёх расклад один — `Availability`, и «неизвестно» в нём **не отличается от нуля по
@@ -2365,6 +2424,12 @@ enum class PackageSort { NAME, EXPIRY, ADDED_AT, QUANTITY }
 **Сводка на сейчас:** действующих упаковок и аптечек, просроченных, активных курсов, курсов с
 нехваткой, распределение по форме и категории, **сумма указанной цены**.
 
+**Аналитика читает записи эпизодов, а не курсы.** `CourseRecord` заводится при активации и живёт
+вечно, поэтому идущее и законченное лечение приходят в отчёт одной формой: союза «действующие
+курсы плюс архив» нет, и различать их по источнику не нужно — идущий эпизод узнаётся отсутствием
+исхода. Что принималось по эпизоду, отвечает `intakes.course_id`: он указывает на запись и не
+повисает, когда план уничтожен (D5, D6).
+
 Цена — цена **всей пачки**; пропорционально остатку не амортизируется (мы не знаем, сколько стоила
 одна таблетка). Пачки без цены считаются **отдельным числом** («у 12 пачек цена не указана»), а не
 бесплатными.
@@ -2485,7 +2550,7 @@ enum class PackageSort { NAME, EXPIRY, ADDED_AT, QUANTITY }
 
 | #  | коммит                                                         | содержание                                                                                              |
 |----|----------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
-| 1  | `Курс начинается заметкой, а не расписанием`                   | `Course`, `CourseStatus`, `DRAFT`, `rename`                                                             |
+| 1  | `Курс начинается заметкой, а не расписанием`                   | `CourseDraft`, `rename` (состояние тогда было полем `CourseStatus`)                                     |
 | 2  | `Расписание знает свой часовой пояс`                           | `CourseSchedule`, инварианты                                                                            |
 | 3  | `Переход на летнее время разрешается одним названным правилом` | `CourseSchedule.occurrences`: несуществующее время вперёд, повторяющееся — первое вхождение              |
 | 4  | `Расписание строится окном, а не на год вперёд`                | окно 60 дней, достройка                                                                                 |
@@ -2493,10 +2558,10 @@ enum class PackageSort { NAME, EXPIRY, ADDED_AT, QUANTITY }
 | 6  | `Форму и единицу курса задаёт первый источник`                 | фиксация; `formId = null` несовместим ни с чем                                                          |
 | 7  | `Выделение измеряется приёмами, и тупика больше нет`           | `CourseMedicine.allocate` и `maxDoses` в дозах                                                          |
 | 8  | `Обеспечение вычисляется и называет первый непокрытый приём`   | `CourseMedicine.coverage`, `CourseCoverage`                                                              |
-| 9  | `Источники расходуются сверху вниз и сами не появляются`       | `CourseMedicine.spend`, `PlannedCourse.assign`; необеспеченный приём не записывается                    |
+| 9  | `Источники расходуются сверху вниз и сами не появляются`       | `CourseMedicine.spend`; необеспеченная доза не записывается (раскладка тогда звалась `assign`)           |
 | 10 | `Пропуск освобождает выделение, а не оставляет бронь`          | пересчёт при `SKIPPED`, `MISSED`, частичной дозе                                                        |
 | 11 | `Нехватка зажимает выделение, не трогая расписания`            | `CourseMedicine.clampedTo` и все события изменения её входов (D5, F5)                                  |
-| 12 | `Прогноз считается формулой, а не строками`                    | сигнатуры H1, `remainingOn`, `PackageForecast`                                                           |
+| 12 | `Прогноз считается формулой, а не строками`                    | сигнатуры H1, `PackageForecast` (свободная функция уехала в пачку коммитом 25)                           |
 | 13 | `Приём и его учёт имеют явные состояния`                       | `Intake`, `IntakeStatus`, переходы D6; `IntakeSyncState` — data; `PackageSharedFacts`; запись очереди `SyncOperation` и `PreparedRequest` — data в PR 4 |
 | 14 | `Правило годности живёт в одном месте, а спрашивают его двое`  | `ExpiryDate` — величина с `isExpiredOn`/`expiresWithin`/`of`; `PackageFacts` и ввод отдают её, а не дату (D3) |
 | 15 | `Доступное считается по оценке количества, а не по очереди`    | `EffectiveAmount` и конструктор `PackageAvailability`; `PackageQueueState` — в `data/pack`              |
@@ -2506,16 +2571,27 @@ enum class PackageSort { NAME, EXPIRY, ADDED_AT, QUANTITY }
 | 19 | `Прогноз говорит оценкой количества`                          | `PackageForecast.amount: EffectiveAmount` вместо пары «число и признак»                                  |
 | 20 | `«Неизвестно» — это сигнатура, а не отсутствие ключа`         | `Availability` с `known`/`dosesOf`; сборка «нет числа → нет пачки» — в одном месте                       |
 | 21 | `Приём курса и внеплановый приём — разные типы`               | `CourseIntake`, `UnplannedIntake`, `TakenDose`, `IntakeAnswer`; восемь `require` по сочетаниям исчезли   |
-| 22 | `Черновик и курс с расписанием — разные типы`                 | `CourseDraft`, `PlannedCourse`, `CourseMedicine`; расчёты принимают назначенный курс                     |
+| 22 | `Черновик и курс с расписанием — разные типы`                 | `CourseDraft` и назначенный курс порознь; расчёты принимают назначенный                                  |
 | 23 | `Домен, данные и представление разложены по понятиям`         | `domain/pack`, `data/pack`, `presentation/pack`; `data/server`, `data/database`; `ParsedInput`           |
+| 24 | `Курс считает своё лечение, а препарат остаётся составом`     | обеспечение, пределы, зажим и пересчёт — методы курса: доза у него. Правило «сверху вниз» одно на три вопроса |
+| 25 | `Пачка не знает ни курсов, ни приёмов`                        | `forecastOn` вместо свободного `remainingOn`; `spendOrder` вместо `assign`; циклов между понятиями нет   |
+| 26 | `Лечение — эпизод: живой план и вечная запись`                | `Course` без состояний, `CourseRecord`, `Prescription`, `activate` возвращает пару; `CourseStatus` удалён |
+| 27 | `Домен говорит сущностями, а не идентификаторами`             | `moveTo(MedKit)`, `confirm(pkg)`, `maxDoses(pkg)`, `deltaIn(medKit)`; концы переноса названы по смыслу   |
+| 28 | `Очередь знает, чьи команды сворачивает`                      | `PackageQueueState.packageId` и инвариант; одна свёртка вместо зонда и двух проходов                     |
+| 29 | `Однополевые величины объявлены одинаково`                    | `Doses` и `ExpiryDate` — `value class`, как `Revision` и `Availability`                                  |
+| 30 | `Тест назван по тому, что проверяет`                          | десять файлов переименованы по проверяемому типу                                                         |
 
-**Тесты:** окно расписания через месяц и год; **несуществующее и повторяющееся время** в дни
+**Тесты:** активация возвращает план и запись, и запись открыта; план и запись одного эпизода
+несут одно назначение; закрытие записи не переписывает состоявшиеся приёмы, а замена лечения даёт
+**две** записи; ссылка приёма находит эпизод и после конца плана; закрытая запись не закрывается
+дважды; сумма `spendOrder` совпадает с `coverage.coveredDoses`; команда чужой пачки в свёртку
+очереди не принимается; окно расписания через месяц и год; **несуществующее и повторяющееся время** в дни
 перехода — по названному правилу; пустая маска дней отвергнута; потребность 28 при выделении 5 и 4
 даёт 9 покрытых и называет первый непокрытый; **доза 2 при доступных 1 и 1 даёт 0 доз — тупика
 нет**; числа примера D4 считаются через `PackageAvailability(pkg, amount)`; **две `PackageAvailability` с 20 и 19 не
 равны**; свёрнутый пересчёт совпадает с тем, что подтвердит `Package.correctTo`; ожидающая правка
-описания оставляет число подтверждённым; бесхозная бронь вычитается, а объяснённая назначением и
-снятая локально — нет; при `EffectiveAmount.Unknown` прогноз не рисует выдуманный остаток; ползунок второго
+описания оставляет число подтверждённым; при `EffectiveAmount.Unknown` прогноз не рисует
+выдуманный остаток; ползунок второго
 источника зажат, когда первый закрыл потребность; несовместимая форма и единица отвергнуты;
 **`formId = null` не подключается**; **отвязка последнего источника у `ACTIVE` форму не сбрасывает,
 у `DRAFT` сбрасывает**; пропуск освобождает дозу с конца стека; фактическая
@@ -2536,7 +2612,7 @@ enum class PackageSort { NAME, EXPIRY, ADDED_AT, QUANTITY }
 |----|------------------------------------------------------------|-------------------------------------------------------------------------|
 | 1  | `Локальные сведения об упаковке переживают снимок сервера` | `packages` и `package_details` порознь; строка деталей создаётся всегда |
 | 2  | `Брони хранятся со своей версией`                          | `claims`                                                                |
-| 3  | `Курс и его источники хранят порядок`                      | `courses`, `course_times`, `course_sources`                             |
+| 3  | `Курс и его источники хранят порядок`                      | `courses`, `course_records`, `course_times`, `course_sources`           |
 | 4  | `Одна упаковка не может попасть в два активных курса`      | `active_package_assignments`, `package_id` PK                           |
 | 5  | `История не удаляется вместе с упаковкой`                  | `intakes`, `stock_adjustments`, FK `RESTRICT`                           |
 | 6  | `Очередь и её зависимости лежат в базе`                    | `sync_operations`, `sync_operation_dependencies`; конвертер вида команды, маркер `SyncCommand` и `SyncOperation` — здесь |
@@ -2847,7 +2923,7 @@ HTTP сам не повторяет команды; `Retry-After` и backoff с�
 |---|---------------------------------------------------|----------------------------------|
 | 1 | `Сводка считает пачки, а не догадки`              | экран 26, сводка                 |
 | 2 | `Цена без цены не превращается в ноль`            | отдельный счётчик пачек без цены |
-| 3 | `Прогноз считается формулой на три месяца`        | `remainingOn`                    |
+| 3 | `Прогноз считается формулой на три месяца`        | `forecastOn`                     |
 | 4 | `Движение за период сходится`                     | баланс                           |
 | 5 | `Отчёт называет начало доступной истории`         | момент вступления в аптечку      |
 | 6 | `Неподтверждённый расход виден отдельной строкой` | `IntakeAccounting`               |
@@ -2983,7 +3059,7 @@ TalkBack; отсутствие связи при запуске уже наст�
 | REQ-020 | Валидация количества под курс                                       | ТЗ 4.1.1.4                              | D5, D4     | 3, 9      | **сокращается обеспечение, не курс** (C1)  | PR 3      |
 | REQ-021 | Уведомление по достижении срока приёма                              | ТЗ 4.1.1.4                              | D8         | 11        | `AlarmManager`, деградация                 | —         |
 | REQ-022 | Опрос об успешности приёма, корректирующий количество               | ТЗ 4.1.1.4                              | D6, H3 №18 | 3, 10, 11 | переходы D6 и пересчёт выделения — PR 3; действия из шторки — PR 11 | PR 3      |
-| REQ-023 | Замена лечения новым курсом, сохранение истории старого             | ТЗ 4.1.1.4; уточнение C1 от 2026-09-09  | C1, D5     | 3, 9      | старый отменён, новый имеет другой id      | PR 3      |
+| REQ-023 | Замена лечения новым курсом, сохранение истории старого             | ТЗ 4.1.1.4; уточнение C1 от 2026-09-09  | C1, D5     | 3, 9      | два эпизода: старая запись закрыта, новая открыта | PR 3      |
 |         | **Просроченный препарат**                                           |                                         |            |           |                                            |           |
 | REQ-024 | Постоянный мониторинг сроков                                        | ТЗ 4.1.1.5                              | D8         | 11        | `DailyWorker`                              | —         |
 | REQ-025 | Уведомление об истечении                                            | ТЗ 4.1.1.5; уточнение C1 от 2026-09-09  | D8         | 11        | пороги на фиксированном `Clock`            | —         |
@@ -2996,7 +3072,7 @@ TalkBack; отсутствие связи при запуске уже наст�
 | REQ-031 | **Порядок действий не влияет на результат**                         | ТЗ 4.1.1.6–9                            | H4         | 7         | тест перестановок                          | —         |
 | REQ-032 | Каждая пачка — отдельная единица                                    | ТЗ 4.1.1.6–9                            | C0         | 7         | две одноимённые остаются двумя             | —         |
 |         | **Личный кабинет**                                                  |                                         |            |           |                                            |           |
-| REQ-033 | Прогноз количества на дату, не далее трёх месяцев                   | ТЗ 4.1.1.10                             | H6         | 3, 17     | `remainingOn`; экран — PR 17                | PR 3      |
+| REQ-033 | Прогноз количества на дату, не далее трёх месяцев                   | ТЗ 4.1.1.10                             | H6         | 3, 17     | `PackageAvailability.forecastOn`; экран — PR 17 | PR 3      |
 | REQ-034 | История израсходованного, не более года                             | ТЗ 4.1.1.10                             | H6         | 17        | баланс сходится                            | —         |
 | REQ-035 | Сводная статистика: категории, формы, общая цена                    | ТЗ 4.1.1.10                             | H6         | 17        | пачки без цены отдельно                    | —         |
 | REQ-036 | Сводный план лечения на дату                                        | ТЗ 4.1.1.10                             | H3 №12     | 10        | —                                          | —         |
