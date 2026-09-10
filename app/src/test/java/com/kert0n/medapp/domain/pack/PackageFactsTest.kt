@@ -65,6 +65,7 @@ class PackageFactsTest {
 
     @Test(expected = IllegalArgumentException::class)
     fun overlongDescriptionIsRejected() {
-        factsOf(pack()).withShared(description = "я".repeat(PACKAGE_DESCRIPTION_MAX_LENGTH + 1))
+        val tooLong = "я".repeat(PackageSharedFacts.DESCRIPTION_MAX_LENGTH + 1)
+        factsOf(pack()).withShared(description = tooLong)
     }
 }

@@ -2,8 +2,6 @@ package com.kert0n.medapp.domain.course
 
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.value.Doses
-import com.kert0n.medapp.domain.value.QUANTITY_MAX_INTEGER_DIGITS
-import com.kert0n.medapp.domain.value.QUANTITY_SCALE
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.requireNonNegativeDecimal
 import com.kert0n.medapp.domain.value.requireOptionalText
@@ -36,14 +34,14 @@ class CourseDraft(
 ) : Course {
 
     init {
-        requireText(title, COURSE_TITLE_MAX_LENGTH, "Course.title")
-        requireOptionalText(note, COURSE_NOTE_MAX_LENGTH, "Course.note")
+        requireText(title, Course.TITLE_MAX_LENGTH, "Course.title")
+        requireOptionalText(note, Course.NOTE_MAX_LENGTH, "Course.note")
         doseAmount?.let { amount ->
             requireNonNegativeDecimal(
                 amount = amount,
                 field = "доза курса",
-                maxScale = QUANTITY_SCALE,
-                maxIntegerDigits = QUANTITY_MAX_INTEGER_DIGITS
+                maxScale = Quantity.SCALE,
+                maxIntegerDigits = Quantity.MAX_INTEGER_DIGITS
             )
             // Нулевая доза — не лечение, а деление на ноль в обеспечении: `dosesIn` на ней бросает.
             require(amount.signum() > 0) { "разовая доза курса строго положительна" }

@@ -31,4 +31,9 @@ data class PackageForecast(
     val remaining: Quantity? get() = amount.quantityOrNull
 
     val requiresRecount: Boolean get() = amount is EffectiveAmount.NeedsRecount
+
+    companion object {
+        /** Горизонт прогноза: не дальше трёх календарных месяцев (ТЗ 4.1.1.10). */
+        const val MAX_MONTHS = 3L
+    }
 }

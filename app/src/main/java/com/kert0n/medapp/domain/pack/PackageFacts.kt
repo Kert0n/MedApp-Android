@@ -33,7 +33,7 @@ data class PackageFacts(
     val openedOn: LocalDate? = null
 ) {
     init {
-        requireOptionalText(note, PACKAGE_NOTE_MAX_LENGTH, "PackageFacts.note")
+        requireOptionalText(note, NOTE_MAX_LENGTH, "PackageFacts.note")
     }
 
     val name: String get() = shared.name
@@ -55,4 +55,8 @@ data class PackageFacts(
     /** Истекает ли срок не позже чем через [days] дней, считая [date] включительно (D8). */
     fun expiresWithin(date: LocalDate, days: Long): Boolean =
         expiresOn?.expiresWithin(date, days) == true
+
+    companion object {
+        const val NOTE_MAX_LENGTH = 200
+    }
 }

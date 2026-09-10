@@ -25,8 +25,8 @@ data class Quantity(val amount: BigDecimal, val unitId: Uuid) {
         requireNonNegativeDecimal(
             amount = amount,
             field = "количество",
-            maxScale = QUANTITY_SCALE,
-            maxIntegerDigits = QUANTITY_MAX_INTEGER_DIGITS
+            maxScale = SCALE,
+            maxIntegerDigits = MAX_INTEGER_DIGITS
         )
     }
 
@@ -99,6 +99,11 @@ data class Quantity(val amount: BigDecimal, val unitId: Uuid) {
     override fun toString(): String = "${amount.toPlainString()} @$unitId"
 
     companion object {
+        /** Разрядность серверного `numeric(19, 6)`: шесть знаков — деление таблетки и капли. */
+        const val SCALE = 6
+
+        /** Предел целой части — серверный, принят как продуктовый (C1). */
+        const val MAX_INTEGER_DIGITS = 13
 
         fun zero(unitId: Uuid): Quantity = Quantity(BigDecimal.ZERO, unitId)
     }

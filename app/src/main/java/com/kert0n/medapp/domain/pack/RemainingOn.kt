@@ -15,9 +15,6 @@ import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.uuid.Uuid
 
-/** Горизонт прогноза: дальше трёх календарных месяцев вперёд не считаем (ТЗ 4.1.1.10, PLAN H1). */
-const val FORECAST_MAX_MONTHS = 3L
-
 /**
  * Сколько останется в каждой упаковке к концу [date] в зоне отчёта.
  *
@@ -49,8 +46,8 @@ fun remainingOn(
     // `atZone().toLocalDate()`: `LocalDate.ofInstant` требует API 34 при нижней границе 29.
     val todayThere = now.atZone(reportZone).toLocalDate()
     require(!date.isBefore(todayThere)) { "прогноз считается вперёд, а не назад: $date" }
-    require(!date.isAfter(todayThere.plusMonths(FORECAST_MAX_MONTHS))) {
-        "горизонт прогноза — $FORECAST_MAX_MONTHS календарных месяца, запрошено $date"
+    require(!date.isAfter(todayThere.plusMonths(PackageForecast.MAX_MONTHS))) {
+        "горизонт прогноза — ${PackageForecast.MAX_MONTHS} календарных месяца, запрошено $date"
     }
     val until = date.plusDays(1).atStartOfDay(reportZone).toInstant()
 

@@ -80,7 +80,8 @@ class PackageIdentityTest {
     fun descriptiveFactsCarryTheirOwnInvariantsOnce() {
         // Границы длин объявлены сведениями, и Package их не переобъявляет.
         val tooLong = runCatching {
-            PackageFacts(PackageSharedFacts(name = "я".repeat(PACKAGE_NAME_MAX_LENGTH + 1)))
+            val name = "я".repeat(PackageSharedFacts.NAME_MAX_LENGTH + 1)
+            PackageFacts(PackageSharedFacts(name = name))
         }
         assertTrue(tooLong.isFailure)
     }

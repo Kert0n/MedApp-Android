@@ -28,18 +28,26 @@ data class PackageSharedFacts(
     val description: String? = null
 ) {
     init {
-        requireText(name, PACKAGE_NAME_MAX_LENGTH, "PackageSharedFacts.name")
-        requireOptionalText(category, PACKAGE_CATEGORY_MAX_LENGTH, "PackageSharedFacts.category")
+        requireText(name, NAME_MAX_LENGTH, "PackageSharedFacts.name")
+        requireOptionalText(category, CATEGORY_MAX_LENGTH, "PackageSharedFacts.category")
         requireOptionalText(
             manufacturer,
-            PACKAGE_MANUFACTURER_MAX_LENGTH,
+            MANUFACTURER_MAX_LENGTH,
             "PackageSharedFacts.manufacturer"
         )
-        requireOptionalText(country, PACKAGE_COUNTRY_MAX_LENGTH, "PackageSharedFacts.country")
+        requireOptionalText(country, COUNTRY_MAX_LENGTH, "PackageSharedFacts.country")
         requireOptionalText(
             description,
-            PACKAGE_DESCRIPTION_MAX_LENGTH,
+            DESCRIPTION_MAX_LENGTH,
             "PackageSharedFacts.description"
         )
+    }
+
+    companion object {
+        const val NAME_MAX_LENGTH = 300
+        const val CATEGORY_MAX_LENGTH = 200
+        const val MANUFACTURER_MAX_LENGTH = 300
+        const val COUNTRY_MAX_LENGTH = 100
+        const val DESCRIPTION_MAX_LENGTH = 4000
     }
 }

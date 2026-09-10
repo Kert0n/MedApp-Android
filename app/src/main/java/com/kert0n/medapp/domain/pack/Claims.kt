@@ -1,7 +1,6 @@
 package com.kert0n.medapp.domain.pack
 
-import com.kert0n.medapp.domain.value.QUANTITY_MAX_INTEGER_DIGITS
-import com.kert0n.medapp.domain.value.QUANTITY_SCALE
+import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.requireNonNegativeDecimal
 import java.math.BigDecimal
 
@@ -43,7 +42,7 @@ private fun requireClaimAmount(amount: BigDecimal, field: String) {
     requireNonNegativeDecimal(
         amount = amount,
         field = field,
-        maxScale = QUANTITY_SCALE,
-        maxIntegerDigits = QUANTITY_MAX_INTEGER_DIGITS
+        maxScale = Quantity.SCALE,
+        maxIntegerDigits = Quantity.MAX_INTEGER_DIGITS
     )
 }

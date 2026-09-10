@@ -115,14 +115,14 @@ class CourseTest {
     @Test
     fun titleAndNoteFillingTheirLimitsFit() {
         val long = course(
-            title = "я".repeat(COURSE_TITLE_MAX_LENGTH),
-            note = "я".repeat(COURSE_NOTE_MAX_LENGTH)
+            title = "я".repeat(Course.TITLE_MAX_LENGTH),
+            note = "я".repeat(Course.NOTE_MAX_LENGTH)
         )
         assertEquals(COURSE, long.id)
     }
 
     @Test(expected = IllegalArgumentException::class)
     fun noteOverTheLimitIsRejected() {
-        course(note = "я".repeat(COURSE_NOTE_MAX_LENGTH + 1))
+        course(note = "я".repeat(Course.NOTE_MAX_LENGTH + 1))
     }
 }

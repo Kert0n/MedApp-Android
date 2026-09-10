@@ -1,6 +1,5 @@
 package com.kert0n.medapp.presentation.value
 
-import com.kert0n.medapp.domain.value.MONEY_MAX_INTEGER_DIGITS
 import com.kert0n.medapp.domain.value.Money
 import com.kert0n.medapp.presentation.ParsedInput
 import java.math.BigDecimal
@@ -20,7 +19,7 @@ import java.util.Locale
 private fun maxInputLength(currency: Currency): Int {
     val fractionDigits = currency.defaultFractionDigits.coerceAtLeast(0)
     val separator = if (fractionDigits > 0) 1 else 0
-    return MONEY_MAX_INTEGER_DIGITS + separator + fractionDigits + 1
+    return Money.MAX_INTEGER_DIGITS + separator + fractionDigits + 1
 }
 
 enum class MoneyPresentationError {

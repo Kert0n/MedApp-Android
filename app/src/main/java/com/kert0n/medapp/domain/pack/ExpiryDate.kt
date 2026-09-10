@@ -37,6 +37,9 @@ data class ExpiryDate(val lastDay: LocalDate) {
     }
 
     companion object {
+        /** С какого числа дней до конца срока пачка «истекает скоро» — больший из порогов D8. */
+        const val SOON_DAYS = 3L
+
 
         /**
          * Названный месяц годен целиком, и годность кончается его последним днём.

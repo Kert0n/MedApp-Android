@@ -10,15 +10,6 @@ import java.util.Currency
 val DEFAULT_CURRENCY: Currency = Currency.getInstance("RUB")
 
 /**
- * Предел целой части цены — свой, хотя по значению совпадает с количеством.
- *
- * Совпадение не делает его тем же правилом: цена на сервер не уезжает, и её границу задаёт продукт
- * (PLAN C1), а не `numeric(19, 6)`. Раньше она бралась из `QUANTITY_MAX_INTEGER_DIGITS`, и
- * изменение серверного предела молча изменило бы допустимые цены.
- */
-const val MONEY_MAX_INTEGER_DIGITS = 13
-
-/**
  * Цена всей пачки. `BigDecimal` по тому же правилу, что количество, без «минимальных единиц» и
  * целочисленных копеек: одно правило на обе величины (PLAN D1). Как она станет строкой для базы —
  * дело конвертера хранения, как строкой для ввода — дело адаптера.
@@ -40,7 +31,7 @@ data class Money(val amount: BigDecimal, val currency: Currency = DEFAULT_CURREN
             amount = amount,
             field = "цена в ${currency.currencyCode}",
             maxScale = fractionDigits,
-            maxIntegerDigits = MONEY_MAX_INTEGER_DIGITS
+            maxIntegerDigits = MAX_INTEGER_DIGITS
         )
     }
 
@@ -57,4 +48,12 @@ data class Money(val amount: BigDecimal, val currency: Currency = DEFAULT_CURREN
     override fun hashCode(): Int = 31 * currency.hashCode() + amount.stripTrailingZeros().hashCode()
 
     override fun toString(): String = "${amount.toPlainString()} ${currency.currencyCode}"
+
+    companion object {
+        /**
+         * Свой предел, хотя совпадает с количеством: цена на сервер не уезжает, и её границу
+         * задаёт продукт.
+         */
+        const val MAX_INTEGER_DIGITS = 13
+    }
 }

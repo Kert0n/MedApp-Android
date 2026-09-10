@@ -29,8 +29,8 @@ class MedKit(
 ) {
 
     init {
-        requireText(name, MED_KIT_NAME_MAX_LENGTH, "MedKit.name")
-        requireOptionalText(location, MED_KIT_LOCATION_MAX_LENGTH, "MedKit.location")
+        requireText(name, NAME_MAX_LENGTH, "MedKit.name")
+        requireOptionalText(location, LOCATION_MAX_LENGTH, "MedKit.location")
         require(participantCount >= 1) { "участник всегда есть хотя бы один — я сам" }
         if (publication == KitPublication.LOCAL) {
             require(participantCount == 1L) { "у локальной аптечки других участников нет" }
@@ -63,4 +63,8 @@ class MedKit(
 
     override fun toString(): String = "MedKit(id=$id, name=$name, publication=$publication)"
 
+    companion object {
+        const val NAME_MAX_LENGTH = 200
+        const val LOCATION_MAX_LENGTH = 300
+    }
 }

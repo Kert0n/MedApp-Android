@@ -1,6 +1,6 @@
 package com.kert0n.medapp.data.pack
 
-import com.kert0n.medapp.domain.pack.PACKAGE_DESCRIPTION_MAX_LENGTH
+import com.kert0n.medapp.domain.pack.PackageSharedFacts
 import com.kert0n.medapp.domain.value.Quantity
 
 
@@ -94,7 +94,7 @@ class PackagePostNetworkMapperTest {
             category = null,
             manufacturer = null,
             country = null,
-            description = "я".repeat(PACKAGE_DESCRIPTION_MAX_LENGTH + 1)
+            description = "я".repeat(PackageSharedFacts.DESCRIPTION_MAX_LENGTH + 1)
         )
     }
 }

@@ -70,4 +70,11 @@ sealed interface Course {
         val allocated = stack.allocatedTo(packageId) ?: return null
         return dose?.times(allocated)
     }
+
+    companion object {
+        const val TITLE_MAX_LENGTH = 200
+
+        /** Длиннее названия: сюда переписывают запись от врача и «что купить». */
+        const val NOTE_MAX_LENGTH = 500
+    }
 }

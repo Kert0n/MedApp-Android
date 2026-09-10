@@ -1,10 +1,6 @@
 package com.kert0n.medapp.data.pack
 
-import com.kert0n.medapp.domain.pack.PACKAGE_CATEGORY_MAX_LENGTH
-import com.kert0n.medapp.domain.pack.PACKAGE_COUNTRY_MAX_LENGTH
-import com.kert0n.medapp.domain.pack.PACKAGE_DESCRIPTION_MAX_LENGTH
-import com.kert0n.medapp.domain.pack.PACKAGE_MANUFACTURER_MAX_LENGTH
-import com.kert0n.medapp.domain.pack.PACKAGE_NAME_MAX_LENGTH
+import com.kert0n.medapp.domain.pack.PackageSharedFacts
 import kotlin.uuid.Uuid
 
 /**
@@ -32,19 +28,27 @@ data class PackagePatchNetworkDTO(
     init {
         require(name == null || name.isNotBlank()) { "название нельзя очистить" }
         amount?.let { requireNetworkAmount(it, "PackagePatchNetworkDTO.amount") }
-        require(name == null || name.length <= PACKAGE_NAME_MAX_LENGTH) {
-            "PackagePatchNetworkDTO.name: длиннее $PACKAGE_NAME_MAX_LENGTH символов"
+        require(name == null || name.length <= PackageSharedFacts.NAME_MAX_LENGTH) {
+            "PackagePatchNetworkDTO.name: длиннее ${PackageSharedFacts.NAME_MAX_LENGTH} символов"
         }
-        requireClearable(category, PACKAGE_CATEGORY_MAX_LENGTH, "PackagePatchNetworkDTO.category")
+        requireClearable(
+            category,
+            PackageSharedFacts.CATEGORY_MAX_LENGTH,
+            "PackagePatchNetworkDTO.category"
+        )
         requireClearable(
             manufacturer,
-            PACKAGE_MANUFACTURER_MAX_LENGTH,
+            PackageSharedFacts.MANUFACTURER_MAX_LENGTH,
             "PackagePatchNetworkDTO.manufacturer"
         )
-        requireClearable(country, PACKAGE_COUNTRY_MAX_LENGTH, "PackagePatchNetworkDTO.country")
+        requireClearable(
+            country,
+            PackageSharedFacts.COUNTRY_MAX_LENGTH,
+            "PackagePatchNetworkDTO.country"
+        )
         requireClearable(
             description,
-            PACKAGE_DESCRIPTION_MAX_LENGTH,
+            PackageSharedFacts.DESCRIPTION_MAX_LENGTH,
             "PackagePatchNetworkDTO.description"
         )
     }

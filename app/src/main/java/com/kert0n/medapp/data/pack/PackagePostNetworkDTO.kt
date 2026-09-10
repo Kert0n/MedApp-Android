@@ -1,10 +1,6 @@
 package com.kert0n.medapp.data.pack
 
-import com.kert0n.medapp.domain.pack.PACKAGE_CATEGORY_MAX_LENGTH
-import com.kert0n.medapp.domain.pack.PACKAGE_COUNTRY_MAX_LENGTH
-import com.kert0n.medapp.domain.pack.PACKAGE_DESCRIPTION_MAX_LENGTH
-import com.kert0n.medapp.domain.pack.PACKAGE_MANUFACTURER_MAX_LENGTH
-import com.kert0n.medapp.domain.pack.PACKAGE_NAME_MAX_LENGTH
+import com.kert0n.medapp.domain.pack.PackageSharedFacts
 import com.kert0n.medapp.domain.value.requireOptionalText
 import com.kert0n.medapp.domain.value.requireText
 import kotlin.uuid.Uuid
@@ -35,25 +31,29 @@ data class PackagePostNetworkDTO(
         // Границы те же, что у домена: создание пачки посылает её поля как есть, и расхождение
         // между «влезло в модель» и «влезло в запрос» означало бы отказ сервера после успешного
         // сохранения.
-        requireText(name, PACKAGE_NAME_MAX_LENGTH, "PackagePostNetworkDTO.name")
+        requireText(name, PackageSharedFacts.NAME_MAX_LENGTH, "PackagePostNetworkDTO.name")
         requireNetworkAmount(amount, "PackagePostNetworkDTO.amount")
         require(amount.any { it in '1'..'9' }) {
             "PackagePostNetworkDTO.amount: начальный остаток должен быть положительным"
         }
         requireOptionalText(
             category,
-            PACKAGE_CATEGORY_MAX_LENGTH,
+            PackageSharedFacts.CATEGORY_MAX_LENGTH,
             "PackagePostNetworkDTO.category"
         )
         requireOptionalText(
             manufacturer,
-            PACKAGE_MANUFACTURER_MAX_LENGTH,
+            PackageSharedFacts.MANUFACTURER_MAX_LENGTH,
             "PackagePostNetworkDTO.manufacturer"
         )
-        requireOptionalText(country, PACKAGE_COUNTRY_MAX_LENGTH, "PackagePostNetworkDTO.country")
+        requireOptionalText(
+            country,
+            PackageSharedFacts.COUNTRY_MAX_LENGTH,
+            "PackagePostNetworkDTO.country"
+        )
         requireOptionalText(
             description,
-            PACKAGE_DESCRIPTION_MAX_LENGTH,
+            PackageSharedFacts.DESCRIPTION_MAX_LENGTH,
             "PackagePostNetworkDTO.description"
         )
     }

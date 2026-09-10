@@ -77,12 +77,12 @@ class MedKitTest {
 
     @Test
     fun nameFillingTheLimitFits() {
-        kit(name = "я".repeat(MED_KIT_NAME_MAX_LENGTH))
+        kit(name = "я".repeat(MedKit.NAME_MAX_LENGTH))
     }
 
     @Test(expected = IllegalArgumentException::class)
     fun nameOverTheLimitIsRejected() {
-        kit(name = "я".repeat(MED_KIT_NAME_MAX_LENGTH + 1))
+        kit(name = "я".repeat(MedKit.NAME_MAX_LENGTH + 1))
     }
 
     private fun kit(

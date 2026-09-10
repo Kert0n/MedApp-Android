@@ -101,7 +101,7 @@ class PackageExpiryTest {
 
     @Test(expected = IllegalArgumentException::class)
     fun descriptionOverTheLimitIsRejected() {
-        pack(description = "я".repeat(PACKAGE_DESCRIPTION_MAX_LENGTH + 1))
+        pack(description = "я".repeat(PackageSharedFacts.DESCRIPTION_MAX_LENGTH + 1))
     }
 
     @Test(expected = IllegalArgumentException::class)

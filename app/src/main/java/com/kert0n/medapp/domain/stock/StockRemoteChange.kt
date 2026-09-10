@@ -1,7 +1,6 @@
 package com.kert0n.medapp.domain.stock
 
-import com.kert0n.medapp.domain.value.QUANTITY_MAX_INTEGER_DIGITS
-import com.kert0n.medapp.domain.value.QUANTITY_SCALE
+import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.requireDecimalWithinLimits
 import java.math.BigDecimal
 import java.time.Instant
@@ -33,8 +32,8 @@ data class StockRemoteChange(
         requireDecimalWithinLimits(
             amount = delta,
             field = "StockRemoteChange.delta",
-            maxScale = QUANTITY_SCALE,
-            maxIntegerDigits = QUANTITY_MAX_INTEGER_DIGITS
+            maxScale = Quantity.SCALE,
+            maxIntegerDigits = Quantity.MAX_INTEGER_DIGITS
         )
         requireNote(note)
     }

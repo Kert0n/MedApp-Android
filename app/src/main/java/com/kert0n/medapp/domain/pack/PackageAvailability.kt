@@ -58,5 +58,5 @@ data class PackageAvailability(
     fun isExpiredOn(date: LocalDate): Boolean = expiresOn?.isExpiredOn(date) == true
 
     fun expiresSoonOn(date: LocalDate): Boolean =
-        expiresOn?.expiresWithin(date, PACKAGE_EXPIRES_SOON_DAYS) == true
+        expiresOn?.expiresWithin(date, ExpiryDate.SOON_DAYS) == true
 }

@@ -32,8 +32,8 @@ class PlannedCourse(
 ) : Course {
 
     init {
-        requireText(title, COURSE_TITLE_MAX_LENGTH, "Course.title")
-        requireOptionalText(note, COURSE_NOTE_MAX_LENGTH, "Course.note")
+        requireText(title, Course.TITLE_MAX_LENGTH, "Course.title")
+        requireOptionalText(note, Course.NOTE_MAX_LENGTH, "Course.note")
         require(status != CourseStatus.DRAFT) { "у назначенного курса план уже есть" }
         require(dose.unitId == stack.unitId) { "доза измеряется единицей источников курса" }
     }

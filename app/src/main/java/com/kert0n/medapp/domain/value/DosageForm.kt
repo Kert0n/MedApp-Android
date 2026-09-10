@@ -9,6 +9,10 @@ import kotlin.uuid.Uuid
  */
 data class DosageForm(val id: Uuid, val name: String) {
     init {
-        requireText(name, VOCABULARY_NAME_MAX_LENGTH, "DosageForm.name")
+        requireText(name, NAME_MAX_LENGTH, "DosageForm.name")
+    }
+
+    companion object {
+        const val NAME_MAX_LENGTH = 200
     }
 }

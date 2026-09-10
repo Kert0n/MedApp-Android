@@ -1,7 +1,5 @@
 package com.kert0n.medapp.presentation.value
 
-import com.kert0n.medapp.domain.value.QUANTITY_MAX_INTEGER_DIGITS
-import com.kert0n.medapp.domain.value.QUANTITY_SCALE
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.presentation.ParsedInput
 import java.math.BigDecimal
@@ -49,8 +47,8 @@ private fun reject(text: String): QuantityPresentationError? {
     val dot = text.indexOf('.')
     val integerDigits = if (dot < 0) text.length else dot
     val fractionDigits = if (dot < 0) 0 else text.length - dot - 1
-    if (fractionDigits > QUANTITY_SCALE) return QuantityPresentationError.TOO_MANY_FRACTION_DIGITS
-    if (integerDigits > QUANTITY_MAX_INTEGER_DIGITS) {
+    if (fractionDigits > Quantity.SCALE) return QuantityPresentationError.TOO_MANY_FRACTION_DIGITS
+    if (integerDigits > Quantity.MAX_INTEGER_DIGITS) {
         return QuantityPresentationError.TOO_MANY_INTEGER_DIGITS
     }
     return null
