@@ -75,9 +75,10 @@ class PackageRoomRepository @Inject constructor(
             packages.save(pack.toStorageEntity(adjustment.sync), pack.toDetailsStorageEntity())
             movements.insert(adjustment.movement.toMovementStorageEntity())
             adjustment.course?.let {
-                courses.upsertCourse(it.toCourseStorageEntity())
-                courses.deleteSourcesOf(it.id)
-                courses.insertSources(it.medicine.toSourceStorageEntities(it.id))
+                courses.updateAllocations(
+                    it.toCourseStorageEntity(),
+                    it.medicine.toSourceStorageEntities(it.id)
+                )
             }
             adjustment.command?.let {
                 queue.enqueue(
@@ -128,12 +129,19 @@ class PackageRoomRepository @Inject constructor(
      * Незакрытые команды применяются к подтверждённому остатку по возрастанию номера. Операция,
      * чей исход не установлен, и команда, которую нечем прочитать после обновления приложения,
      * делают число неизвестным, а не нулевым (PLAN E1, F4).
+     *
+     * Ожидающая ручная сверка отсекает всё до своего среза `throughSequence`: пересчитанное число
+     * эти факты уже включает, и их неустановленный исход больше не делает его неизвестным (E3).
      */
     private fun amountOf(pkg: Package, unclosed: List<SyncOperationStorageRow>): EffectiveAmount {
+        val read = unclosed.map { it to it.toDomainOrNull() }
+        val cut = read.maxOfOrNull { (_, operation) ->
+            (operation?.command as? PackageSyncCommand.Reconcile)?.throughSequence ?: -1L
+        } ?: -1L
         val commands = ArrayList<PackageSyncCommand>(unclosed.size)
         val unresolved = ArrayList<Uuid>()
-        for (row in unclosed) {
-            val operation = row.toDomainOrNull()
+        for ((row, operation) in read) {
+            if (row.operation.sequence <= cut) continue
             val command = operation?.command as? PackageSyncCommand
             when {
                 command == null -> unresolved += row.operation.id

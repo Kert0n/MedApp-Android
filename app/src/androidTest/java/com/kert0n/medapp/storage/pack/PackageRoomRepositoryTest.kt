@@ -5,6 +5,7 @@ import com.kert0n.medapp.domain.pack.EffectiveAmount
 import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.INTAKE
+import com.kert0n.medapp.fixture.OTHER_INTAKE
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.activeCourse
@@ -52,6 +53,8 @@ class PackageRoomRepositoryTest {
     private val today = LocalDate.of(2027, 3, 1)
     private val at: Instant = Instant.parse("2026-09-10T12:00:00Z")
     private val operation: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000091")
+    private val reconcile: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000092")
+    private val later: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000093")
 
     private val paracetamol = pack(quantity = tablets("20"))
 
@@ -114,6 +117,21 @@ class PackageRoomRepositoryTest {
         assertEquals(EffectiveAmount.Unknown, availability.amount)
         assertTrue(availability.requiresRecount)
         assertNull(availability.freeForAnyone)
+    }
+
+    /**
+     * Ожидающая сверка отсекает всё до своего среза: неустановленный расход уже вошёл в
+     * пересчитанное число, а более новый расход ложится поверх него (PLAN E3).
+     */
+    @Test
+    fun pendingReconcileCutsOffWhatItAlreadyCounts() = runTest {
+        val counted = queue.enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
+        queue.settle(operation, SyncOperationStatus.NEEDS_RECOUNT)
+        queue.enqueue(reconcile, PackageSyncCommand.Reconcile(PACK, tablets("10"), counted.sequence), at)
+        queue.enqueue(later, PackageSyncCommand.Consume(PACK, dose("2"), OTHER_INTAKE), at)
+
+        val availability = requireNotNull(repository.observeAvailability(PACK).first())
+        assertEquals(EffectiveAmount.Known(tablets("8")), availability.amount)
     }
 
     @Test

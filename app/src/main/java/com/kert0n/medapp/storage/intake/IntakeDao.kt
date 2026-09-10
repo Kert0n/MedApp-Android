@@ -37,6 +37,23 @@ interface IntakeDao {
     suspend fun insertPlannedIfMissing(intakes: List<IntakeStorageEntity>): List<Long>
 
     /**
+     * Внеплановый приём заводится вставкой: строки до него нет, и условному переходу идти не
+     * по чему. Повтор узнаётся по тождеству и второй раз ничего не списывает (PLAN D6).
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIfMissing(intake: IntakeStorageEntity): Long
+
+    /**
+     * Отмена будущего пункта — такой же условный переход, как ответ: приём, отвеченный между
+     * чтением и концом лечения, отменой не затирается (PLAN D6, F2).
+     */
+    @Query(
+        "UPDATE intakes SET status = 'CANCELLED', answered_at = :at " +
+            "WHERE id = :id AND status = 'PLANNED'"
+    )
+    suspend fun cancelIfPlanned(id: Uuid, at: Instant): Int
+
+    /**
      * Идемпотентность ответа: переход идёт условным `UPDATE` по ожидаемому статусу, а не
      * вставкой и не чтением с последующей записью. Ноль изменённых строк означает, что приём
      * уже отвечен, и повтор ничего не списывает (PLAN D6, F2).

@@ -2,8 +2,10 @@ package com.kert0n.medapp.storage.intake
 
 import com.kert0n.medapp.domain.intake.CourseIntake
 import com.kert0n.medapp.domain.intake.Intake
+import com.kert0n.medapp.domain.intake.UnplannedIntake
 import androidx.room.withTransaction
 import com.kert0n.medapp.network.intake.IntakeSyncState
+import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.storage.course.CourseDao
 import com.kert0n.medapp.storage.course.toSourceStorageEntities
 import com.kert0n.medapp.storage.course.toStorageEntity as toCourseStorageEntity
@@ -48,29 +50,37 @@ class IntakeRoomRepository @Inject constructor(
         intakes.plannedBefore(until).map { it.toDomain() as CourseIntake }
 
     override suspend fun record(outcome: IntakeOutcome): Boolean = database.withTransaction {
-        val taken = outcome.intake.taken
-        val changed = intakes.answerIfStatusIs(
-            id = outcome.intake.id,
-            from = outcome.expected.toList(),
-            to = outcome.intake.status,
-            at = outcome.answeredAt,
-            packageId = taken?.packageId,
-            medKitId = taken?.medKitId,
-            amount = taken?.amount?.quantity?.toStorageAmount(),
-            unitId = outcome.intake.unitId,
-            accounting = outcome.sync.accounting,
-            operationId = outcome.sync.operationId
-        )
-        if (changed == 0) return@withTransaction false
+        val intake = outcome.intake
+        val applied = if (intake is UnplannedIntake) {
+            intakes.insertIfMissing(intake.toStorageEntity(outcome.sync)) != -1L
+        } else {
+            val taken = intake.taken
+            intakes.answerIfStatusIs(
+                id = intake.id,
+                from = outcome.expected.toList(),
+                to = intake.status,
+                at = outcome.answeredAt,
+                packageId = taken?.packageId,
+                medKitId = taken?.medKitId,
+                amount = taken?.amount?.quantity?.toStorageAmount(),
+                unitId = intake.unitId,
+                accounting = outcome.sync.accounting,
+                operationId = outcome.sync.operationId
+            ) > 0
+        }
+        if (!applied) return@withTransaction false
 
         outcome.spent?.let {
-            packages.save(it.toPackageStorageEntity(), it.toDetailsStorageEntity())
+            // Расход не трогает обвязку доставки: версия и картина броней остаются прежними (E3).
+            val sync = packages.find(it.id)?.pack?.syncState() ?: PackageSyncState(it.id)
+            packages.save(it.toPackageStorageEntity(sync), it.toDetailsStorageEntity())
         }
         outcome.movement?.let { movements.insert(it.toMovementStorageEntity()) }
         outcome.course?.let {
-            courses.upsertCourse(it.toCourseStorageEntity())
-            courses.deleteSourcesOf(it.id)
-            courses.insertSources(it.medicine.toSourceStorageEntities(it.id))
+            courses.updateAllocations(
+                it.toCourseStorageEntity(),
+                it.medicine.toSourceStorageEntities(it.id)
+            )
         }
         outcome.command?.let {
             queue.enqueue(

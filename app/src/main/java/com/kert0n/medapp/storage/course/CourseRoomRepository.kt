@@ -5,6 +5,7 @@ import com.kert0n.medapp.domain.course.CourseDraft
 import androidx.room.withTransaction
 import com.kert0n.medapp.domain.course.CourseRecord
 import com.kert0n.medapp.domain.intake.CourseIntake
+import com.kert0n.medapp.domain.intake.IntakeAnswer
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.storage.intake.IntakeDao
 import com.kert0n.medapp.storage.intake.toStorageEntity as toIntakeStorageEntity
@@ -83,7 +84,12 @@ class CourseRoomRepository @Inject constructor(
     ) = database.withTransaction {
         check(!record.isOpen) { "закрывается законченное лечение, а не идущее" }
         courses.upsertRecord(record.toStorageEntity())
-        for (intake in cancelled) intakes.upsert(intake.toIntakeStorageEntity())
+        for (intake in cancelled) {
+            val cancellation = requireNotNull(intake.answer as? IntakeAnswer.Cancelled) {
+                "конец лечения отменяет пункт, а не отвечает на него"
+            }
+            intakes.cancelIfPlanned(intake.id, cancellation.at)
+        }
         courses.releaseAssignmentsOf(record.id)
         courses.deleteSourcesOf(record.id)
         courses.deletePlan(record.id)

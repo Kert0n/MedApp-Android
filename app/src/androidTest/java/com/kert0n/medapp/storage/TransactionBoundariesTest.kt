@@ -3,6 +3,7 @@ package com.kert0n.medapp.storage
 import com.kert0n.medapp.domain.course.CourseDraft
 import com.kert0n.medapp.domain.course.CourseRecord
 import com.kert0n.medapp.domain.intake.IntakeStatus
+import com.kert0n.medapp.domain.intake.UnplannedIntake
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.stock.StockMovement
 import com.kert0n.medapp.fixture.COURSE
@@ -24,9 +25,12 @@ import com.kert0n.medapp.fixture.plannedIntake
 import com.kert0n.medapp.fixture.prescription
 import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
+import com.kert0n.medapp.fixture.unplannedIntake
 import com.kert0n.medapp.network.intake.IntakeAccounting
 import com.kert0n.medapp.network.intake.IntakeSyncState
 import com.kert0n.medapp.network.pack.PackageSyncCommand
+import com.kert0n.medapp.network.pack.PackageSyncState
+import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.storage.course.ActivePackageAssignmentStorageEntity
 import com.kert0n.medapp.storage.course.CourseRoomRepository
 import com.kert0n.medapp.storage.course.toStorageEntity as toCourseStorageEntity
@@ -217,6 +221,127 @@ class TransactionBoundariesTest {
         assertEquals(emptyList<StockMovement>(), database.stockMovements().ofPackage(PACK).map { it.toDomain() })
         assertEquals(1, database.syncOperations().all().size)
     }
+
+    /** Внеплановому приёму строки заранее нет: он заводится вставкой вместе с расходом (F5). */
+    @Test
+    fun unplannedIntakeIsWrittenWithStockAndMovement() = runTest {
+        assertTrue(intakes.record(unplannedOutcome()))
+
+        assertTrue(intakes.find(INTAKE) is UnplannedIntake)
+        assertEquals(tablets("18"), requireNotNull(packages.find(PACK)).quantity)
+        assertEquals(1, database.stockMovements().ofPackage(PACK).size)
+    }
+
+    /** Повтор внепланового приёма узнаётся по тождеству и второй раз не списывает (D6). */
+    @Test
+    fun repeatingAnUnplannedIntakeChangesNothing() = runTest {
+        assertTrue(intakes.record(unplannedOutcome()))
+
+        assertFalse(intakes.record(unplannedOutcome()))
+        assertEquals(tablets("18"), requireNotNull(packages.find(PACK)).quantity)
+        assertEquals(1, database.stockMovements().ofPackage(PACK).size)
+    }
+
+    /**
+     * Приём, подтверждённый между чтением и концом лечения, отменой не затирается: списание уже
+     * случилось, и история должна это помнить (PLAN D6, F2).
+     */
+    @Test
+    fun closingDoesNotCancelAnIntakeAnsweredInTheMeantime() = runTest {
+        val activation = draft()
+        courses.activate(activation, planned = listOf(plannedIntake()), at = at)
+        assertTrue(intakes.record(confirmedOutcome()))
+
+        courses.close(
+            record = activation.record.close(CourseRecord.Outcome.CANCELLED, LATER),
+            cancelled = listOf(plannedIntake().cancel(LATER)),
+            at = LATER
+        )
+
+        assertEquals(IntakeStatus.TAKEN, requireNotNull(intakes.find(INTAKE)).status)
+        assertEquals(
+            IntakeAccounting.LOCAL_APPLIED,
+            requireNotNull(intakes.syncStateOf(INTAKE)).accounting
+        )
+    }
+
+    /** Расход не трогает обвязку доставки: версия предусловия у пачки остаётся прежней (E3). */
+    @Test
+    fun spendingKeepsThePackagePreconditions() = runTest {
+        val sync = PackageSyncState(
+            PACK,
+            version = ResourceVersion(5),
+            claimsVersion = ResourceVersion(2),
+            syncedAt = at
+        )
+        packages.save(paracetamol, sync)
+        courses.activate(draft(), planned = listOf(plannedIntake()), at = at)
+
+        assertTrue(
+            intakes.record(
+                IntakeOutcome(
+                    intake = plannedIntake().confirm(paracetamol, dose("2"), LATER),
+                    expected = setOf(IntakeStatus.PLANNED),
+                    sync = IntakeSyncState(INTAKE, IntakeAccounting.PENDING, operationId = operation),
+                    spent = paracetamol.consume(dose("2")),
+                    movement = StockMovement.Recount(
+                        movementId, PACK, tablets("20"), tablets("18"), HOME_KIT, LATER, LATER
+                    ),
+                    command = QueuedCommand(
+                        operation,
+                        PackageSyncCommand.Consume(PACK, dose("2"), INTAKE)
+                    )
+                )
+            )
+        )
+
+        assertEquals(sync, requireNotNull(database.packages().find(PACK)).pack.syncState())
+    }
+
+    /** Закрытый план не возвращается пересчётом, прочитавшим курс до закрытия (PLAN D5, F5). */
+    @Test
+    fun adjustmentDoesNotResurrectAClosedPlan() = runTest {
+        val activation = draft()
+        courses.activate(activation, at = at)
+        courses.close(
+            record = activation.record.close(CourseRecord.Outcome.CANCELLED, LATER),
+            at = LATER
+        )
+
+        packages.adjust(
+            PackageAdjustment(
+                pack = paracetamol.correctTo(tablets("17")),
+                movement = StockMovement.Recount(
+                    movementId, PACK, tablets("20"), tablets("17"), HOME_KIT, LATER, LATER
+                ),
+                course = activation.course
+            ),
+            at = LATER
+        )
+
+        assertNull(database.courses().findPlan(COURSE))
+        assertEquals(tablets("17"), requireNotNull(packages.find(PACK)).quantity)
+    }
+
+    private fun confirmedOutcome() = IntakeOutcome(
+        intake = plannedIntake().confirm(paracetamol, dose("2"), LATER),
+        expected = setOf(IntakeStatus.PLANNED),
+        sync = IntakeSyncState(INTAKE, IntakeAccounting.LOCAL_APPLIED),
+        spent = paracetamol.consume(dose("2")),
+        movement = StockMovement.Recount(
+            movementId, PACK, tablets("20"), tablets("18"), HOME_KIT, LATER, LATER
+        )
+    )
+
+    private fun unplannedOutcome() = IntakeOutcome(
+        intake = unplannedIntake(takenAmount = dose("2")),
+        expected = emptySet(),
+        sync = IntakeSyncState(INTAKE, IntakeAccounting.LOCAL_APPLIED),
+        spent = paracetamol.consume(dose("2")),
+        movement = StockMovement.Recount(
+            movementId, PACK, tablets("20"), tablets("18"), HOME_KIT, LATER, LATER
+        )
+    )
 
     @Test
     fun recountWritesMovementAndStockTogether() = runTest {

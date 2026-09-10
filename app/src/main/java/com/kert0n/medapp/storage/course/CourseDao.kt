@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.room.Update
 import androidx.room.Upsert
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.Flow
@@ -58,8 +59,25 @@ interface CourseDao {
         insertSources(sources)
     }
 
+    /**
+     * Пересчитанные выделения живого плана. Обновление, а не upsert: план, закрытый между чтением
+     * и записью, не возвращается — ноль изменённых строк значит, что писать некуда (PLAN D5, F5).
+     */
+    @Transaction
+    suspend fun updateAllocations(
+        course: CourseStorageEntity,
+        sources: List<CourseSourceStorageEntity>
+    ) {
+        if (updateCourse(course) == 0) return
+        deleteSourcesOf(course.id)
+        insertSources(sources)
+    }
+
     @Upsert
     suspend fun upsertCourse(course: CourseStorageEntity)
+
+    @Update
+    suspend fun updateCourse(course: CourseStorageEntity): Int
 
     @Upsert
     suspend fun upsertRecord(record: CourseRecordStorageEntity)

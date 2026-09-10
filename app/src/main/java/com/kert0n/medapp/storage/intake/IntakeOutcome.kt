@@ -31,7 +31,10 @@ class IntakeOutcome(
     val course: Course? = null,
     val command: QueuedCommand? = null
 ) {
-    /** Ожидаемые статусы условного перехода: повтор уже совершённого ничего не меняет (D6). */
+    /**
+     * Ожидаемые статусы условного перехода: повтор уже совершённого ничего не меняет (D6).
+     * У внепланового приёма их нет: строки до него не было, и он заводится вставкой.
+     */
     val expected: Set<IntakeStatus> = expected.toSet()
 
     /**
@@ -45,7 +48,9 @@ class IntakeOutcome(
 
     init {
         require(sync.intakeId == intake.id) { "учёт расхода принадлежит своему приёму" }
-        require(expected.isNotEmpty()) { "условный переход называет, из какого состояния идёт" }
+        require(intake is UnplannedIntake || expected.isNotEmpty()) {
+            "условный переход называет, из какого состояния идёт"
+        }
         require(intake.status !in expected) { "переход в тот же статус не является переходом" }
         require(movement == null || movement.packageId == spent?.id) {
             "движение записывается по той пачке, остаток которой изменился"
