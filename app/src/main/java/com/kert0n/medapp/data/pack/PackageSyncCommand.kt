@@ -16,7 +16,7 @@ import kotlin.uuid.Uuid
  *
  * Домен от этого не беднеет: величины остаются доменными ([Quantity], [PackageSharedFacts]) —
  * зависимость `data → domain` здесь правильная, — а расчётам отдаётся оценка количества
- * (`EffectiveAmount`), посчитанная проекцией рядом.
+ * (`EffectiveAmount`), посчитанная [PackageQueueState].
  *
  * **Виды вложены, а корень закрыт.** Это варианты одной команды, а не самостоятельные понятия и
  * не разновидности доменного события: движения остатка (D7) лежат по файлам потому, что каждое —
@@ -31,6 +31,19 @@ import kotlin.uuid.Uuid
 sealed interface PackageSyncCommand {
 
     val packageId: Uuid
+
+    /**
+     * Остаток после этой команды (PLAN E1); `null` — количество команда не меняет. Пересчёт и
+     * сверка заменяют число, а не вычитают; удаление даёт ноль; расход больше остатка даёт ноль,
+     * потому что нехватка — конфликт операции, и разбирается она по очереди, а не числом.
+     */
+    fun appliedTo(amount: Quantity): Quantity? = when (this) {
+        is Consume -> amount.minusOrZero(this.amount)
+        is CorrectStock -> this.actual
+        is Reconcile -> this.actual
+        is Delete -> Quantity.zero(amount.unitId)
+        is Create, is Describe, is Move, is SetClaim, is ReleaseClaim -> null
+    }
 
     /**
      * Завести упаковку на сервере.

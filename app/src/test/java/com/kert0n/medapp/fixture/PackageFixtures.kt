@@ -1,7 +1,6 @@
 package com.kert0n.medapp.fixture
 
 import com.kert0n.medapp.domain.pack.PackageAvailability
-import com.kert0n.medapp.domain.pack.availabilityOf
 import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.pack.EffectiveAmount
 import com.kert0n.medapp.domain.pack.ExpiryDate
@@ -89,24 +88,17 @@ fun PackageFacts.withShared(
     shared = PackageSharedFacts(name, formId, category, manufacturer, country, description)
 )
 
-/**
- * Доступность пачки для тестов, которым нужна не сама проекция, а её числа.
- *
- * Оценка количества собирается здесь напрямую, а не свёрткой очереди: свёртка живёт в слое данных
- * и к фикстурам домена отношения не имеет.
- */
+/** Доступность пачки для тестов, которым нужны её числа; [known] = false — нужна сверка. */
 fun packAvailability(
     id: Uuid = PACK,
     quantity: Quantity = tablets("20"),
     claims: Claims? = null,
     expiresOn: ExpiryDate? = null,
-    unresolvedOperationIds: List<Uuid> = emptyList(),
-    confirmed: Boolean = true,
+    known: Boolean = true,
     myAllocation: Quantity = Quantity.zero(quantity.unitId)
-): PackageAvailability = availabilityOf(
+): PackageAvailability = PackageAvailability(
     pkg = pack(id = id, quantity = quantity, claims = claims, expiresOn = expiresOn),
-    amount = if (unresolvedOperationIds.isEmpty()) EffectiveAmount.Known(quantity, confirmed)
-    else EffectiveAmount.NeedsRecount(quantity, unresolvedOperationIds),
+    amount = if (known) EffectiveAmount.Known(quantity) else EffectiveAmount.Unknown,
     myAllocation = myAllocation
 )
 
