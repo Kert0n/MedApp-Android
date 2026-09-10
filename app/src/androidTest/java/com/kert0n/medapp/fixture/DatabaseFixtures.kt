@@ -27,3 +27,13 @@ fun reopenFileDatabase(name: String): MedAppDatabase {
     val context = InstrumentationRegistry.getInstrumentation().targetContext
     return Room.databaseBuilder(context, MedAppDatabase::class.java, name).build()
 }
+
+/**
+ * Запись, которую схема запрещает: возвращает отказ базы, чтобы тест утверждал именно про него.
+ *
+ * Вложенный `runTest` внутри `runTest` не запускается, поэтому ожидание отказа выражается
+ * перехватом, а не `assertThrows` вокруг второго построителя.
+ */
+suspend fun rejectedByDatabase(block: suspend () -> Unit): Throwable =
+    runCatching { block() }.exceptionOrNull()
+        ?: throw AssertionError("база приняла запись, которую схема запрещает")

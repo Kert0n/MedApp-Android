@@ -3,6 +3,11 @@ package com.kert0n.medapp.storage.database
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import com.kert0n.medapp.storage.course.CourseDao
+import com.kert0n.medapp.storage.course.CourseRecordStorageEntity
+import com.kert0n.medapp.storage.course.CourseSourceStorageEntity
+import com.kert0n.medapp.storage.course.CourseStorageEntity
+import com.kert0n.medapp.storage.course.CourseTimeStorageEntity
 import com.kert0n.medapp.storage.medkit.MedKitDao
 import com.kert0n.medapp.storage.medkit.MedKitStorageEntity
 import com.kert0n.medapp.storage.pack.ClaimsStorageEntity
@@ -24,7 +29,11 @@ import com.kert0n.medapp.storage.value.QuantityUnitStorageEntity
         MedKitStorageEntity::class,
         PackageStorageEntity::class,
         PackageDetailsStorageEntity::class,
-        ClaimsStorageEntity::class
+        ClaimsStorageEntity::class,
+        CourseStorageEntity::class,
+        CourseRecordStorageEntity::class,
+        CourseTimeStorageEntity::class,
+        CourseSourceStorageEntity::class
     ],
     version = MedAppDatabase.VERSION,
     exportSchema = true
@@ -35,6 +44,8 @@ abstract class MedAppDatabase : RoomDatabase() {
     abstract fun medKits(): MedKitDao
 
     abstract fun packages(): PackageDao
+
+    abstract fun courses(): CourseDao
 
     companion object {
         const val VERSION = 1

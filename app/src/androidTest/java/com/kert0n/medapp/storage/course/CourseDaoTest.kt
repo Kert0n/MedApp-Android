@@ -1,0 +1,175 @@
+package com.kert0n.medapp.storage.course
+
+import android.database.sqlite.SQLiteConstraintException
+import com.kert0n.medapp.fixture.COURSE
+import com.kert0n.medapp.fixture.OTHER_PACK
+import com.kert0n.medapp.fixture.PACK
+import com.kert0n.medapp.fixture.activeCourse
+import com.kert0n.medapp.fixture.course
+import com.kert0n.medapp.fixture.courseRecord
+import com.kert0n.medapp.fixture.inMemoryDatabase
+import com.kert0n.medapp.fixture.pack
+import com.kert0n.medapp.fixture.rejectedByDatabase
+import com.kert0n.medapp.fixture.schedule
+import com.kert0n.medapp.fixture.source
+import com.kert0n.medapp.storage.database.MedAppDatabase
+import com.kert0n.medapp.storage.pack.toDetailsStorageEntity
+import com.kert0n.medapp.storage.pack.toStorageEntity as toPackageStorageEntity
+import java.time.LocalTime
+import kotlinx.coroutines.test.runTest
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+
+/**
+ * Курс и его источники хранят порядок, а времена не заводятся дважды. Черновик и живой план —
+ * одна таблица, и различает их наличие записи эпизода (PLAN F1, F2, D5).
+ */
+class CourseDaoTest {
+
+    private lateinit var database: MedAppDatabase
+    private val courses get() = database.courses()
+
+    @Before
+    fun openDatabase() = runTest {
+        database = inMemoryDatabase()
+        for (id in listOf(PACK, OTHER_PACK)) {
+            val pkg = pack(id = id)
+            database.packages().save(pkg.toPackageStorageEntity(), pkg.toDetailsStorageEntity())
+        }
+    }
+
+    @After
+    fun closeDatabase() {
+        database.close()
+    }
+
+    @Test
+    fun draftComesBackAsADraft() = runTest {
+        val draft = course(note = "спросить у врача")
+        courses.saveCourse(draft.toStorageEntity(), emptyList(), emptyList())
+
+        val row = requireNotNull(courses.findPlan(COURSE))
+        assertTrue(row.isDraft)
+        assertEquals("спросить у врача", row.toDraft().note)
+    }
+
+    @Test
+    fun sourcesKeepTheOrderOfSpending() = runTest {
+        val plan = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 4)))
+        courses.saveCourse(
+            plan.toStorageEntity(),
+            plan.schedule.toTimeStorageEntities(COURSE),
+            plan.medicine.toSourceStorageEntities(COURSE)
+        )
+
+        val restored = requireNotNull(courses.findPlan(COURSE)).toPlan()
+        assertEquals(listOf(PACK, OTHER_PACK), restored.sources.map { it.packageId })
+        assertEquals(plan.sources, restored.sources)
+    }
+
+    /** Уникальность позиции ловит сбой перетаскивания: два источника на одном месте невозможны. */
+    @Test
+    fun twoSourcesCannotShareOnePosition() = runTest {
+        val plan = activeCourse(sources = listOf(source(PACK, 5)))
+        courses.saveCourse(
+            plan.toStorageEntity(),
+            plan.schedule.toTimeStorageEntities(COURSE),
+            plan.medicine.toSourceStorageEntities(COURSE)
+        )
+
+        val refusal = rejectedByDatabase {
+            courses.insertSources(
+                listOf(CourseSourceStorageEntity(COURSE, OTHER_PACK, position = 0, allocatedDoses = 4))
+            )
+        }
+        assertTrue("$refusal", refusal is SQLiteConstraintException)
+    }
+
+    /** Одно и то же время дважды — один приём, а не два: ключ из пары этого не допускает. */
+    @Test
+    fun oneTimeCannotBeStoredTwice() = runTest {
+        val plan = activeCourse(sources = listOf(source(PACK, 1)))
+        courses.saveCourse(
+            plan.toStorageEntity(),
+            plan.schedule.toTimeStorageEntities(COURSE),
+            plan.medicine.toSourceStorageEntities(COURSE)
+        )
+
+        val refusal = rejectedByDatabase {
+            courses.insertTimes(listOf(CourseTimeStorageEntity(COURSE, LocalTime.of(9, 0))))
+        }
+        assertTrue("$refusal", refusal is SQLiteConstraintException)
+    }
+
+    @Test
+    fun savingAgainReplacesTimesAndSourcesInsteadOfAddingToThem() = runTest {
+        val first = activeCourse(
+            schedule = schedule(times = listOf(LocalTime.of(9, 0), LocalTime.of(21, 0))),
+            sources = listOf(source(PACK, 5), source(OTHER_PACK, 4))
+        )
+        courses.saveCourse(
+            first.toStorageEntity(),
+            first.schedule.toTimeStorageEntities(COURSE),
+            first.medicine.toSourceStorageEntities(COURSE)
+        )
+
+        val second = activeCourse(
+            schedule = schedule(times = listOf(LocalTime.of(12, 0))),
+            sources = listOf(source(OTHER_PACK, 7))
+        )
+        courses.saveCourse(
+            second.toStorageEntity(),
+            second.schedule.toTimeStorageEntities(COURSE),
+            second.medicine.toSourceStorageEntities(COURSE)
+        )
+
+        val restored = requireNotNull(courses.findPlan(COURSE)).toPlan()
+        assertEquals(listOf(LocalTime.of(12, 0)), restored.schedule.times)
+        assertEquals(listOf(OTHER_PACK), restored.sources.map { it.packageId })
+    }
+
+    /**
+     * Запись эпизода переживает план: строка `courses` исчезает, а времена назначения остаются
+     * на месте — они лежат по тождеству эпизода, а не по плану (PLAN D5).
+     */
+    @Test
+    fun recordOutlivesThePlanTogetherWithItsScheduleTimes() = runTest {
+        val plan = activeCourse(
+            schedule = schedule(times = listOf(LocalTime.of(9, 0), LocalTime.of(21, 0))),
+            sources = listOf(source(PACK, 5))
+        )
+        val record = courseRecord(prescription = plan.prescription)
+        courses.saveCourse(
+            plan.toStorageEntity(),
+            plan.schedule.toTimeStorageEntities(COURSE),
+            plan.medicine.toSourceStorageEntities(COURSE)
+        )
+        courses.upsertRecord(record.toStorageEntity())
+
+        courses.deleteSourcesOf(COURSE)
+        courses.deletePlan(COURSE)
+
+        assertNull(courses.findPlan(COURSE))
+        val restored = requireNotNull(courses.findRecord(COURSE)).toDomain()
+        assertEquals(record.prescription, restored.prescription)
+        assertEquals(plan.schedule.times, restored.prescription.schedule.times)
+    }
+
+    /** Источник не переживает удаления пачки молча: `RESTRICT` не даёт остаться без пачки. */
+    @Test
+    fun packageWithASourceCannotBeDeleted() = runTest {
+        val plan = activeCourse(sources = listOf(source(PACK, 5)))
+        courses.saveCourse(
+            plan.toStorageEntity(),
+            plan.schedule.toTimeStorageEntities(COURSE),
+            plan.medicine.toSourceStorageEntities(COURSE)
+        )
+
+        val refusal = rejectedByDatabase { database.packages().delete(PACK) }
+        assertTrue("$refusal", refusal is SQLiteConstraintException)
+    }
+}
