@@ -32,6 +32,7 @@ class Course(
     val doseAmount: BigDecimal? = null,  // разовая доза курса
     val unitId: Uuid? = null,            // фиксируется первым источником
     val formId: Uuid? = null,            // фиксируется первым источником
+    val schedule: CourseSchedule? = null,
     val status: CourseStatus = CourseStatus.DRAFT,
     val revision: Long = 0,
     val createdAt: Instant,
@@ -86,6 +87,17 @@ class Course(
         return changed(doseAmount = amount, revision = revision + 1, updatedAt = at)
     }
 
+    /**
+     * Расписание задаётся только у черновика — по той же причине, что и доза.
+     *
+     * Редакция растёт: расписание меняет состав будущих пунктов, и приёмы связаны с ней через
+     * `Intake.courseRevision`. Прошлые пункты при этом не пересоздаются (PLAN D5).
+     */
+    fun setDraftSchedule(schedule: CourseSchedule, at: Instant): Course {
+        requireDraft("расписание")
+        return changed(schedule = schedule, revision = revision + 1, updatedAt = at)
+    }
+
     private fun requireDraft(what: String) {
         check(status == CourseStatus.DRAFT) {
             "$what действующего курса неизменна: замена лечения — это новый курс, состояние $status"
@@ -103,6 +115,7 @@ class Course(
         doseAmount: BigDecimal? = this.doseAmount,
         unitId: Uuid? = this.unitId,
         formId: Uuid? = this.formId,
+        schedule: CourseSchedule? = this.schedule,
         status: CourseStatus = this.status,
         revision: Long = this.revision,
         updatedAt: Instant = this.updatedAt
@@ -113,6 +126,7 @@ class Course(
         doseAmount = doseAmount,
         unitId = unitId,
         formId = formId,
+        schedule = schedule,
         status = status,
         revision = revision,
         createdAt = createdAt,

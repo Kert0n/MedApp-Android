@@ -5,6 +5,7 @@ import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.LATER
 import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.course
+import com.kert0n.medapp.fixture.schedule
 import java.math.BigDecimal
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -68,6 +69,20 @@ class CourseTest {
         assertEquals(BigDecimal("2"), dosed.doseAmount)
         assertEquals(1L, dosed.revision)
         assertEquals(LATER, dosed.updatedAt)
+    }
+
+    @Test
+    fun settingTheDraftScheduleRaisesTheRevision() {
+        // Расписание меняет состав будущих пунктов, поэтому редакция растёт — в отличие от
+        // переименования.
+        val planned = course().setDraftSchedule(schedule(), at = LATER)
+        assertEquals(schedule(), planned.schedule)
+        assertEquals(1L, planned.revision)
+    }
+
+    @Test(expected = IllegalStateException::class)
+    fun scheduleOfAnActiveCourseIsRefused() {
+        course(status = CourseStatus.ACTIVE).setDraftSchedule(schedule(), at = LATER)
     }
 
     @Test(expected = IllegalStateException::class)
