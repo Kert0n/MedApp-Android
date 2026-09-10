@@ -1,5 +1,6 @@
 package com.kert0n.medapp.fixture
 
+import com.kert0n.medapp.domain.course.Revision
 import com.kert0n.medapp.domain.course.ScheduledOccurrence
 import com.kert0n.medapp.domain.intake.CourseIntake
 import com.kert0n.medapp.domain.intake.Intake
@@ -40,12 +41,10 @@ fun plannedIntake(
     scheduledOn: LocalDate = FIRST_SCHEDULED_ON,
     scheduledTime: LocalTime = FIRST_SCHEDULED_TIME,
     plannedAmount: Quantity = tablets("2"),
-    unitId: Uuid = TABLETS
 ) = CourseIntake(
     id = id,
-    unitId = unitId,
     courseId = courseId,
-    courseRevision = courseRevision,
+    courseRevision = Revision(courseRevision),
     slot = ScheduledOccurrence(scheduledOn, scheduledTime, plannedAt),
     plannedAmount = plannedAmount,
     plannedPackageId = plannedPackageId
@@ -58,9 +57,7 @@ fun unplannedIntake(
     medKitId: Uuid = HOME_KIT,
     takenAmount: Quantity = tablets("1"),
     takenAt: Instant = LATER,
-    unitId: Uuid = TABLETS
 ) = UnplannedIntake(
     id = id,
-    unitId = unitId,
     dose = TakenDose(takenPackageId, medKitId, takenAmount, takenAt)
 )

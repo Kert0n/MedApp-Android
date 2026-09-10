@@ -30,7 +30,7 @@ class CourseDraft(
     val doseAmount: BigDecimal? = null,
     override val schedule: CourseSchedule? = null,
     override val stack: SourceStack = SourceStack(),
-    override val revision: Long = 0,
+    override val revision: Revision = Revision.initial,
     override val createdAt: Instant,
     override val updatedAt: Instant
 ) : Course {
@@ -38,7 +38,6 @@ class CourseDraft(
     init {
         requireText(title, COURSE_TITLE_MAX_LENGTH, "Course.title")
         requireOptionalText(note, COURSE_NOTE_MAX_LENGTH, "Course.note")
-        require(revision >= 0) { "редакция курса не бывает отрицательной" }
         doseAmount?.let { amount ->
             requireNonNegativeDecimal(
                 amount = amount,
@@ -75,7 +74,7 @@ class CourseDraft(
      * нужно: у назначенного курса этого перехода нет вовсе.
      */
     fun setDose(amount: BigDecimal, at: Instant): CourseDraft =
-        changed(doseAmount = amount, revision = revision + 1, updatedAt = at)
+        changed(doseAmount = amount, revision = revision.next(), updatedAt = at)
 
     /**
      * Расписание задаётся только у черновика — по той же причине, что и доза.
@@ -84,11 +83,11 @@ class CourseDraft(
      * `CourseIntake.courseRevision`.
      */
     fun setSchedule(schedule: CourseSchedule, at: Instant): CourseDraft =
-        changed(schedule = schedule, revision = revision + 1, updatedAt = at)
+        changed(schedule = schedule, revision = revision.next(), updatedAt = at)
 
     /** Подключает пачку последней в стеке — самой низкой по приоритету расходования. */
     fun attach(pkg: Package, doses: Doses, at: Instant): Result<CourseDraft> =
-        stack.attach(pkg, doses).map { changed(stack = it, revision = revision + 1, updatedAt = at) }
+        stack.attach(pkg, doses).map { changed(stack = it, revision = revision.next(), updatedAt = at) }
 
     /**
      * Отвязка последнего источника у черновика **сбрасывает** форму и единицу: там ещё нечего
@@ -96,19 +95,19 @@ class CourseDraft(
      */
     fun detach(packageId: Uuid, at: Instant): CourseDraft = changed(
         stack = stack.detach(packageId, forgetFormWhenEmpty = true),
-        revision = revision + 1,
+        revision = revision.next(),
         updatedAt = at
     )
 
     fun reorder(from: Int, to: Int, at: Instant): CourseDraft {
         val moved = stack.reorder(from, to)
         if (moved == stack) return this
-        return changed(stack = moved, revision = revision + 1, updatedAt = at)
+        return changed(stack = moved, revision = revision.next(), updatedAt = at)
     }
 
     fun allocate(packageId: Uuid, doses: Doses, at: Instant): CourseDraft = changed(
         stack = stack.allocate(packageId, doses),
-        revision = revision + 1,
+        revision = revision.next(),
         updatedAt = at
     )
 
@@ -153,7 +152,7 @@ class CourseDraft(
         doseAmount: BigDecimal? = this.doseAmount,
         schedule: CourseSchedule? = this.schedule,
         stack: SourceStack = this.stack,
-        revision: Long = this.revision,
+        revision: Revision = this.revision,
         updatedAt: Instant = this.updatedAt
     ): CourseDraft = CourseDraft(
         id = id,

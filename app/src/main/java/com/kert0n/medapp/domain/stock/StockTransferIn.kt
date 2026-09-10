@@ -18,7 +18,7 @@ data class StockTransferIn(
     override val note: String? = null
 ) : StockAdjustment {
     init {
-        require(from != to) { "перенос внутри одной аптечки остаток не меняет" }
+        requireDifferentKits(from, to)
         requireNote(note)
     }
     override val delta: BigDecimal get() = amount.amount

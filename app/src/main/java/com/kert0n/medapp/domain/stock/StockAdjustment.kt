@@ -47,6 +47,11 @@ sealed interface StockAdjustment {
     val note: String?
 }
 
+/** Перенос — это две аптечки: у обоих его концов правило одно, поэтому и записано оно один раз. */
+internal fun requireDifferentKits(from: Uuid, to: Uuid) {
+    require(from != to) { "перенос внутри одной аптечки остаток не меняет" }
+}
+
 internal fun requireNote(note: String?) {
     requireOptionalText(note, ADJUSTMENT_NOTE_MAX_LENGTH, "StockAdjustment.note")
 }

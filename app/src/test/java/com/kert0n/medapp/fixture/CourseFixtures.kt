@@ -7,6 +7,7 @@ import com.kert0n.medapp.domain.course.CourseSource
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.course.CourseStatus
 import com.kert0n.medapp.domain.course.PlannedCourse
+import com.kert0n.medapp.domain.course.Revision
 import com.kert0n.medapp.domain.course.SourceStack
 import com.kert0n.medapp.domain.value.Quantity
 import java.math.BigDecimal
@@ -73,7 +74,7 @@ fun course(
     doseAmount = doseAmount,
     schedule = schedule,
     stack = SourceStack(items = sources, formId = formId, unitId = unitId),
-    revision = revision,
+    revision = Revision(revision),
     createdAt = createdAt,
     updatedAt = updatedAt
 )
@@ -100,7 +101,7 @@ fun activeCourse(
     schedule = schedule,
     stack = SourceStack(items = sources, formId = formId, unitId = unitId),
     status = status,
-    revision = revision,
+    revision = Revision(revision),
     createdAt = createdAt,
     updatedAt = updatedAt
 )

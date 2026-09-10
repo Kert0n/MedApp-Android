@@ -1,5 +1,6 @@
 package com.kert0n.medapp.domain.intake
 
+import com.kert0n.medapp.domain.course.Revision
 import com.kert0n.medapp.domain.course.ScheduledOccurrence
 import com.kert0n.medapp.domain.value.Quantity
 import java.time.Instant
@@ -24,9 +25,8 @@ import kotlin.uuid.Uuid
  */
 class CourseIntake(
     override val id: Uuid,
-    override val unitId: Uuid,
     val courseId: Uuid,
-    val courseRevision: Long,
+    val courseRevision: Revision,
     val slot: ScheduledOccurrence,
     val plannedAmount: Quantity,
     val plannedPackageId: Uuid? = null,
@@ -34,12 +34,17 @@ class CourseIntake(
 ) : Intake {
 
     init {
-        require(plannedAmount.unitId == unitId) { "плановая доза измеряется единицей приёма" }
         val taken = taken
         require(taken == null || taken.amount.unitId == unitId) {
             "фактическое количество измеряется единицей приёма"
         }
     }
+
+    /**
+     * Единица НА МОМЕНТ СОБЫТИЯ, и берётся она у плановой дозы: второе поле с той же единицей
+     * могло бы с ней разойтись.
+     */
+    override val unitId: Uuid get() = plannedAmount.unitId
 
     override val status: IntakeStatus
         get() = when (answer) {
@@ -109,7 +114,6 @@ class CourseIntake(
      */
     private fun answered(answer: IntakeAnswer): CourseIntake = CourseIntake(
         id = id,
-        unitId = unitId,
         courseId = courseId,
         courseRevision = courseRevision,
         slot = slot,

@@ -77,7 +77,7 @@ data class SourceStack(
      * потеряли бы смысл (PLAN D5).
      */
     fun detach(packageId: Uuid, forgetFormWhenEmpty: Boolean): SourceStack {
-        require(holds(packageId)) { "пачка $packageId не источник этого курса" }
+        requireHolds(packageId)
         val left = items.filterNot { it.packageId == packageId }
         val forget = left.isEmpty() && forgetFormWhenEmpty
         return SourceStack(
@@ -106,10 +106,14 @@ data class SourceStack(
      * `maxDoses` (PLAN D5, H1), а что выделение целое и неотрицательное, отвечает сам тип.
      */
     fun allocate(packageId: Uuid, doses: Doses): SourceStack {
-        require(holds(packageId)) { "пачка $packageId не источник этого курса" }
+        requireHolds(packageId)
         return copy(items = items.map {
             if (it.packageId == packageId) CourseSource(packageId, doses) else it
         })
+    }
+
+    private fun requireHolds(packageId: Uuid) {
+        require(holds(packageId)) { "пачка $packageId не источник этого курса" }
     }
 
     /** Выделения обнуляются, сам стек остаётся: история приёмов читается по нему. */

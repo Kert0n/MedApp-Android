@@ -11,13 +11,11 @@ import kotlin.uuid.Uuid
  */
 class UnplannedIntake(
     override val id: Uuid,
-    override val unitId: Uuid,
     val dose: TakenDose
 ) : Intake {
 
-    init {
-        require(dose.amount.unitId == unitId) { "фактическое количество измеряется единицей приёма" }
-    }
+    /** Единица НА МОМЕНТ СОБЫТИЯ: берётся у самого факта, второго поля для неё не нужно. */
+    override val unitId: Uuid get() = dose.amount.unitId
 
     override val status: IntakeStatus get() = IntakeStatus.TAKEN
 

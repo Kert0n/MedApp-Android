@@ -29,7 +29,6 @@ fun dosesAfterIntake(
     taken: Quantity,
     availableAfter: Quantity
 ): Doses {
-    require(!dose.isZero) { "нулевая доза не делит остаток" }
     // Единица одна на все три величины: сравнивать выделенное с доступным в разных единицах
     // нельзя, а `minusOrZero` проверит только два из трёх аргументов.
     require(availableAfter.unitId == dose.unitId) {

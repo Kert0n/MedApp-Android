@@ -40,7 +40,7 @@ sealed interface Course {
     val status: CourseStatus
 
     /** Редакция черновика и источников; у назначенного курса доза и расписание неизменны. */
-    val revision: Long
+    val revision: Revision
 
     val createdAt: Instant
     val updatedAt: Instant

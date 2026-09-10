@@ -1,5 +1,6 @@
 package com.kert0n.medapp.domain.course
 
+import com.kert0n.medapp.domain.course.Revision
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.activeCourse
@@ -58,7 +59,7 @@ class CourseTest {
         // Редакция связывает курс с уже материализованными приёмами: исправленная опечатка не
         // должна объявлять их устаревшими.
         val renamed = course(revision = 3).rename("Другое название", note = null, at = LATER)
-        assertEquals(3L, renamed.revision)
+        assertEquals(Revision(3), renamed.revision)
     }
 
     @Test
@@ -72,7 +73,7 @@ class CourseTest {
     fun settingTheDraftDoseRaisesTheRevision() {
         val dosed = course().setDose(BigDecimal("2"), at = LATER)
         assertEquals(BigDecimal("2"), dosed.doseAmount)
-        assertEquals(1L, dosed.revision)
+        assertEquals(Revision(1), dosed.revision)
         assertEquals(LATER, dosed.updatedAt)
     }
 
@@ -82,7 +83,7 @@ class CourseTest {
         // переименования.
         val planned = course().setSchedule(schedule(), at = LATER)
         assertEquals(schedule(), planned.schedule)
-        assertEquals(1L, planned.revision)
+        assertEquals(Revision(1), planned.revision)
     }
 
     @Test

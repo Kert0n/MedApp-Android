@@ -1,11 +1,13 @@
 package com.kert0n.medapp.domain.intake
 
+import com.kert0n.medapp.domain.course.Revision
 import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.FIRST_PLANNED_AT
 import com.kert0n.medapp.fixture.FIRST_SCHEDULED_ON
 import com.kert0n.medapp.fixture.FIRST_SCHEDULED_TIME
 import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.LATER
+import com.kert0n.medapp.fixture.MILLILITRES
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.SHARED_KIT
@@ -138,7 +140,7 @@ class IntakeTest {
         // назначенные дата со временем. Ответ их не переписывает.
         val answered = plannedIntake().confirm(PACK, HOME_KIT, tablets("2"), LATER)
         assertEquals(COURSE, answered.courseId)
-        assertEquals(1L, answered.courseRevision)
+        assertEquals(Revision(1), answered.courseRevision)
         assertEquals(FIRST_SCHEDULED_ON, answered.slot.localDate)
         assertEquals(FIRST_SCHEDULED_TIME, answered.slot.localTime)
         assertEquals(FIRST_PLANNED_AT, answered.plannedAt)
@@ -146,10 +148,9 @@ class IntakeTest {
 
     @Test
     fun amountsAreMeasuredByTheIntakeUnit() {
-        // Единица пишется на момент события, и величина в другой единице к ней не относится.
-        assertThrows(IllegalArgumentException::class.java) {
-            plannedIntake(plannedAmount = millilitres("5"))
-        }
+        // Единица приёма — единица его плановой дозы, второго поля для неё нет.
+        assertEquals(MILLILITRES, plannedIntake(plannedAmount = millilitres("5")).unitId)
+        // Факт в другой единице к этому пункту не относится.
         assertThrows(IllegalArgumentException::class.java) {
             plannedIntake().confirm(PACK, HOME_KIT, millilitres("5"), LATER)
         }

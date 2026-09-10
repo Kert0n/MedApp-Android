@@ -26,7 +26,7 @@ class PlannedCourse(
     override val schedule: CourseSchedule,
     override val stack: SourceStack,
     override val status: CourseStatus = CourseStatus.ACTIVE,
-    override val revision: Long = 0,
+    override val revision: Revision = Revision.initial,
     override val createdAt: Instant,
     override val updatedAt: Instant
 ) : Course {
@@ -34,7 +34,6 @@ class PlannedCourse(
     init {
         requireText(title, COURSE_TITLE_MAX_LENGTH, "Course.title")
         requireOptionalText(note, COURSE_NOTE_MAX_LENGTH, "Course.note")
-        require(revision >= 0) { "редакция курса не бывает отрицательной" }
         require(status != CourseStatus.DRAFT) { "у назначенного курса план уже есть" }
         require(dose.unitId == stack.unitId) { "доза измеряется единицей источников курса" }
     }
@@ -47,7 +46,7 @@ class PlannedCourse(
     fun attach(pkg: Package, doses: Doses, at: Instant): Result<PlannedCourse> {
         if (!isActive) return Result.failure(CourseRejected(CourseRejection.COURSE_CLOSED))
         return stack.attach(pkg, doses)
-            .map { changed(stack = it, revision = revision + 1, updatedAt = at) }
+            .map { changed(stack = it, revision = revision.next(), updatedAt = at) }
     }
 
     /**
@@ -59,7 +58,7 @@ class PlannedCourse(
         requireActive("отвязка источника")
         return changed(
             stack = stack.detach(packageId, forgetFormWhenEmpty = false),
-            revision = revision + 1,
+            revision = revision.next(),
             updatedAt = at
         )
     }
@@ -68,14 +67,14 @@ class PlannedCourse(
         requireActive("порядок источников")
         val moved = stack.reorder(from, to)
         if (moved == stack) return this
-        return changed(stack = moved, revision = revision + 1, updatedAt = at)
+        return changed(stack = moved, revision = revision.next(), updatedAt = at)
     }
 
     fun allocate(packageId: Uuid, doses: Doses, at: Instant): PlannedCourse {
         requireActive("выделение")
         return changed(
             stack = stack.allocate(packageId, doses),
-            revision = revision + 1,
+            revision = revision.next(),
             updatedAt = at
         )
     }
@@ -115,7 +114,7 @@ class PlannedCourse(
         note: String? = this.note,
         stack: SourceStack = this.stack,
         status: CourseStatus = this.status,
-        revision: Long = this.revision,
+        revision: Revision = this.revision,
         updatedAt: Instant = this.updatedAt
     ): PlannedCourse = PlannedCourse(
         id = id,

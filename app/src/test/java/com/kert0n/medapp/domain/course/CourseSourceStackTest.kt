@@ -1,5 +1,6 @@
 package com.kert0n.medapp.domain.course
 
+import com.kert0n.medapp.domain.course.Revision
 import com.kert0n.medapp.domain.pack.PackageAccess
 import com.kert0n.medapp.domain.pack.PackageLifecycle
 import com.kert0n.medapp.domain.value.Quantity
@@ -102,8 +103,8 @@ class CourseSourceStackTest {
     @Test
     fun changingSourcesAgesTheRevision() {
         val attached = draftWithDose().attach(home, doses = doses(5), at = LATER)
-        assertEquals(1L, attached.getOrThrow().revision)
-        assertEquals(2L, attached.getOrThrow().detach(PACK, LATER).revision)
+        assertEquals(Revision(1), attached.getOrThrow().revision)
+        assertEquals(Revision(2), attached.getOrThrow().detach(PACK, LATER).revision)
     }
 
     @Test
