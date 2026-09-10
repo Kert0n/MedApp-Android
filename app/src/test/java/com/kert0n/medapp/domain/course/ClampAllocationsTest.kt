@@ -58,8 +58,7 @@ class ClampAllocationsTest {
         // Сообщение человеку — «нужно 7, обеспечено 2, не хватает с такого-то приёма», а не
         // сдвинутые даты.
         val week = schedule()
-        val plan = occurrences(
-            schedule = week,
+        val plan = week.occurrences(
             from = week.start.atStartOfDay(MOSCOW).toInstant(),
             until = week.endInclusive.plusDays(1).atStartOfDay(MOSCOW).toInstant()
         )

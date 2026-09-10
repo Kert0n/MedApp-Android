@@ -34,8 +34,7 @@ class CoverageTest {
         )
     )
 
-    private val remaining: List<ScheduledOccurrence> = occurrences(
-        schedule = fourTimesADay,
+    private val remaining: List<ScheduledOccurrence> = fourTimesADay.occurrences(
         from = fourTimesADay.start.atStartOfDay(MOSCOW).toInstant(),
         until = fourTimesADay.endInclusive.plusDays(1).atStartOfDay(MOSCOW).toInstant()
     )
@@ -62,8 +61,7 @@ class CoverageTest {
     @Test
     fun fullyCoveredCourseNamesNoGap() {
         val week = schedule()
-        val plan = occurrences(
-            schedule = week,
+        val plan = week.occurrences(
             from = week.start.atStartOfDay(MOSCOW).toInstant(),
             until = week.endInclusive.plusDays(1).atStartOfDay(MOSCOW).toInstant()
         )
@@ -128,8 +126,7 @@ class CoverageTest {
     fun coverageNeverExceedsTheNeed() {
         // Выделено больше, чем осталось приёмов: обеспечено ровно столько, сколько нужно.
         val week = schedule()
-        val plan = occurrences(
-            schedule = week,
+        val plan = week.occurrences(
             from = week.start.atStartOfDay(MOSCOW).toInstant(),
             until = week.endInclusive.plusDays(1).atStartOfDay(MOSCOW).toInstant()
         )

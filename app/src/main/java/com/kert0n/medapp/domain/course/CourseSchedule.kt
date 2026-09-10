@@ -1,24 +1,18 @@
 package com.kert0n.medapp.domain.course
 
 import java.time.DayOfWeek
+import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
 /**
- * Календарное намерение человека: с какого по какое число, в какие дни недели и в какое время.
- *
- * **Величина, а не сущность.** Другой набор времён — другое расписание, а не изменённое: у
- * действующего курса расписание неизменно, и замена лечения означает новый курс (PLAN D5).
- *
- * **Зона своя, а не системная.** Перелёт не сдвигает назначенное лечение молча: «в девять утра»
- * остаётся девятью утра того часового пояса, в котором лечение назначено. Смена зоны — часть
- * нового расписания, а значит нового курса.
- *
- * Дата конца **включительная**: «по тридцать первое» значит, что тридцать первое входит.
- * Разрешение перехода на летнее время здесь не живёт — это вычисление, а не намерение: одно
- * правило на весь проект лежит в `domain/calc/schedule`.
+ * Календарное намерение человека: с какого по какое число, в какие дни недели, в какое время и
+ * в какой зоне. Величина: другой набор времён — другое расписание, а у действующего курса оно
+ * неизменно (PLAN D5). Дата конца включительная; «в девять утра» — девять утра своей зоны, а не
+ * системной, поэтому перелёт лечение не сдвигает.
  */
 data class CourseSchedule(
     val start: LocalDate,
@@ -32,8 +26,7 @@ data class CourseSchedule(
         require(!endInclusive.isBefore(start)) {
             "конец расписания не бывает раньше начала: $start — $endInclusive"
         }
-        // Пустая маска дней — это не «каждый день», а расписание без единого приёма. Молча
-        // подставлять «все дни» значило бы придумать лечение за человека.
+        // Пустая маска дней — расписание без приёмов, а не «каждый день».
         require(daysOfWeek.isNotEmpty()) { "расписание без дней недели не порождает приёмов" }
         require(times.isNotEmpty()) { "расписание без времён не порождает приёмов" }
         require(times.distinct().size == times.size) {
@@ -43,12 +36,8 @@ data class CourseSchedule(
     }
 
     /**
-     * Сколько пунктов порождает расписание целиком.
-     *
-     * Считается арифметикой, а не обходом дней: календарь из полных недель и остатка даёт ответ
-     * за семь проверок, сколько бы лет ни длился курс. Число нужно до материализации — окно
-     * в шестьдесят дней (PLAN F4) не знает полного размера плана, а слишком большой план
-     * отвергается с объяснением, а не материализуется наполовину.
+     * Сколько пунктов порождает расписание целиком. Считается арифметикой по неделям, а не
+     * обходом дней, — чтобы отвергнуть слишком большой план до материализации (PLAN F4).
      */
     fun occurrenceCount(): Int {
         val totalDays = ChronoUnit.DAYS.between(start, endInclusive) + 1
@@ -60,5 +49,65 @@ data class CourseSchedule(
         val occurrences = (fullWeeks * daysOfWeek.size + tailDays) * times.size
         require(occurrences <= Int.MAX_VALUE) { "расписание такого размера не материализуется" }
         return occurrences.toInt()
+    }
+
+    /**
+     * Пункты, чей момент попадает в `[from, until)`, по возрастанию момента. Соседние окна
+     * стыкуются без повтора и без дыры; длину окна выбирает вызывающий (PLAN F4).
+     */
+    fun occurrences(from: Instant, until: Instant): List<ScheduledOccurrence> {
+        require(!until.isBefore(from)) { "интервал [from, until) не бывает обратным" }
+        if (until == from) return emptyList()
+        // Сутки запаса с каждой стороны: момент зависит от перехода часов, поэтому отбор идёт по
+        // моменту, а не по дате. `atZone().toLocalDate()` — потому что `LocalDate.ofInstant`
+        // появился только в API 34.
+        val firstDate = maxOf(start, from.atZone(zone).toLocalDate().minusDays(1))
+        val lastDate = minOf(endInclusive, until.atZone(zone).toLocalDate())
+        if (lastDate.isBefore(firstDate)) return emptyList()
+
+        val found = ArrayList<ScheduledOccurrence>()
+        var date = firstDate
+        while (!date.isAfter(lastDate)) {
+            if (date.dayOfWeek in daysOfWeek) {
+                for (time in times) {
+                    val at = momentOf(date, time)
+                    if (!at.isBefore(from) && at.isBefore(until)) {
+                        found += ScheduledOccurrence(date, time, at)
+                    }
+                }
+            }
+            date = date.plusDays(1)
+        }
+        return found.sortedWith(
+            compareBy<ScheduledOccurrence> { it.at }.thenBy { it.localDate }.thenBy { it.localTime }
+        )
+    }
+
+    /**
+     * Сколько пунктов от [from] до конца календаря ещё ждут ответа. Считается календарём, а не
+     * строками окна материализации: иначе годовой курс видел бы только шестьдесят дней
+     * потребности. [resolved] — отвеченные пункты по исходным дате и времени (PLAN F4);
+     * просроченные неотвеченные попадают в подсчёт выбором [from].
+     */
+    fun countRemaining(from: Instant, resolved: Set<Pair<LocalDate, LocalTime>>): Int {
+        // Сутки запаса: последний пункт мог сдвинуться вперёд переходом часов.
+        val until = endInclusive.plusDays(2).atStartOfDay(zone).toInstant()
+        if (!until.isAfter(from)) return 0
+        return occurrences(from, until).count { (it.localDate to it.localTime) !in resolved }
+    }
+
+    /**
+     * Момент назначенного времени в зоне расписания. Несуществующее время (перевод вперёд)
+     * сдвигается к моменту перевода; время, которое бывает дважды (перевод назад), берётся
+     * первым. Правило записано явно, а не доверено `ZonedDateTime.of`, потому что сдвиг приёма
+     * на другой час человек заметит.
+     */
+    private fun momentOf(date: LocalDate, time: LocalTime): Instant {
+        val local = LocalDateTime.of(date, time)
+        val offsets = zone.rules.getValidOffsets(local)
+        return when {
+            offsets.isEmpty() -> zone.rules.getTransition(local).instant
+            else -> local.toInstant(offsets.first())
+        }
     }
 }

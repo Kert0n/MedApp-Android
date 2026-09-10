@@ -24,14 +24,13 @@ class OccurrencesTest {
     private val springForward: LocalDate = LocalDate.of(2027, 3, 28)
     private val fallBack: LocalDate = LocalDate.of(2027, 10, 31)
 
-    private fun wholeDay(date: LocalDate, time: LocalTime, zone: java.time.ZoneId) = occurrences(
-        schedule = schedule(
-            start = date,
-            endInclusive = date,
-            daysOfWeek = setOf(date.dayOfWeek),
-            times = listOf(time),
-            zone = zone
-        ),
+    private fun wholeDay(date: LocalDate, time: LocalTime, zone: java.time.ZoneId) = schedule(
+        start = date,
+        endInclusive = date,
+        daysOfWeek = setOf(date.dayOfWeek),
+        times = listOf(time),
+        zone = zone
+    ).occurrences(
         from = date.minusDays(1).atStartOfDay(zone).toInstant(),
         until = date.plusDays(2).atStartOfDay(zone).toInstant()
     )
@@ -59,14 +58,14 @@ class OccurrencesTest {
     fun twoTimesInsideOneMissingHourStayTwoIntakes() {
         // Оба времени сдвигаются в один и тот же момент. Это разные назначенные пункты, и по
         // уникальности одного UTC-времени они не теряются (PLAN F4).
-        val found = occurrences(
-            schedule = schedule(
-                start = springForward,
-                endInclusive = springForward,
-                daysOfWeek = setOf(DayOfWeek.SUNDAY),
-                times = listOf(LocalTime.of(2, 15), LocalTime.of(2, 45)),
-                zone = BERLIN
-            ),
+        val night = schedule(
+            start = springForward,
+            endInclusive = springForward,
+            daysOfWeek = setOf(DayOfWeek.SUNDAY),
+            times = listOf(LocalTime.of(2, 15), LocalTime.of(2, 45)),
+            zone = BERLIN
+        )
+        val found = night.occurrences(
             from = springForward.atStartOfDay(BERLIN).toInstant(),
             until = springForward.plusDays(1).atStartOfDay(BERLIN).toInstant()
         )
@@ -94,16 +93,15 @@ class OccurrencesTest {
         val week = schedule(times = listOf(LocalTime.of(9, 0)))
         val first = ZonedDateTime.of(week.start, LocalTime.of(9, 0), MOSCOW).toInstant()
         val second = first.plusSeconds(86_400)
-        assertEquals(listOf(first), occurrences(week, first, second).map { it.at })
-        assertTrue(occurrences(week, first, first).isEmpty())
+        assertEquals(listOf(first), week.occurrences(first, second).map { it.at })
+        assertTrue(week.occurrences(first, first).isEmpty())
     }
 
     @Test
     fun lastDayOfTheScheduleIsIncluded() {
         // Дата конца включительная: «по тридцать первое» значит, что тридцать первое входит.
         val week = schedule()
-        val found = occurrences(
-            schedule = week,
+        val found = week.occurrences(
             from = week.start.atStartOfDay(MOSCOW).toInstant(),
             until = week.endInclusive.plusDays(1).atStartOfDay(MOSCOW).toInstant()
         )
@@ -115,7 +113,7 @@ class OccurrencesTest {
     fun nothingIsBuiltOutsideTheScheduleRange() {
         val week = schedule()
         val after = week.endInclusive.plusDays(1).atStartOfDay(MOSCOW).toInstant()
-        assertTrue(occurrences(week, after, after.plusSeconds(86_400 * 30)).isEmpty())
+        assertTrue(week.occurrences(after, after.plusSeconds(86_400 * 30)).isEmpty())
     }
 
     @Test
@@ -124,8 +122,7 @@ class OccurrencesTest {
             endInclusive = schedule().start.plusDays(13),
             daysOfWeek = setOf(DayOfWeek.MONDAY, DayOfWeek.THURSDAY)
         )
-        val found = occurrences(
-            schedule = fortnight,
+        val found = fortnight.occurrences(
             from = fortnight.start.atStartOfDay(MOSCOW).toInstant(),
             until = fortnight.endInclusive.plusDays(1).atStartOfDay(MOSCOW).toInstant()
         )
@@ -137,6 +134,6 @@ class OccurrencesTest {
     fun reversedIntervalIsRejected() {
         val week = schedule()
         val start = week.start.atStartOfDay(MOSCOW).toInstant()
-        occurrences(week, start, start.minusSeconds(1))
+        week.occurrences(start, start.minusSeconds(1))
     }
 }

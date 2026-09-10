@@ -29,14 +29,14 @@ class CountRemainingTest {
     @Test
     fun wholeYearIsCountedBeyondTheSixtyDayWindow() {
         // 365 дней по четыре приёма: окно бы дало 240, а нужно 1460.
-        assertEquals(365 * 4, countRemaining(year, beginning(year), emptySet()))
+        assertEquals(365 * 4, year.countRemaining(beginning(year), emptySet()))
         assertEquals(365 * 4, year.occurrenceCount())
     }
 
     @Test
     fun monthWindowDoesNotLimitTheCount() {
         val month = schedule(start = start, endInclusive = start.plusDays(29))
-        assertEquals(30, countRemaining(month, beginning(month), emptySet()))
+        assertEquals(30, month.countRemaining(beginning(month), emptySet()))
     }
 
     @Test
@@ -46,7 +46,7 @@ class CountRemainingTest {
             week.start to LocalTime.of(9, 0),
             week.start.plusDays(1) to LocalTime.of(9, 0)
         )
-        assertEquals(5, countRemaining(week, beginning(week), answered))
+        assertEquals(5, week.countRemaining(beginning(week), answered))
     }
 
     @Test
@@ -54,21 +54,21 @@ class CountRemainingTest {
         // Пропустить будущий приём человек вправе, и потребность на него больше не считается.
         val week = schedule()
         val skippedAhead = setOf(week.endInclusive to LocalTime.of(9, 0))
-        assertEquals(6, countRemaining(week, beginning(week), skippedAhead))
+        assertEquals(6, week.countRemaining(beginning(week), skippedAhead))
     }
 
     @Test
     fun countingStartsFromTheGivenMoment() {
         val week = schedule()
         val fromMidWeek = week.start.plusDays(3).atStartOfDay(MOSCOW).toInstant()
-        assertEquals(4, countRemaining(week, fromMidWeek, emptySet()))
+        assertEquals(4, week.countRemaining(fromMidWeek, emptySet()))
     }
 
     @Test
     fun finishedScheduleNeedsNothing() {
         val week = schedule()
         val afterEnd = week.endInclusive.plusDays(1).atStartOfDay(MOSCOW).toInstant()
-        assertEquals(0, countRemaining(week, afterEnd, emptySet()))
+        assertEquals(0, week.countRemaining(afterEnd, emptySet()))
     }
 
     @Test
@@ -83,7 +83,7 @@ class CountRemainingTest {
             times = listOf(LocalTime.of(2, 15), LocalTime.of(2, 45)),
             zone = BERLIN
         )
-        assertEquals(2, countRemaining(day, beginning(day), emptySet()))
-        assertEquals(1, countRemaining(day, beginning(day), setOf(transition to LocalTime.of(2, 15))))
+        assertEquals(2, day.countRemaining(beginning(day), emptySet()))
+        assertEquals(1, day.countRemaining(beginning(day), setOf(transition to LocalTime.of(2, 15))))
     }
 }

@@ -2,7 +2,6 @@ package com.kert0n.medapp.domain.pack
 
 import com.kert0n.medapp.domain.course.sourceCapacity
 import com.kert0n.medapp.domain.course.spendTopDown
-import com.kert0n.medapp.domain.course.occurrences
 import com.kert0n.medapp.domain.course.PlannedCourse
 import com.kert0n.medapp.domain.course.CourseStatus
 import com.kert0n.medapp.domain.intake.Intake
@@ -69,7 +68,7 @@ fun remainingOn(
         val schedule = course.schedule
         val dose = course.dose
         val ahead = Doses(
-            occurrences(schedule, now, until)
+            schedule.occurrences(now, until)
                 .count { Triple(course.id, it.localDate, it.localTime) !in answered }
         )
         val spent = spendTopDown(sourceCapacity(course, dose, availability), ahead)
