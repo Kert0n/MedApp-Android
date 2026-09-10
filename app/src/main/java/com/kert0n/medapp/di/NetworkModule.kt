@@ -23,6 +23,11 @@ annotation class MedAppHttp
 @Retention(AnnotationRetention.BINARY)
 annotation class CrptHttp
 
+/** Регистрационный токен сборки (PLAN G1): приходит из `local.properties` или окружения CI. */
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class RegistrationToken
+
 /**
  * Два клиента, а не один с настройками по месту вызова: строгость разбора и авторизация — свойство
  * сервера, к которому идёт запрос, и спутать их одной настройкой нельзя (PLAN H2, G3).
@@ -47,6 +52,10 @@ object NetworkModule {
             Log.d("MedAppHttp", message)
         }
     }
+
+    @Provides
+    @RegistrationToken
+    fun registrationToken(): String = BuildConfig.REGISTRATION_TOKEN
 
     @Provides
     @Singleton
