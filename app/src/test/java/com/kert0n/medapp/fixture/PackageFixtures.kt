@@ -1,6 +1,10 @@
 package com.kert0n.medapp.fixture
 
+import com.kert0n.medapp.domain.calc.availability.PackageAvailability
+import com.kert0n.medapp.domain.calc.availability.availabilityOf
+import com.kert0n.medapp.domain.model.pack.ClaimOwnership
 import com.kert0n.medapp.domain.model.pack.Claims
+import com.kert0n.medapp.domain.model.pack.EffectiveAmount
 import com.kert0n.medapp.domain.model.pack.Package
 import com.kert0n.medapp.domain.model.pack.PackageAccess
 import com.kert0n.medapp.domain.model.pack.PackageFacts
@@ -83,4 +87,26 @@ fun PackageFacts.withShared(
     description: String? = shared.description
 ): PackageFacts = copy(
     shared = PackageSharedFacts(name, formId, category, manufacturer, country, description)
+)
+
+/**
+ * Доступность пачки для тестов, которым нужна не сама проекция, а её числа.
+ *
+ * Оценка количества собирается здесь напрямую, а не свёрткой очереди: свёртка живёт в слое данных
+ * и к фикстурам домена отношения не имеет.
+ */
+fun packAvailability(
+    id: Uuid = PACK,
+    quantity: Quantity = tablets("20"),
+    claims: Claims? = null,
+    expiresOn: LocalDate? = null,
+    unresolvedOperationIds: List<Uuid> = emptyList(),
+    myAllocation: Quantity = Quantity.zero(quantity.unitId),
+    claimOwnership: ClaimOwnership = ClaimOwnership.NoKnownOwner
+): PackageAvailability = availabilityOf(
+    pkg = pack(id = id, quantity = quantity, claims = claims, expiresOn = expiresOn),
+    amount = if (unresolvedOperationIds.isEmpty()) EffectiveAmount.Known(quantity)
+    else EffectiveAmount.NeedsRecount(quantity, unresolvedOperationIds),
+    myAllocation = myAllocation,
+    claimOwnership = claimOwnership
 )

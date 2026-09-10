@@ -1,7 +1,6 @@
 package com.kert0n.medapp.domain.calc.forecast
 
 import com.kert0n.medapp.domain.model.pack.Claims
-import com.kert0n.medapp.domain.model.pack.PackageStock
 import com.kert0n.medapp.fixture.FIRST_SCHEDULED_ON
 import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.INTAKE
@@ -10,7 +9,7 @@ import com.kert0n.medapp.fixture.MOSCOW
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.activeCourse
-import com.kert0n.medapp.fixture.pack
+import com.kert0n.medapp.fixture.packAvailability
 import com.kert0n.medapp.fixture.plannedIntake
 import com.kert0n.medapp.fixture.schedule
 import com.kert0n.medapp.fixture.source
@@ -43,9 +42,11 @@ class RemainingOnTest {
         claims: Claims? = null,
         unresolved: List<Uuid> = emptyList(),
         expiresOn: LocalDate? = null
-    ) = PackageStock(
-        pkg = pack(id = id, quantity = tablets(quantity), claims = claims, expiresOn = expiresOn),
-        today = today,
+    ) = packAvailability(
+        id = id,
+        quantity = tablets(quantity),
+        claims = claims,
+        expiresOn = expiresOn,
         unresolvedOperationIds = unresolved
     )
 

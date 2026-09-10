@@ -7,7 +7,7 @@ import com.kert0n.medapp.domain.model.course.Course
 import com.kert0n.medapp.domain.model.course.CourseStatus
 import com.kert0n.medapp.domain.model.intake.Intake
 import com.kert0n.medapp.domain.model.intake.IntakeStatus
-import com.kert0n.medapp.domain.model.pack.PackageStock
+import com.kert0n.medapp.domain.calc.availability.PackageAvailability
 import com.kert0n.medapp.domain.model.value.Quantity
 import java.time.Instant
 import java.time.LocalDate
@@ -41,7 +41,7 @@ fun remainingOn(
     date: LocalDate,
     reportZone: ZoneId,
     now: Instant,
-    packages: List<PackageStock>,
+    packages: List<PackageAvailability>,
     courses: List<Course>,
     resolved: List<Intake>
 ): List<PackageForecast> {
@@ -56,7 +56,7 @@ fun remainingOn(
     // Доступность — то же самое, чем считаются обеспечение и пределы ползунков: пачка без
     // известного остатка в расчёт не входит, и её прогноз останется неизвестным.
     val availability: Map<Uuid, Quantity> = packages.mapNotNull { stock ->
-        stock.availableToMe?.let { stock.pkg.id to it }
+        stock.availableToMe?.let { stock.packageId to it }
     }.toMap()
 
     val answered = resolved
@@ -87,16 +87,16 @@ fun remainingOn(
         // База прогноза — физический остаток, а не «сколько моего»: чужие брони показываются
         // отдельным числом. Смешав их, мы обещали бы, что таблеток в пачке нет, хотя они лежат.
         val effective = stock.effective
-        val doses = spentDoses[stock.pkg.id] ?: 0
-        val dose = doseOf[stock.pkg.id]
+        val doses = spentDoses[stock.packageId] ?: 0
+        val dose = doseOf[stock.packageId]
         PackageForecast(
-            packageId = stock.pkg.id,
+            packageId = stock.packageId,
             at = until,
             remaining = if (effective == null || dose == null) effective
             else effective.minusOrZero(dose * doses),
             reservedByOthers = stock.reservedByOthers,
             // Просрочка помечается на дату отчёта: к третьему месяцу годной пачка быть перестанет.
-            expired = stock.pkg.isExpiredOn(date),
+            expired = stock.isExpiredOn(date),
             requiresRecount = effective == null
         )
     }
