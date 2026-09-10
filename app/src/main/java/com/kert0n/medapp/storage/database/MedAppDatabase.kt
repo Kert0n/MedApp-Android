@@ -9,12 +9,16 @@ import com.kert0n.medapp.storage.course.CourseRecordStorageEntity
 import com.kert0n.medapp.storage.course.CourseSourceStorageEntity
 import com.kert0n.medapp.storage.course.CourseStorageEntity
 import com.kert0n.medapp.storage.course.CourseTimeStorageEntity
+import com.kert0n.medapp.storage.intake.IntakeDao
+import com.kert0n.medapp.storage.intake.IntakeStorageEntity
 import com.kert0n.medapp.storage.medkit.MedKitDao
 import com.kert0n.medapp.storage.medkit.MedKitStorageEntity
 import com.kert0n.medapp.storage.pack.ClaimsStorageEntity
 import com.kert0n.medapp.storage.pack.PackageDao
 import com.kert0n.medapp.storage.pack.PackageDetailsStorageEntity
 import com.kert0n.medapp.storage.pack.PackageStorageEntity
+import com.kert0n.medapp.storage.stock.StockMovementDao
+import com.kert0n.medapp.storage.stock.StockMovementStorageEntity
 import com.kert0n.medapp.storage.value.DosageFormStorageEntity
 import com.kert0n.medapp.storage.value.QuantityUnitStorageEntity
 
@@ -35,7 +39,9 @@ import com.kert0n.medapp.storage.value.QuantityUnitStorageEntity
         CourseRecordStorageEntity::class,
         CourseTimeStorageEntity::class,
         CourseSourceStorageEntity::class,
-        ActivePackageAssignmentStorageEntity::class
+        ActivePackageAssignmentStorageEntity::class,
+        IntakeStorageEntity::class,
+        StockMovementStorageEntity::class
     ],
     version = MedAppDatabase.VERSION,
     exportSchema = true
@@ -48,6 +54,10 @@ abstract class MedAppDatabase : RoomDatabase() {
     abstract fun packages(): PackageDao
 
     abstract fun courses(): CourseDao
+
+    abstract fun intakes(): IntakeDao
+
+    abstract fun stockMovements(): StockMovementDao
 
     companion object {
         const val VERSION = 1
