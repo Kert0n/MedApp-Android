@@ -35,7 +35,11 @@ object MedAppConverters {
     @TypeConverter
     fun localDateFromStorage(value: String?): LocalDate? = value?.let(LocalDate::parse)
 
-    /** Минуты от начала суток: время расписания сравнивается и сортируется числом. */
+    /**
+     * Минуты от начала суток: время расписания сравнивается и сортируется числом. Разрядов при
+     * этом не теряется — точность до минуты держит само расписание (`CourseSchedule`), а не эта
+     * колонка.
+     */
     @TypeConverter
     fun localTimeToStorage(value: LocalTime?): Int? = value?.toSecondOfDay()?.div(SECONDS_IN_MINUTE)
 

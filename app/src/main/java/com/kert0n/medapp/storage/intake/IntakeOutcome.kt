@@ -1,34 +1,35 @@
 package com.kert0n.medapp.storage.intake
 
-import com.kert0n.medapp.domain.course.Course
 import com.kert0n.medapp.domain.intake.CourseIntake
 import com.kert0n.medapp.domain.intake.Intake
 import com.kert0n.medapp.domain.intake.IntakeStatus
+import com.kert0n.medapp.domain.intake.TakenDose
 import com.kert0n.medapp.domain.intake.UnplannedIntake
-import com.kert0n.medapp.domain.pack.Package
-import com.kert0n.medapp.domain.stock.StockMovement
 import com.kert0n.medapp.network.intake.IntakeAccounting
 import com.kert0n.medapp.network.intake.IntakeSyncState
+import com.kert0n.medapp.storage.course.CourseReallocation
 import com.kert0n.medapp.storage.server.QueuedCommand
 import java.time.Instant
 
 /**
  * Что записывается вместе с ответом на приём — всё то, чего порознь не бывает (PLAN F5).
  *
- * Ответ, локальный остаток либо команда расхода, движение, пересчитанные выделения курса и
- * учёт расхода ложатся одной транзакцией. Откат не оставляет ни отдельного расхода, ни факта,
- * ни брони.
+ * Ответ, локальный остаток либо команда расхода, пересчитанные выделения курса и учёт расхода
+ * ложатся одной транзакцией. Откат не оставляет ни отдельного расхода, ни факта, ни брони.
  *
- * Решения принимает домен и передаёт сюда готовыми: хранение не выбирает, из какой пачки
- * принято и как изменилось выделение.
+ * Решения принимает домен: из какой пачки принято и сколько — сказано самим приёмом, а
+ * применяет расход хранение — к тому состоянию пачки, которое лежит в базе. Готового нового
+ * состояния пачки сюда не передают: посчитанное по прочитанному когда-то раньше, оно легло бы
+ * поверх нынешнего.
+ *
+ * Движения по приёму нет: приём и есть учётная запись о своём расходе, а `StockMovement`
+ * описывает изменения помимо приёма (ТЗ 4.1.1.10.2, PLAN D7).
  */
 class IntakeOutcome(
     val intake: Intake,
     expected: Set<IntakeStatus>,
     val sync: IntakeSyncState = IntakeSyncState(intake.id),
-    val spent: Package? = null,
-    val movement: StockMovement? = null,
-    val course: Course? = null,
+    val reallocation: CourseReallocation? = null,
     val command: QueuedCommand? = null
 ) {
     /**
@@ -46,22 +47,32 @@ class IntakeOutcome(
         is CourseIntake -> requireNotNull(intake.answer) { "записывается ответ, а не его отсутствие" }.at
     }
 
+    /** Что и откуда принято; у подтверждённого приёма это есть по построению. */
+    val taken: TakenDose? get() = intake.taken
+
+    /**
+     * Меняет ли эта запись локальный остаток. Ровно [IntakeAccounting.LOCAL_APPLIED] — так этот
+     * случай и определён: «локальный остаток и факт записаны одной транзакцией». Расход,
+     * уехавший командой, локальный остаток не трогает: там лежит подтверждённое сервером, а
+     * незакрытые команды сворачивает очередь (PLAN E1).
+     */
+    val spendsLocally: Boolean get() = sync.accounting == IntakeAccounting.LOCAL_APPLIED
+
+    /** Приём и учёт его расхода: правило об этой паре живёт на своём типе. */
+    val recorded = RecordedIntake(intake, sync)
+
     init {
-        require(sync.intakeId == intake.id) { "учёт расхода принадлежит своему приёму" }
         require(intake is UnplannedIntake || expected.isNotEmpty()) {
             "условный переход называет, из какого состояния идёт"
         }
         require(intake.status !in expected) { "переход в тот же статус не является переходом" }
-        require(movement == null || movement.packageId == spent?.id) {
-            "движение записывается по той пачке, остаток которой изменился"
+        // Учёт называет операцию, а очередь получает её в этой же транзакции. Порознь это
+        // оставило бы приём вечно ожидающим расход, которого в очереди нет.
+        require(sync.accounting != IntakeAccounting.PENDING || command != null) {
+            "ожидающий расход ставится в очередь вместе с приёмом"
         }
-        require(
-            intake.status != IntakeStatus.TAKEN ||
-                sync.accounting != IntakeAccounting.NOT_APPLICABLE
-        ) { "у подтверждённого приёма расход учтён" }
-        require(
-            intake.status == IntakeStatus.TAKEN ||
-                sync.accounting == IntakeAccounting.NOT_APPLICABLE
-        ) { "у неподтверждённого приёма расхода нет" }
+        require(sync.operationId == null || command == null || command.id == sync.operationId) {
+            "приём называет ту операцию, которая ставится вместе с ним"
+        }
     }
 }

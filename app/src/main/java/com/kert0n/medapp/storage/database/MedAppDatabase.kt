@@ -26,6 +26,7 @@ import com.kert0n.medapp.storage.stock.StockMovementDao
 import com.kert0n.medapp.storage.stock.StockMovementStorageEntity
 import com.kert0n.medapp.storage.value.DosageFormStorageEntity
 import com.kert0n.medapp.storage.value.QuantityUnitStorageEntity
+import com.kert0n.medapp.storage.value.VocabularyDao
 
 /**
  * Локальная база приложения. Схема экспортируется в `app/schemas` и лежит в репозитории:
@@ -70,6 +71,8 @@ abstract class MedAppDatabase : RoomDatabase() {
     abstract fun syncOperations(): SyncOperationDao
 
     abstract fun notificationLog(): NotificationLogDao
+
+    abstract fun vocabulary(): VocabularyDao
 
     companion object {
         const val VERSION = 1

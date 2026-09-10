@@ -3,6 +3,7 @@ package com.kert0n.medapp.di
 import android.content.Context
 import androidx.room.Room
 import com.kert0n.medapp.storage.course.CourseDao
+import com.kert0n.medapp.storage.database.BundledVocabulary
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.storage.intake.IntakeDao
 import com.kert0n.medapp.storage.medkit.MedKitDao
@@ -10,6 +11,7 @@ import com.kert0n.medapp.storage.pack.PackageDao
 import com.kert0n.medapp.storage.server.NotificationLogDao
 import com.kert0n.medapp.storage.server.SyncOperationDao
 import com.kert0n.medapp.storage.stock.StockMovementDao
+import com.kert0n.medapp.storage.value.VocabularyDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -22,7 +24,8 @@ import javax.inject.Singleton
  * транзакций друг друга.
  *
  * Разрушающий откат не включается ни в каком виде: он молча стирает очередь и историю при
- * обновлении приложения, и вместо потери данных нужен упавший переход (PLAN F4).
+ * обновлении приложения, и вместо потери данных нужен упавший переход (PLAN F4). При создании
+ * база сразу получает встроенный снимок словарей.
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -31,7 +34,12 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun medAppDatabase(@ApplicationContext context: Context): MedAppDatabase =
-        Room.databaseBuilder(context, MedAppDatabase::class.java, MedAppDatabase.NAME).build()
+        Room.databaseBuilder(context, MedAppDatabase::class.java, MedAppDatabase.NAME)
+            .addCallback(BundledVocabulary.fromAssets(context.assets))
+            .build()
+
+    @Provides
+    fun vocabularyDao(database: MedAppDatabase): VocabularyDao = database.vocabulary()
 
     @Provides
     fun medKitDao(database: MedAppDatabase): MedKitDao = database.medKits()

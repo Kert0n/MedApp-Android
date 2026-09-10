@@ -3,7 +3,10 @@ package com.kert0n.medapp.storage.pack
 import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageAvailability
+import com.kert0n.medapp.domain.pack.PackageFacts
 import com.kert0n.medapp.network.pack.PackageSyncState
+import com.kert0n.medapp.storage.course.CourseReallocation
+import com.kert0n.medapp.storage.server.QueuedCommand
 import java.time.Instant
 import java.time.LocalDate
 import kotlin.uuid.Uuid
@@ -31,7 +34,27 @@ interface PackageStorageRepository {
     /** Список экрана: `today` приходит аргументом, потому что база системных часов не читает. */
     fun list(query: PackageQuery, today: LocalDate): Flow<List<Package>>
 
-    suspend fun save(pkg: Package, sync: PackageSyncState = PackageSyncState(pkg.id))
+    /**
+     * Заведение пачки: своей — без обвязки синхронизации, чужой — вместе со снимком сервера.
+     * Правка существующей идёт своими операциями: у них есть предусловия, а у общей записи их
+     * нет, и она молча обнуляла бы то, чего действие человека не касается.
+     */
+    suspend fun add(pkg: Package, sync: PackageSyncState = PackageSyncState(pkg.id))
+
+    /**
+     * Правка описательных сведений. Остаток, обвязка синхронизации и картина броней не
+     * трогаются: экран, загрузивший пачку когда-то раньше, переименованием их не переписывает.
+     *
+     * `false` — пачки больше нет.
+     */
+    suspend fun describe(packageId: Uuid, facts: PackageFacts): Boolean
+
+    /**
+     * Доступ к пачке утрачен: вышли из аптечки, её унесли или удалили. Брони снимаются вместе с
+     * доступом — их больше не существует, — поэтому обе записи ложатся одной транзакцией
+     * (PLAN D5). `false` — пачки больше нет.
+     */
+    suspend fun loseAccess(packageId: Uuid): Boolean
 
     /** Снимок переписывает серверную часть целиком и не касается личных сведений (PLAN E4). */
     suspend fun applyServerSnapshot(pkg: Package, sync: PackageSyncState, observedAt: Instant)
@@ -40,10 +63,20 @@ interface PackageStorageRepository {
     suspend fun saveClaims(packageId: Uuid, claims: Claims?)
 
     /**
-     * Пересчёт, утилизация, архивирование и перенос: движение и новое состояние пачки ложатся
-     * одной транзакцией вместе с пересчитанными выделениями и исходящей командой (PLAN F5).
+     * Пересчёт, утилизация и перенос: движение и новое состояние пачки ложатся одной транзакцией
+     * вместе с пересчитанными выделениями [reallocation] и исходящей командой [command] (PLAN F5).
      *
-     * Откат не оставляет ни движения без остатка, ни остатка без следа в истории.
+     * Переход применяется к нынешнему состоянию пачки, прочитанному в той же транзакции, поэтому
+     * «было» в истории — настоящее «было». Обвязка синхронизации при этом не трогается: версии и
+     * время сверки принадлежат снимку сервера, а не действию человека (PLAN E4).
+     *
+     * Откат не оставляет ни движения без остатка, ни остатка без следа в истории. `false` —
+     * пачки больше нет: писать переход некуда.
      */
-    suspend fun adjust(adjustment: PackageAdjustment, at: Instant)
+    suspend fun adjust(
+        adjustment: PackageAdjustment,
+        reallocation: CourseReallocation? = null,
+        command: QueuedCommand? = null,
+        at: Instant
+    ): Boolean
 }

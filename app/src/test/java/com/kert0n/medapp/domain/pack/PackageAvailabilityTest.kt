@@ -55,6 +55,35 @@ class PackageAvailabilityTest {
         assertEquals(tablets("20"), local.availableToMe)
     }
 
+    /**
+     * Утраченная пачка запаса не обеспечивает. Последнее известное количество остаётся видимым —
+     * оно нужно истории, — но источником оно быть перестаёт. Без этого правила «свободно» у такой
+     * пачки даже росло: доступ снимает и брони.
+     */
+    @Test
+    fun aPackageOutOfReachSuppliesNothing() {
+        val lost = PackageAvailability(
+            pkg = pack(quantity = tablets("20"), claims = Claims(BigDecimal("5"), BigDecimal("0"))).loseAccess(),
+            amount = EffectiveAmount.Known(tablets("20"))
+        )
+
+        assertEquals(tablets("20"), lost.effective)
+        assertEquals(tablets("0"), lost.availableToMe)
+        assertEquals(tablets("0"), lost.freeForAnyone)
+        assertFalse("утрата доступа — это не «нужна сверка»", lost.requiresRecount)
+    }
+
+    /** Выброшенная и израсходованная пачка — тот же случай: из неё больше не берут. */
+    @Test
+    fun anArchivedPackageSuppliesNothing() {
+        val archived = PackageAvailability(
+            pkg = pack(quantity = tablets("20")).archive(),
+            amount = EffectiveAmount.Known(tablets("20"))
+        )
+
+        assertEquals(tablets("0"), archived.freeForAnyone)
+    }
+
     @Test
     fun consumptionOfOneTabletMakesADifferentValue() {
         // Все поля — числа, поэтому расход 20 → 19 даёт другое значение (C1 «Состояние экрана»).

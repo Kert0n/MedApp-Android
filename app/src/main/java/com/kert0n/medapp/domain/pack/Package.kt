@@ -39,6 +39,13 @@ class Package(
 
     val name: String get() = facts.name
 
+    /**
+     * Берут ли из этой пачки: она цела и мы её видим. Одно правило на всех, кто спрашивает
+     * «можно ли отсюда взять» — переходы пачки, расчёт свободного, фильтр списка (PLAN D4, D5).
+     */
+    val suppliesStock: Boolean
+        get() = lifecycle == Lifecycle.ACTIVE && access == Access.AVAILABLE
+
     fun isExpiredOn(date: LocalDate): Boolean = facts.isExpiredOn(date)
 
     fun expiresWithin(date: LocalDate, days: Long): Boolean = facts.expiresWithin(date, days)

@@ -64,7 +64,7 @@ class PackageRoomRepositoryTest {
         repository = database.packageRepository()
         queue = database.queueRepository()
         database.medKits().upsert(medKit().toMedKitStorageEntity())
-        repository.save(paracetamol)
+        repository.add(paracetamol)
     }
 
     @After
@@ -163,7 +163,7 @@ class PackageRoomRepositoryTest {
     @Test
     fun hasFreeKeepsOnlyPackagesWithSomethingLeftOver() = runTest {
         val other = pack(id = OTHER_PACK, name = "Ибупрофен", quantity = tablets("8"))
-        repository.save(other)
+        repository.add(other)
         givenActiveCourseTaking(doses = 10)
 
         val found = repository.list(
@@ -174,6 +174,26 @@ class PackageRoomRepositoryTest {
         assertEquals(listOf("Ибупрофен"), found)
     }
 
+    /**
+     * Пачка, к которой утрачен доступ, свободной не считается — хотя её количество осталось
+     * известным, а брони с неё сняты вместе с доступом.
+     */
+    @Test
+    fun packageOutOfReachIsNotCountedAsFree() = runTest {
+        repository.saveClaims(PACK, Claims(total = BigDecimal("8")))
+
+        assertTrue(repository.loseAccess(PACK))
+
+        val availability = requireNotNull(repository.observeAvailability(PACK).first())
+        assertEquals(tablets("0"), availability.freeForAnyone)
+        // Брони снимаются вместе с доступом: их больше не существует, а не «их не видно».
+        assertNull(requireNotNull(repository.observe(PACK).first()).claims)
+        assertEquals(
+            emptyList<String>(),
+            repository.list(PackageQuery(filter = PackageQuery.Filter.HasFree), today).first().map { it.name }
+        )
+    }
+
     /** «Неизвестно» — это не «есть свободное»: пачка, требующая сверки, из списка уходит. */
     @Test
     fun packageThatNeedsRecountIsNotCountedAsFree() = runTest {
@@ -182,6 +202,25 @@ class PackageRoomRepositoryTest {
 
         val found = repository.list(PackageQuery(filter = PackageQuery.Filter.HasFree), today)
         assertEquals(emptyList<String>(), found.first().map { it.name })
+    }
+
+    /**
+     * Переименование правит описание и только его: остаток, обвязка синхронизации и брони
+     * остаются нынешними, хотя экран загрузил пачку до чужой записи.
+     */
+    @Test
+    fun describingDoesNotWriteBackAStaleAmount() = runTest {
+        val sync = PackageSyncState(PACK, version = ResourceVersion(5), syncedAt = at)
+        repository.applyServerSnapshot(paracetamol.correctTo(tablets("11")), sync, at)
+
+        val renamed = paracetamol.facts.let { it.copy(shared = it.shared.copy(name = "Панадол")) }
+
+        assertTrue(repository.describe(PACK, renamed))
+
+        val described = requireNotNull(repository.find(PACK))
+        assertEquals("Панадол", described.name)
+        assertEquals(tablets("11"), described.quantity)
+        assertEquals(sync, requireNotNull(database.packages().find(PACK)).pack.syncState())
     }
 
     @Test

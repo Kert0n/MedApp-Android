@@ -63,7 +63,7 @@ class SyncOperationDaoTest {
         val command = PackageSyncCommand.Consume(PACK, dose("1.5"), INTAKE, claimAfter = tablets("4"))
         val enqueued = queue.enqueue(first, command, createdAt)
 
-        val restored = requireNotNull(requireNotNull(queue.find(first)).toDomainOrNull())
+        val restored = readable(first)
         assertEquals(enqueued, restored)
         assertEquals(command, restored.command)
         assertEquals(SyncOperationStatus.PENDING, restored.status)
@@ -134,7 +134,7 @@ class SyncOperationDaoTest {
         )
 
         assertEquals(listOf(first), queue.dependenciesOf(second))
-        assertEquals(setOf(first), requireNotNull(queue.find(second)!!.toDomainOrNull()).dependsOn)
+        assertEquals(setOf(first), readable(second).dependsOn)
     }
 
     @Test
@@ -159,7 +159,7 @@ class SyncOperationDaoTest {
             mineBefore = tablets("2"),
             preparedAt = createdAt
         )
-        val frozen = requireNotNull(queue.find(first)!!.toDomainOrNull()).let {
+        val frozen = readable(first).let {
             SyncOperation(
                 id = it.id,
                 command = it.command,
@@ -172,7 +172,7 @@ class SyncOperationDaoTest {
         }
         queue.update(frozen.toStorageEntity())
 
-        val restored = requireNotNull(queue.find(first)!!.toDomainOrNull())
+        val restored = readable(first)
         assertEquals(prepared, restored.prepared)
         assertEquals(SyncOperationStatus.SENDING, restored.status)
     }
@@ -198,7 +198,7 @@ class SyncOperationDaoTest {
         queue.enqueue(second, PackageSyncCommand.Consume(PACK, dose("1"), INTAKE), createdAt)
         queue.settle(first, SyncOperationStatus.DONE)
 
-        val unclosed = queue.observeUnclosedOfPackage(PACK).first()
+        val unclosed = queue.unclosedOfPackage(PACK)
         assertEquals(listOf(second), unclosed.map { it.operation.id })
     }
 
@@ -224,7 +224,33 @@ class SyncOperationDaoTest {
             )
         )
 
-        assertNull(requireNotNull(queue.find(first)).toDomainOrNull())
+        val stale = unreadable(first)
+        assertTrue(stale.reason, stale.reason.contains("версии"))
         assertEquals(1, queue.all().size)
     }
+
+    /**
+     * Повреждённым может быть не только payload команды: параметры подготовленного запроса
+     * восстанавливаются тем же разбором, и раньше они падали мимо защиты — вместе с поиском
+     * нечитаемых строк, написанным ровно для таких случаев.
+     */
+    @Test
+    fun damagedPreparedRequestMakesTheWholeRowUnreadable() = runTest {
+        queue.enqueue(first, PackageSyncCommand.Delete(PACK), createdAt)
+        database.openHelper.writableDatabase.execSQL(
+            "UPDATE sync_operations SET prepared_method = 'DELETE', prepared_path = '/drugs/$PACK', " +
+                "prepared_query = 'не json', prepared_at = 0 WHERE id = '$first'"
+        )
+
+        val damaged = unreadable(first)
+
+        assertEquals(first, damaged.id)
+        assertEquals(listOf(damaged), queue.all().mapNotNull { it.toDomain() as? StoredSyncOperation.Unreadable })
+    }
+
+    private suspend fun readable(id: Uuid): SyncOperation =
+        (requireNotNull(queue.find(id)).toDomain() as StoredSyncOperation.Readable).operation
+
+    private suspend fun unreadable(id: Uuid): StoredSyncOperation.Unreadable =
+        requireNotNull(queue.find(id)).toDomain() as StoredSyncOperation.Unreadable
 }

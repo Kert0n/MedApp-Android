@@ -88,7 +88,7 @@ class PackageQueryDaoTest {
     }
 
     private suspend fun names(query: PackageQuery): List<String> =
-        packages.matching(query, today).first().map { it.toDomain().name }
+        packages.matching(query, today).map { it.toDomain().name }
 
     @Test
     fun withoutFilterEverythingIsThereWithExpiredFirst() = runTest {
@@ -199,7 +199,7 @@ class PackageQueryDaoTest {
         val ordered = packages.matching(
             PackageQuery(sort = PackageQuery.Sort.QUANTITY),
             today
-        ).first().drop(1).map { it.pack.quantityUnitId }
+        ).drop(1).map { it.pack.quantityUnitId }
         assertEquals(1, ordered.count { it == MILLILITRES })
     }
 

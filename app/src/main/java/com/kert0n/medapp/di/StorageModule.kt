@@ -12,6 +12,8 @@ import com.kert0n.medapp.storage.server.SyncOperationRoomRepository
 import com.kert0n.medapp.storage.server.SyncOperationStorageRepository
 import com.kert0n.medapp.storage.stock.StockMovementRoomRepository
 import com.kert0n.medapp.storage.stock.StockMovementStorageRepository
+import com.kert0n.medapp.storage.value.VocabularyRoomRepository
+import com.kert0n.medapp.storage.value.VocabularyStorageRepository
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -53,4 +55,8 @@ abstract class StorageModule {
     abstract fun syncOperations(
         implementation: SyncOperationRoomRepository
     ): SyncOperationStorageRepository
+
+    @Binds
+    @Singleton
+    abstract fun vocabulary(implementation: VocabularyRoomRepository): VocabularyStorageRepository
 }

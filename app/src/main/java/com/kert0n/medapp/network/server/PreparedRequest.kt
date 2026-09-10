@@ -2,6 +2,7 @@ package com.kert0n.medapp.network.server
 
 import com.kert0n.medapp.domain.value.Quantity
 import java.time.Instant
+import java.util.Objects
 
 /**
  * Подготовленный изменяющий запрос: путь, тело и версии предусловий, замороженные **до** первой
@@ -10,10 +11,10 @@ import java.time.Instant
  *
  * Доменным расчётам он недоступен: это транспорт, а не смысл.
  */
-data class PreparedRequest(
+class PreparedRequest(
     val method: String,
     val path: String,
-    val query: Map<String, String> = emptyMap(),
+    query: Map<String, String> = emptyMap(),
     val body: String? = null,
     val drugVersion: ResourceVersion? = null,
     val claimsVersion: ResourceVersion? = null,
@@ -21,6 +22,13 @@ data class PreparedRequest(
     val mineBefore: Quantity? = null,
     val preparedAt: Instant
 ) {
+    /**
+     * Свой снимок, а не переданная карта: `val` защищает ссылку, а не содержимое, и параметры,
+     * оставшиеся у вызывающего, ушли бы на повторе изменёнными — то самое, чего заморозка
+     * запроса и не допускает.
+     */
+    val query: Map<String, String> = query.toMap()
+
     init {
         require(method.isNotBlank()) { "у запроса есть метод" }
         require(path.isNotBlank()) { "у запроса есть путь" }
@@ -32,4 +40,24 @@ data class PreparedRequest(
 
     /** Единица предусловий: она одна на обе величины и остаётся той, что была при подготовке. */
     val unitId get() = quantityBefore?.unitId ?: mineBefore?.unitId
+
+    override fun equals(other: Any?): Boolean =
+        this === other || (
+            other is PreparedRequest &&
+                method == other.method &&
+                path == other.path &&
+                query == other.query &&
+                body == other.body &&
+                drugVersion == other.drugVersion &&
+                claimsVersion == other.claimsVersion &&
+                quantityBefore == other.quantityBefore &&
+                mineBefore == other.mineBefore &&
+                preparedAt == other.preparedAt
+            )
+
+    override fun hashCode(): Int = Objects.hash(
+        method, path, query, body, drugVersion, claimsVersion, quantityBefore, mineBefore, preparedAt
+    )
+
+    override fun toString(): String = "PreparedRequest($method $path, подготовлен $preparedAt)"
 }

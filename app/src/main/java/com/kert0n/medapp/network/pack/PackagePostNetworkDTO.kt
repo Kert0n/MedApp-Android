@@ -4,38 +4,34 @@ import com.kert0n.medapp.domain.pack.PackageSharedFacts
 import com.kert0n.medapp.domain.value.requireOptionalText
 import com.kert0n.medapp.domain.value.requireText
 import kotlin.uuid.Uuid
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 
 /**
- * Поля упаковки, уезжающие на сервер: ровно то, что принимает создание пачки, и ничего сверх.
+ * Создание пачки на проводе (`DrugCreateRequest`): ровно то, что принимает сервер, и ничего сверх.
  *
- * Локальные сведения — срок годности, доза-подсказка, заметка, цена, даты покупки и вскрытия —
- * сюда не попадают **физически**, а не по договорённости. Список полей здесь и список на экране
- * последствий публикации (PLAN E5) — одно и то же.
- *
- * Живёт в сетевом слое, а не в домене: это форма провода, и величины в ней уже проводные.
- * Количество — десятичная строка по шаблону B2 и отдельный идентификатор единицы, потому что
- * именно это принимает сервер; доменный `Quantity` в тело запроса не попадает. `@Serializable`
- * и точные имена полей придут вместе с настоящим контрактом в PR 5.
+ * Идентификатор придумывает клиент: повтор с тем же `id` даёт 409, а не вторую пачку, поэтому
+ * потерянный ответ можно повторить (PLAN B4, C0). Локальные сведения — срок годности, заметка,
+ * цена — сюда не попадают **физически**: список полей здесь и на экране последствий публикации
+ * (PLAN E5) один и тот же. Количество — строка B2 и отдельная единица, как их принимает сервер.
  */
+@Serializable
 data class PackagePostNetworkDTO(
+    val id: Uuid,
     val name: String,
-    val amount: String,
-    val unitId: Uuid,
-    val formId: Uuid?,
+    @SerialName("quantity") val amount: String,
+    @SerialName("quantityUnitId") val unitId: Uuid,
+    @SerialName("formTypeId") val formId: Uuid?,
     val category: String?,
     val manufacturer: String?,
     val country: String?,
     val description: String?
 ) {
     init {
-        // Границы те же, что у домена: создание пачки посылает её поля как есть, и расхождение
-        // между «влезло в модель» и «влезло в запрос» означало бы отказ сервера после успешного
-        // сохранения.
+        // Границы те же, что у домена: расхождение между «влезло в модель» и «влезло в запрос»
+        // означало бы отказ сервера после успешного сохранения.
         requireText(name, PackageSharedFacts.NAME_MAX_LENGTH, "PackagePostNetworkDTO.name")
-        requireNetworkAmount(amount, "PackagePostNetworkDTO.amount")
-        require(amount.any { it in '1'..'9' }) {
-            "PackagePostNetworkDTO.amount: начальный остаток должен быть положительным"
-        }
+        requirePositiveNetworkAmount(amount, "PackagePostNetworkDTO.amount")
         requireOptionalText(
             category,
             PackageSharedFacts.CATEGORY_MAX_LENGTH,
