@@ -32,8 +32,10 @@ fun occurrences(
     val zone = schedule.zone
     // Крайние сутки берём с запасом в день с каждой стороны: момент пункта зависит от зоны и от
     // перехода, поэтому по дате границу провести нельзя — отбор идёт уже по моменту.
-    val firstDate = maxOf(schedule.start, LocalDate.ofInstant(from, zone).minusDays(1))
-    val lastDate = minOf(schedule.endInclusive, LocalDate.ofInstant(until, zone))
+    // `atZone().toLocalDate()`, а не `LocalDate.ofInstant`: последнее появилось в API 34, а
+    // нижняя граница у нас 29 (PLAN H2). Результат тот же.
+    val firstDate = maxOf(schedule.start, from.atZone(zone).toLocalDate().minusDays(1))
+    val lastDate = minOf(schedule.endInclusive, until.atZone(zone).toLocalDate())
     if (lastDate.isBefore(firstDate)) return emptyList()
 
     val found = ArrayList<ScheduledOccurrence>()

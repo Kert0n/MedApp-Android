@@ -45,7 +45,8 @@ fun remainingOn(
     courses: List<Course>,
     resolved: List<Intake>
 ): List<PackageForecast> {
-    val todayThere = LocalDate.ofInstant(now, reportZone)
+    // `atZone().toLocalDate()`: `LocalDate.ofInstant` требует API 34 при нижней границе 29.
+    val todayThere = now.atZone(reportZone).toLocalDate()
     require(!date.isBefore(todayThere)) { "прогноз считается вперёд, а не назад: $date" }
     require(!date.isAfter(todayThere.plusMonths(FORECAST_MAX_MONTHS))) {
         "горизонт прогноза — $FORECAST_MAX_MONTHS календарных месяца, запрошено $date"
