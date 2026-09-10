@@ -174,6 +174,22 @@ class PackageRoomRepositoryTest {
         assertEquals(listOf("Ибупрофен"), found)
     }
 
+    /**
+     * Пачка, к которой утрачен доступ, свободной не считается — хотя её количество осталось
+     * известным, а брони с неё сняты вместе с доступом.
+     */
+    @Test
+    fun packageOutOfReachIsNotCountedAsFree() = runTest {
+        repository.save(paracetamol.loseAccess())
+
+        val availability = requireNotNull(repository.observeAvailability(PACK).first())
+        assertEquals(tablets("0"), availability.freeForAnyone)
+        assertEquals(
+            emptyList<String>(),
+            repository.list(PackageQuery(filter = PackageQuery.Filter.HasFree), today).first().map { it.name }
+        )
+    }
+
     /** «Неизвестно» — это не «есть свободное»: пачка, требующая сверки, из списка уходит. */
     @Test
     fun packageThatNeedsRecountIsNotCountedAsFree() = runTest {

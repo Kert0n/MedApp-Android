@@ -11,13 +11,18 @@ import kotlin.uuid.Uuid
  * взять я и сколько свободно любому. Величина: все поля — числа, и расход 20 → 19 даёт другое
  * значение. Производные — геттеры, поэтому «свободно 5» при нулевом остатке не записать. Строится
  * из пачки: чужие брони берутся у её картины броней, моё выделение приносят курсы.
+ *
+ * Допуск пачки к обеспечению [suppliesStock] едет сюда вместе с ней: последнее известное
+ * количество утраченной или выброшенной пачки остаётся видимым, но доступным запасом она быть
+ * перестаёт. Иначе снятие броней вместе с доступом делало бы «свободно» даже больше.
  */
 data class PackageAvailability(
     val packageId: Uuid,
     val expiresOn: ExpiryDate?,
     val amount: EffectiveAmount,
     val reservedByOthers: Quantity,
-    val myAllocation: Quantity
+    val myAllocation: Quantity,
+    val suppliesStock: Boolean = true
 ) {
 
     constructor(
@@ -30,7 +35,8 @@ data class PackageAvailability(
         amount = amount,
         reservedByOthers = pkg.claims?.let { Quantity(it.reservedByOthers, pkg.quantity.unitId) }
             ?: Quantity.zero(pkg.quantity.unitId),
-        myAllocation = myAllocation
+        myAllocation = myAllocation,
+        suppliesStock = pkg.suppliesStock
     )
 
     init {
@@ -44,8 +50,16 @@ data class PackageAvailability(
     /** `null` — количество неизвестно до сверки. */
     val effective: Quantity? get() = amount.quantityOrNull
 
-    /** Сколько могу взять я: вычитается только чужое, свою бронь я заявил сам. */
-    val availableToMe: Quantity? get() = effective?.minusOrZero(reservedByOthers)
+    /**
+     * Сколько могу взять я: вычитается только чужое, свою бронь я заявил сам. Из пачки, которая
+     * запаса не обеспечивает, взять нельзя нисколько, и это известный ноль, а не «неизвестно»:
+     * утраченный доступ и неизвестный остаток требуют разных действий.
+     */
+    val availableToMe: Quantity?
+        get() = when {
+            !suppliesStock -> Quantity.zero(reservedByOthers.unitId)
+            else -> effective?.minusOrZero(reservedByOthers)
+        }
 
     /**
      * Свободно любому: доступное мне без моего выделения. Считается не от суммы броней: моя
