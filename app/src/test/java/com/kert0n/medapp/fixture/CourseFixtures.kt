@@ -2,13 +2,13 @@ package com.kert0n.medapp.fixture
 
 import com.kert0n.medapp.domain.course.Course
 import com.kert0n.medapp.domain.course.CourseDraft
+import com.kert0n.medapp.domain.course.CourseMedicine
 import com.kert0n.medapp.domain.course.CourseSchedule
 import com.kert0n.medapp.domain.course.CourseSource
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.course.CourseStatus
 import com.kert0n.medapp.domain.course.PlannedCourse
 import com.kert0n.medapp.domain.course.Revision
-import com.kert0n.medapp.domain.course.SourceStack
 import com.kert0n.medapp.domain.value.Quantity
 import java.math.BigDecimal
 import java.time.DayOfWeek
@@ -73,7 +73,7 @@ fun course(
     note = note,
     doseAmount = doseAmount,
     schedule = schedule,
-    stack = SourceStack(items = sources, formId = formId, unitId = unitId),
+    medicine = CourseMedicine(sources = sources, formId = formId, unitId = unitId),
     revision = Revision(revision),
     createdAt = createdAt,
     updatedAt = updatedAt
@@ -99,7 +99,7 @@ fun activeCourse(
     title = "Парацетамол, пять дней",
     dose = Quantity(doseAmount, unitId),
     schedule = schedule,
-    stack = SourceStack(items = sources, formId = formId, unitId = unitId),
+    medicine = CourseMedicine(sources = sources, formId = formId, unitId = unitId),
     status = status,
     revision = Revision(revision),
     createdAt = createdAt,
@@ -108,3 +108,7 @@ fun activeCourse(
 
 /** Источник: пачка и её выделение в целых дозах. */
 fun source(packageId: Uuid, doses: Int) = CourseSource(packageId, Doses(doses))
+
+/** Препарат курса из таблеток: пачки в порядке расходования, каждая со своим выделением. */
+fun medicine(vararg sources: CourseSource) =
+    CourseMedicine(sources = sources.toList(), formId = TABLET_FORM, unitId = TABLETS)

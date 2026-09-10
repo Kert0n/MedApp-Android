@@ -7,24 +7,10 @@ import kotlin.uuid.Uuid
 
 /**
  * Курс — лечение, которое человек себе назначил: сколько принимать, по какому календарю и из
- * каких пачек.
- *
- * **Это два состояния с разным поведением, а не одно с четырьмя необязательными полями.**
- * У черновика может не быть ни расписания, ни дозы, ни источников: «записал у врача → купил →
- * внёс» начинается раньше, чем известны даты и пачки (PLAN D5). У назначенного курса они есть
- * всегда — и неизменны. Пока это был один класс, разницу держали `require(status != ACTIVE || …)`
- * и четыре `requireNotNull(course.dose)` в вычислителях; курс без дозы всё равно можно было
- * передать в обеспечение, и падало оно уже там.
- *
- * Теперь [CourseDraft] и [PlannedCourse] — разные типы, а вычислители принимают второй: курса без
- * дозы в них просто не приходит.
- *
- * **Сущность:** переименованный курс — тот же курс, и приёмы, уже порождённые им, остаются его
- * приёмами. Тождество — [id], равенство по нему.
- *
- * Курс на сервер не уезжает вовсе (PLAN C0): расписаний, приёмов и курсов там нет и не будет,
- * поэтому обвязки синхронизации у него нет по построению, а не по решению. Уезжает только
- * следствие выделения — серверная бронь на упаковку (PLAN D5, E2).
+ * каких пачек. Сущность: переименованный курс — тот же курс, равенство по [id]. Типов два, потому
+ * что ведут они себя по-разному: у [CourseDraft] дозы, расписания и пачек может ещё не быть, у
+ * [PlannedCourse] они есть, а доза и расписание неизменны (PLAN D5). На сервер курс не уезжает
+ * (C0) — уезжает только бронь, следствие выделения.
  */
 sealed interface Course {
 
@@ -34,8 +20,8 @@ sealed interface Course {
     /** «Что купить», запись от врача. */
     val note: String?
 
-    /** Стек источников: порядок есть приоритет расходования (PLAN D5). */
-    val stack: SourceStack
+    /** Препарат курса: пачки, порядок их расходования и выделение. */
+    val medicine: CourseMedicine
 
     val status: CourseStatus
 
@@ -51,13 +37,13 @@ sealed interface Course {
     /** Расписание. `null` только у черновика. */
     val schedule: CourseSchedule?
 
-    val sources: List<CourseSource> get() = stack.items
+    val sources: List<CourseSource> get() = medicine.sources
 
-    val formId: Uuid? get() = stack.formId
+    val formId: Uuid? get() = medicine.formId
 
-    val unitId: Uuid? get() = stack.unitId
+    val unitId: Uuid? get() = medicine.unitId
 
-    val allocatedDosesTotal: Doses get() = stack.allocatedTotal
+    val allocatedDosesTotal: Doses get() = medicine.allocatedTotal
 
     /**
      * Выделение источника **в единицах пачки** — та самая величина, которую видит серверная
@@ -67,7 +53,7 @@ sealed interface Course {
      * количество из неизвестной дозы нельзя.
      */
     fun allocatedOf(packageId: Uuid): Quantity? {
-        val allocated = stack.allocatedTo(packageId) ?: return null
+        val allocated = medicine.allocatedTo(packageId) ?: return null
         return dose?.times(allocated)
     }
 

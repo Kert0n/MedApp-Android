@@ -46,7 +46,7 @@ class CourseSourceFormTest {
         // не бывают. Экран так и говорит: «укажите форму, чтобы подключить к курсу».
         val unknownForm = pack(id = OTHER_PACK, formId = null)
         assertEquals(
-            CourseRejection.FORM_UNKNOWN,
+            CourseRejected.Reason.FORM_UNKNOWN,
             draft().attach(unknownForm, doses = doses(1), at = LATER).rejection()
         )
         // И для первого источника тоже: фиксировать «неизвестно» нечем.
@@ -58,7 +58,7 @@ class CourseSourceFormTest {
         val capsules = pack(id = OTHER_PACK, formId = CAPSULE_FORM, quantity = tablets("10"))
         val fixed = draft().attach(tabletPack, doses = doses(5), at = LATER).getOrThrow()
         assertEquals(
-            CourseRejection.FORM_MISMATCH,
+            CourseRejected.Reason.FORM_MISMATCH,
             fixed.attach(capsules, doses = doses(1), at = LATER).rejection()
         )
     }
@@ -70,7 +70,7 @@ class CourseSourceFormTest {
         val syrup = pack(id = OTHER_PACK, formId = TABLET_FORM, quantity = millilitres("100"))
         val fixed = draft().attach(tabletPack, doses = doses(5), at = LATER).getOrThrow()
         assertEquals(
-            CourseRejection.UNIT_MISMATCH,
+            CourseRejected.Reason.UNIT_MISMATCH,
             fixed.attach(syrup, doses = doses(1), at = LATER).rejection()
         )
         assertEquals(TABLETS, fixed.unitId)
@@ -128,11 +128,11 @@ class CourseSourceFormTest {
         val capsules = pack(id = OTHER_PACK, formId = CAPSULE_FORM, quantity = tablets("10"))
         val unsupplied = activeCourse(sources = listOf(source(PACK, 5))).detach(PACK, LATER)
         assertEquals(
-            CourseRejection.FORM_MISMATCH,
+            CourseRejected.Reason.FORM_MISMATCH,
             unsupplied.attach(capsules, doses = doses(1), at = LATER).rejection()
         )
     }
 
-    private fun Result<Course>.rejection(): CourseRejection? =
+    private fun Result<Course>.rejection(): CourseRejected.Reason? =
         (exceptionOrNull() as? CourseRejected)?.reason
 }

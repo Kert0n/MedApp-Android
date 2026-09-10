@@ -35,11 +35,10 @@ class AssignSourcesTest {
         )
     }
 
-    private fun assigned(vararg allocations: Pair<Uuid, Int>) = assignSources(
-        course = activeCourse(sources = allocations.map { source(it.first, it.second) }),
-        upcoming = plan,
-        availability = availability
-    ).let { found -> plan.map { found[it.id] } }
+    private fun assigned(vararg allocations: Pair<Uuid, Int>) =
+        activeCourse(sources = allocations.map { source(it.first, it.second) })
+            .assign(plan, availability)
+            .let { found -> plan.map { found[it.id] } }
 
     @Test
     fun stackIsSpentTopDown() {
@@ -53,7 +52,7 @@ class AssignSourcesTest {
     @Test
     fun reorderingTheStackReordersTheSpending() {
         val swapped = activeCourse(sources = listOf(source(OTHER_PACK, 3), source(PACK, 2)))
-            .let { assignSources(it, plan, availability) }
+            .assign(plan, availability)
         assertEquals(
             listOf(OTHER_PACK, OTHER_PACK, OTHER_PACK, PACK, PACK),
             plan.map { swapped[it.id] }
@@ -80,11 +79,8 @@ class AssignSourcesTest {
     fun remainderSmallerThanADoseDoesNotSpillIntoTheNextSource() {
         // По одной таблетке в двух пачках при дозе в две: обеспеченных приёмов ноль, а не один.
         val singles = availability(PACK to tablets("1"), OTHER_PACK to tablets("1"))
-        val found = assignSources(
-            course = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 5))),
-            upcoming = plan,
-            availability = singles
-        )
+        val found = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 5)))
+            .assign(plan, singles)
         assertEquals(List(5) { null }, plan.map { found[it.id] })
     }
 
@@ -92,23 +88,20 @@ class AssignSourcesTest {
     fun packageGivesNoMoreThanItPhysicallyHas() {
         // Выделено пять доз, а свободно четыре таблетки — две дозы: дальше идёт вторая пачка.
         val shrunk = availability(PACK to tablets("4"), OTHER_PACK to tablets("12"))
-        val found = assignSources(
-            course = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 5))),
-            upcoming = plan,
-            availability = shrunk
+        val found = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 5)))
+            .assign(plan, shrunk)
+        assertEquals(
+            listOf(PACK, PACK, OTHER_PACK, OTHER_PACK, OTHER_PACK),
+            plan.map { found[it.id] }
         )
-        assertEquals(listOf(PACK, PACK, OTHER_PACK, OTHER_PACK, OTHER_PACK), plan.map { found[it.id] })
     }
 
     @Test
     fun unknownAvailabilityIsNotSpentEither() {
         // Исход операции по первой пачке не установлен: до сверки она не выдаётся за источник,
         // и расход идёт со второй.
-        val found = assignSources(
-            course = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 2))),
-            upcoming = plan,
-            availability = availability(OTHER_PACK to tablets("12"))
-        )
+        val found = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 2)))
+            .assign(plan, availability(OTHER_PACK to tablets("12")))
         assertEquals(listOf(OTHER_PACK, OTHER_PACK, null, null, null), plan.map { found[it.id] })
     }
 
@@ -116,11 +109,8 @@ class AssignSourcesTest {
     fun similarPackagesAreNotSubstituted() {
         // Третья пачка того же лекарства лежит рядом и доступна, но в стек не встаёт сама.
         val elsewhere = Uuid.parse("00000000-0000-4000-8000-000000000023")
-        val found = assignSources(
-            course = activeCourse(sources = listOf(source(PACK, 2))),
-            upcoming = plan,
-            availability = availability(PACK to tablets("20"), elsewhere to tablets("50"))
-        )
+        val found = activeCourse(sources = listOf(source(PACK, 2)))
+            .assign(plan, availability(PACK to tablets("20"), elsewhere to tablets("50")))
         assertEquals(listOf(PACK, PACK, null, null, null), plan.map { found[it.id] })
     }
 
@@ -129,11 +119,11 @@ class AssignSourcesTest {
         val answered = plannedIntake().confirm(PACK, HOME_KIT, tablets("2"), LATER)
         val course = activeCourse(sources = listOf(source(PACK, 5)))
         assertThrows(IllegalArgumentException::class.java) {
-            assignSources(course, listOf(answered), availability)
+            course.assign(listOf(answered), availability)
         }
         val alien = plannedIntake(courseId = Uuid.parse("00000000-0000-4000-8000-000000000052"))
         assertThrows(IllegalArgumentException::class.java) {
-            assignSources(course, listOf(alien), availability)
+            course.assign(listOf(alien), availability)
         }
         assertEquals(COURSE, course.id)
     }

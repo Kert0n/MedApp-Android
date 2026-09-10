@@ -27,7 +27,7 @@ class CourseDraft(
     override val note: String? = null,
     val doseAmount: BigDecimal? = null,
     override val schedule: CourseSchedule? = null,
-    override val stack: SourceStack = SourceStack(),
+    override val medicine: CourseMedicine = CourseMedicine(),
     override val revision: Revision = Revision.initial,
     override val createdAt: Instant,
     override val updatedAt: Instant
@@ -85,26 +85,27 @@ class CourseDraft(
 
     /** Подключает пачку последней в стеке — самой низкой по приоритету расходования. */
     fun attach(pkg: Package, doses: Doses, at: Instant): Result<CourseDraft> =
-        stack.attach(pkg, doses).map { changed(stack = it, revision = revision.next(), updatedAt = at) }
+        medicine.attach(pkg, doses)
+            .map { changed(medicine = it, revision = revision.next(), updatedAt = at) }
 
     /**
      * Отвязка последнего источника у черновика **сбрасывает** форму и единицу: там ещё нечего
      * терять (PLAN D5).
      */
     fun detach(packageId: Uuid, at: Instant): CourseDraft = changed(
-        stack = stack.detach(packageId, forgetFormWhenEmpty = true),
+        medicine = medicine.detach(packageId, forgetFormWhenEmpty = true),
         revision = revision.next(),
         updatedAt = at
     )
 
     fun reorder(from: Int, to: Int, at: Instant): CourseDraft {
-        val moved = stack.reorder(from, to)
-        if (moved == stack) return this
-        return changed(stack = moved, revision = revision.next(), updatedAt = at)
+        val moved = medicine.reorder(from, to)
+        if (moved == medicine) return this
+        return changed(medicine = moved, revision = revision.next(), updatedAt = at)
     }
 
     fun allocate(packageId: Uuid, doses: Doses, at: Instant): CourseDraft = changed(
-        stack = stack.allocate(packageId, doses),
+        medicine = medicine.allocate(packageId, doses),
         revision = revision.next(),
         updatedAt = at
     )
@@ -117,9 +118,9 @@ class CourseDraft(
      * проверяются: дальше их наличие обеспечивает тип.
      */
     fun activate(at: Instant): Result<PlannedCourse> {
-        val schedule = schedule ?: return rejected(CourseRejection.SCHEDULE_MISSING)
-        val dose = dose ?: return rejected(CourseRejection.DOSE_MISSING)
-        if (stack.isEmpty) return rejected(CourseRejection.SOURCES_MISSING)
+        val schedule = schedule ?: return rejected(CourseRejected.Reason.SCHEDULE_MISSING)
+        val dose = dose ?: return rejected(CourseRejected.Reason.DOSE_MISSING)
+        if (medicine.isEmpty) return rejected(CourseRejected.Reason.SOURCES_MISSING)
         return Result.success(
             PlannedCourse(
                 id = id,
@@ -127,7 +128,7 @@ class CourseDraft(
                 note = note,
                 dose = dose,
                 schedule = schedule,
-                stack = stack,
+                medicine = medicine,
                 status = CourseStatus.ACTIVE,
                 revision = revision,
                 createdAt = createdAt,
@@ -136,7 +137,7 @@ class CourseDraft(
         )
     }
 
-    private fun rejected(reason: CourseRejection): Result<PlannedCourse> =
+    private fun rejected(reason: CourseRejected.Reason): Result<PlannedCourse> =
         Result.failure(CourseRejected(reason))
 
     /**
@@ -149,7 +150,7 @@ class CourseDraft(
         note: String? = this.note,
         doseAmount: BigDecimal? = this.doseAmount,
         schedule: CourseSchedule? = this.schedule,
-        stack: SourceStack = this.stack,
+        medicine: CourseMedicine = this.medicine,
         revision: Revision = this.revision,
         updatedAt: Instant = this.updatedAt
     ): CourseDraft = CourseDraft(
@@ -158,7 +159,7 @@ class CourseDraft(
         note = note,
         doseAmount = doseAmount,
         schedule = schedule,
-        stack = stack,
+        medicine = medicine,
         revision = revision,
         createdAt = createdAt,
         updatedAt = updatedAt

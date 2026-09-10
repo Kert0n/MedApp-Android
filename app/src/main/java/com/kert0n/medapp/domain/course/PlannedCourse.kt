@@ -1,5 +1,8 @@
 package com.kert0n.medapp.domain.course
 
+import com.kert0n.medapp.domain.intake.CourseIntake
+import com.kert0n.medapp.domain.intake.IntakeStatus
+import com.kert0n.medapp.domain.pack.Availability
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.Quantity
@@ -24,7 +27,7 @@ class PlannedCourse(
     override val note: String? = null,
     override val dose: Quantity,
     override val schedule: CourseSchedule,
-    override val stack: SourceStack,
+    override val medicine: CourseMedicine,
     override val status: CourseStatus = CourseStatus.ACTIVE,
     override val revision: Revision = Revision.initial,
     override val createdAt: Instant,
@@ -35,7 +38,7 @@ class PlannedCourse(
         requireText(title, Course.TITLE_MAX_LENGTH, "Course.title")
         requireOptionalText(note, Course.NOTE_MAX_LENGTH, "Course.note")
         require(status != CourseStatus.DRAFT) { "у назначенного курса план уже есть" }
-        require(dose.unitId == stack.unitId) { "доза измеряется единицей источников курса" }
+        require(dose.unitId == medicine.unitId) { "доза измеряется единицей источников курса" }
     }
 
     /** Название и заметка правятся и здесь: это не изменение назначенного лечения (PLAN D5). */
@@ -44,9 +47,9 @@ class PlannedCourse(
 
     /** Источники действующего курса менять можно — это не изменение дозы или календаря. */
     fun attach(pkg: Package, doses: Doses, at: Instant): Result<PlannedCourse> {
-        if (!isActive) return Result.failure(CourseRejected(CourseRejection.COURSE_CLOSED))
-        return stack.attach(pkg, doses)
-            .map { changed(stack = it, revision = revision.next(), updatedAt = at) }
+        if (!isActive) return Result.failure(CourseRejected(CourseRejected.Reason.COURSE_CLOSED))
+        return medicine.attach(pkg, doses)
+            .map { changed(medicine = it, revision = revision.next(), updatedAt = at) }
     }
 
     /**
@@ -57,7 +60,7 @@ class PlannedCourse(
     fun detach(packageId: Uuid, at: Instant): PlannedCourse {
         requireActive("отвязка источника")
         return changed(
-            stack = stack.detach(packageId, forgetFormWhenEmpty = false),
+            medicine = medicine.detach(packageId, forgetFormWhenEmpty = false),
             revision = revision.next(),
             updatedAt = at
         )
@@ -65,18 +68,37 @@ class PlannedCourse(
 
     fun reorder(from: Int, to: Int, at: Instant): PlannedCourse {
         requireActive("порядок источников")
-        val moved = stack.reorder(from, to)
-        if (moved == stack) return this
-        return changed(stack = moved, revision = revision.next(), updatedAt = at)
+        val moved = medicine.reorder(from, to)
+        if (moved == medicine) return this
+        return changed(medicine = moved, revision = revision.next(), updatedAt = at)
     }
 
     fun allocate(packageId: Uuid, doses: Doses, at: Instant): PlannedCourse {
         requireActive("выделение")
         return changed(
-            stack = stack.allocate(packageId, doses),
+            medicine = medicine.allocate(packageId, doses),
             revision = revision.next(),
             updatedAt = at
         )
+    }
+
+    /**
+     * Раскладывает неотвеченные пункты этого курса, данные в календарном порядке, по пачкам
+     * препарата: какой приём из какой пачки. `null` — приём не обеспечен, и полная доза
+     * «неизвестно откуда» за него не записывается; пачки вне препарата не подставляются (PLAN D5).
+     */
+    fun assign(upcoming: List<CourseIntake>, availability: Availability): Map<Uuid, Uuid?> {
+        upcoming.forEach { intake ->
+            require(intake.courseId == id) { "пункт ${intake.id} не принадлежит курсу" }
+            require(intake.status == IntakeStatus.PLANNED) {
+                "раскладываются неотвеченные пункты, а не ${intake.status}"
+            }
+        }
+        val order = medicine.spend(dose, Doses(upcoming.size), availability)
+            .flatMap { (packageId, doses) -> List(doses.count) { packageId } }
+        return upcoming.withIndex().associate { (index, intake) ->
+            intake.id to order.getOrNull(index)
+        }
     }
 
     /**
@@ -88,7 +110,11 @@ class PlannedCourse(
      */
     fun complete(at: Instant): PlannedCourse {
         check(isActive) { "завершается действующий курс, а не $status" }
-        return changed(stack = stack.released(), status = CourseStatus.COMPLETED, updatedAt = at)
+        return changed(
+            medicine = medicine.released(),
+            status = CourseStatus.COMPLETED,
+            updatedAt = at
+        )
     }
 
     /**
@@ -100,7 +126,11 @@ class PlannedCourse(
      */
     fun cancel(at: Instant): PlannedCourse {
         check(isActive) { "отменяется действующий курс, а не $status" }
-        return changed(stack = stack.released(), status = CourseStatus.CANCELLED, updatedAt = at)
+        return changed(
+            medicine = medicine.released(),
+            status = CourseStatus.CANCELLED,
+            updatedAt = at
+        )
     }
 
     private val isActive: Boolean get() = status == CourseStatus.ACTIVE
@@ -112,7 +142,7 @@ class PlannedCourse(
     private fun changed(
         title: String = this.title,
         note: String? = this.note,
-        stack: SourceStack = this.stack,
+        medicine: CourseMedicine = this.medicine,
         status: CourseStatus = this.status,
         revision: Revision = this.revision,
         updatedAt: Instant = this.updatedAt
@@ -122,7 +152,7 @@ class PlannedCourse(
         note = note,
         dose = dose,
         schedule = schedule,
-        stack = stack,
+        medicine = medicine,
         status = status,
         revision = revision,
         createdAt = createdAt,
