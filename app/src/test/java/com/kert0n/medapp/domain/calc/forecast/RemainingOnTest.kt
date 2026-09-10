@@ -1,6 +1,7 @@
 package com.kert0n.medapp.domain.calc.forecast
 
 import com.kert0n.medapp.domain.model.pack.Claims
+import com.kert0n.medapp.domain.model.pack.EffectiveAmount
 import com.kert0n.medapp.domain.model.pack.ExpiryDate
 import com.kert0n.medapp.fixture.FIRST_SCHEDULED_ON
 import com.kert0n.medapp.fixture.HOME_KIT
@@ -42,13 +43,15 @@ class RemainingOnTest {
         quantity: String = "20",
         claims: Claims? = null,
         unresolved: List<Uuid> = emptyList(),
+        confirmed: Boolean = true,
         expiresOn: ExpiryDate? = null
     ) = packAvailability(
         id = id,
         quantity = tablets(quantity),
         claims = claims,
         expiresOn = expiresOn,
-        unresolvedOperationIds = unresolved
+        unresolvedOperationIds = unresolved,
+        confirmed = confirmed
     )
 
     private val course = activeCourse(schedule = week, sources = listOf(source(PACK, 7)))
@@ -147,6 +150,27 @@ class RemainingOnTest {
         )
         assertNull(forecast.single().remaining)
         assertTrue(forecast.single().requiresRecount)
+        // И операции, из-за которых нужна сверка, доезжают до прогноза: раньше на этом месте
+        // оставался голый признак, и «какую пачку пересчитать» человеку сказать было нечем.
+        assertEquals(
+            EffectiveAmount.NeedsRecount(tablets("20"), listOf(INTAKE)),
+            forecast.single().amount
+        )
+    }
+
+    @Test
+    fun forecastIsNoMoreConfirmedThanItsBase() {
+        // Незакрытый локальный расход остаётся в прогнозе неподтверждённым числом, а не
+        // превращается в подтверждённое по дороге.
+        val forecast = remainingOn(
+            date = today.plusDays(2),
+            reportZone = MOSCOW,
+            now = now,
+            packages = listOf(stockOf(confirmed = false)),
+            courses = emptyList(),
+            resolved = emptyList()
+        )
+        assertEquals(EffectiveAmount.Known(tablets("20"), confirmed = false), forecast.single().amount)
     }
 
     @Test

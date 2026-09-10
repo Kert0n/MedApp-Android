@@ -101,10 +101,11 @@ fun packAvailability(
     claims: Claims? = null,
     expiresOn: ExpiryDate? = null,
     unresolvedOperationIds: List<Uuid> = emptyList(),
+    confirmed: Boolean = true,
     myAllocation: Quantity = Quantity.zero(quantity.unitId)
 ): PackageAvailability = availabilityOf(
     pkg = pack(id = id, quantity = quantity, claims = claims, expiresOn = expiresOn),
-    amount = if (unresolvedOperationIds.isEmpty()) EffectiveAmount.Known(quantity)
+    amount = if (unresolvedOperationIds.isEmpty()) EffectiveAmount.Known(quantity, confirmed)
     else EffectiveAmount.NeedsRecount(quantity, unresolvedOperationIds),
     myAllocation = myAllocation
 )

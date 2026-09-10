@@ -8,6 +8,7 @@ import com.kert0n.medapp.domain.model.course.CourseStatus
 import com.kert0n.medapp.domain.model.intake.Intake
 import com.kert0n.medapp.domain.model.intake.IntakeStatus
 import com.kert0n.medapp.domain.calc.availability.PackageAvailability
+import com.kert0n.medapp.domain.model.pack.EffectiveAmount
 import com.kert0n.medapp.domain.model.value.Doses
 import com.kert0n.medapp.domain.model.value.Quantity
 import java.time.Instant
@@ -89,18 +90,26 @@ fun remainingOn(
     return packages.map { stock ->
         // База прогноза — физический остаток, а не «сколько моего»: чужие брони показываются
         // отдельным числом. Смешав их, мы обещали бы, что таблеток в пачке нет, хотя они лежат.
-        val effective = stock.effective
         val doses = spentDoses[stock.packageId] ?: Doses.none
         val dose = doseOf[stock.packageId]
+        val amount = when (val base = stock.amount) {
+            // Требование сверки переносится как есть, вместе с операциями: считать будущее от
+            // числа, которого мы не знаем, значило бы выдумать остаток (PLAN E3).
+            is EffectiveAmount.NeedsRecount -> base
+            // Прогноз не подтверждённее своей базы: незакрытые локальные изменения остаются в нём.
+            is EffectiveAmount.Known -> EffectiveAmount.Known(
+                quantity = if (dose == null) base.quantity
+                else base.quantity.minusOrZero(dose * doses),
+                confirmed = base.confirmed
+            )
+        }
         PackageForecast(
             packageId = stock.packageId,
             at = until,
-            remaining = if (effective == null || dose == null) effective
-            else effective.minusOrZero(dose * doses),
+            amount = amount,
             reservedByOthers = stock.reservedByOthers,
             // Просрочка помечается на дату отчёта: к третьему месяцу годной пачка быть перестанет.
-            expired = stock.isExpiredOn(date),
-            requiresRecount = effective == null
+            expired = stock.isExpiredOn(date)
         )
     }
 }
