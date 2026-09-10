@@ -1,4 +1,4 @@
-package com.kert0n.medapp.data.pack
+package com.kert0n.medapp.network.pack
 
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageFacts

@@ -1,6 +1,6 @@
-package com.kert0n.medapp.data.pack
+package com.kert0n.medapp.network.pack
 
-import com.kert0n.medapp.data.value.toNetworkAmount
+import com.kert0n.medapp.network.value.toNetworkAmount
 import com.kert0n.medapp.domain.pack.Package
 
 /**

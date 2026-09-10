@@ -1,4 +1,4 @@
-package com.kert0n.medapp.data.pack
+package com.kert0n.medapp.network.pack
 
 import java.time.Instant
 import kotlin.uuid.Uuid

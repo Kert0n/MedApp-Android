@@ -1,4 +1,4 @@
-package com.kert0n.medapp.data.value
+package com.kert0n.medapp.network.value
 
 import com.kert0n.medapp.domain.value.Quantity
 

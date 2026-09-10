@@ -158,8 +158,11 @@ KDoc говорит, что это и какое правило держит, в
 - Подготовленный изменяющий запрос неизменен. Не повторяйте неустановленный расход
   со свежим предусловием; действуйте по политике операции из PLAN E3. Принятую там
   эвристику большего остатка сохраняйте; редкое исключение записано как RK-SYNC-01.
-- `ui → domain ← data`; домен независим от Android/Room/Ktor, время получает через `Clock`.
-  DTO, Entity и доменные модели не смешиваются; ViewModel не обращается к HTTP и DAO.
+- Логик четыре, и у каждой свой корень: `domain/` (бизнес), `network/` (сеть), `storage/`
+  (хранение), `presentation/` (представление). Домен независим от Android/Room/Ktor и от
+  остальных трёх корней, время получает через `Clock`; репозиторий целиком лежит в `storage/`
+  и домену не известен. DTO, Entity и доменные модели не смешиваются; ViewModel не обращается
+  к HTTP и DAO.
   Сохранённые данные экран наблюдает из Room; несохранённый ввод остаётся состоянием формы.
 - Учётные данные не попадают в логи, навигацию, отчёты об ошибках и резервные копии (PLAN G).
 
@@ -181,8 +184,8 @@ grep -rn '^import' app/src/main/java/com/kert0n/medapp/domain/ \
   | grep -viE 'java\.|kotlin\.|com\.kert0n\.medapp\.domain'
 
 # каталог называет понятие, а не вид файла
-find app/src/main/java/com/kert0n/medapp/{domain,data,presentation} -type d \
-  | grep -E '/(model|calc|sync|mapper|dto|remote|local|repository)$'
+find app/src/main/java/com/kert0n/medapp/{domain,network,storage,presentation} -type d \
+  | grep -E '/(model|calc|sync|mapper|dto|remote|local|entity|dao|repository)$'
 
 # правило не размазано: одинаковый текст require дважды
 grep -rh '"[^"]\{15,\}"' --include='*.kt' app/src/main \

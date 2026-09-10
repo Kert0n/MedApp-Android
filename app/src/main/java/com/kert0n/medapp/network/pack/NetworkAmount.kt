@@ -1,4 +1,4 @@
-package com.kert0n.medapp.data.pack
+package com.kert0n.medapp.network.pack
 
 /**
  * Шаблон количества на проводе (PLAN B2): не больше 13 разрядов до точки и 6 после, без знака и

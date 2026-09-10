@@ -1,4 +1,4 @@
-package com.kert0n.medapp.data.server
+package com.kert0n.medapp.network.server
 
 /**
  * Состояние исхода операции очереди — ровно то, что нужно проекциям (PLAN E2).

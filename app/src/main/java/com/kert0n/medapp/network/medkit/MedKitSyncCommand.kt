@@ -1,4 +1,4 @@
-package com.kert0n.medapp.data.medkit
+package com.kert0n.medapp.network.medkit
 
 import kotlin.uuid.Uuid
 
