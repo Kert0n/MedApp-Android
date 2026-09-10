@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     id("com.google.devtools.ksp")
     alias(libs.plugins.hilt)
+    alias(libs.plugins.room)
 }
 
 /**
@@ -114,6 +115,15 @@ android {
     }
 }
 
+/**
+ * Схема лежит в репозитории, а не только внутри APK: без прошлой версии рядом миграцию нечем
+ * проверить, а `MigrationTestHelper` берёт её из assets инструментальных тестов, куда её кладёт
+ * этот же плагин.
+ */
+room {
+    schemaDirectory("$projectDir/schemas")
+}
+
 kotlin {
     compilerOptions {
         jvmTarget = JvmTarget.JVM_17
@@ -166,9 +176,12 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.ktor.client.mock)
-    testImplementation(libs.androidx.room.testing)
 
+    // База проверяется в androidTest (PLAN J1): DAO, транзакции, ограничения и миграции идут
+    // против настоящего SQLite, а не против его подобия на JVM.
     androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.room.testing)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
