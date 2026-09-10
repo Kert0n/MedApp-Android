@@ -21,7 +21,7 @@ import org.junit.Test
  * Нехватка и уменьшившаяся потребность зажимают выделение: каждой пачке — не больше целых доз,
  * что в ней есть, избыток снимается с конца, а расписание не трогается (PLAN D5, C1).
  */
-class ClampTest {
+class CourseShortageTest {
 
     private val twoPacks = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 4)))
 

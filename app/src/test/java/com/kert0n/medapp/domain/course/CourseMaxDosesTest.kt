@@ -17,7 +17,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /** Предел выделения пачки считается в целых дозах, и тупика «1 + 1 при дозе 2» нет (PLAN D5). */
-class MaxDosesTest {
+class CourseMaxDosesTest {
 
     private val home = pack(id = PACK)
 
@@ -31,7 +31,7 @@ class MaxDosesTest {
     private fun Course.limit(
         pkg: Package,
         required: Int,
-        availability: Availability = this@MaxDosesTest.availability
+        availability: Availability = this@CourseMaxDosesTest.availability
     ) = maxDoses(pkg, doses(required), availability)
 
     @Test

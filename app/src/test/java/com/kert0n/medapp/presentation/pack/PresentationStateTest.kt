@@ -27,7 +27,7 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class EntityPresentationMapperTest {
+class PresentationStateTest {
 
     private data class PackageListState(val packages: List<PackagePresentationDTO>)
     private data class MedKitListState(val medKits: List<MedKitPresentationDTO>)

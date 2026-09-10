@@ -22,7 +22,7 @@ import org.junit.Test
  * Человеку нужно не «не хватает 19», а «не хватает с такого-то приёма»: расписание при нехватке
  * не трогается, поэтому сообщить можно только про обеспечение.
  */
-class CoverageTest {
+class CourseCoverageTest {
 
     /** Неделя по четыре приёма в день — те самые 28 пунктов из приёмки PLAN. */
     private val fourTimesADay = schedule(

@@ -19,7 +19,7 @@ import org.junit.Test
  * Зона в тестах называется явно и с переводом часов: на Москве, где перевода нет с 2014 года,
  * правило было бы недоказуемо.
  */
-class OccurrencesTest {
+class CourseScheduleOccurrencesTest {
 
     private val springForward: LocalDate = LocalDate.of(2027, 3, 28)
     private val fallBack: LocalDate = LocalDate.of(2027, 10, 31)

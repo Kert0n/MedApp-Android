@@ -17,7 +17,7 @@ import org.junit.Test
  * После приёма пачке остаётся выделено не больше выделенного за вычетом расхода и не больше
  * остатка; половина дозы брони не держит (PLAN D5).
  */
-class DosesAfterIntakeTest {
+class CourseAfterIntakeTest {
 
     private val dose = tablets("2")
 

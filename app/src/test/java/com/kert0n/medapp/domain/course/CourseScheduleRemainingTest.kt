@@ -13,7 +13,7 @@ import org.junit.Test
  * Потребность считается календарём, а не числом материализованных строк: окно в шестьдесят дней
  * (PLAN F4) не знает полного размера плана, и обеспечение по нему занизилось бы.
  */
-class CountRemainingTest {
+class CourseScheduleRemainingTest {
 
     private val start: LocalDate = LocalDate.of(2027, 3, 1).with(DayOfWeek.MONDAY)
 

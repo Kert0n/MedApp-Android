@@ -32,7 +32,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Прогноз считается формулой, а не строками приёмов (PLAN H1, F4). */
-class RemainingOnTest {
+class PackageForecastTest {
 
     /** Курс начинается в тот же день, что и отсчёт: неделя по одному приёму в девять утра. */
     private val week = schedule()

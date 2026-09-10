@@ -17,7 +17,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /** Пачки расходуются сверху вниз и сами не появляются (PLAN D5). */
-class SpendOrderTest {
+class CourseSpendOrderTest {
 
     private val availability = availability(PACK to tablets("20"), OTHER_PACK to tablets("12"))
 

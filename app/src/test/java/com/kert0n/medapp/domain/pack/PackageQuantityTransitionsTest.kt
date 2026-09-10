@@ -19,7 +19,7 @@ import org.junit.Test
  * Переходы, меняющие остаток. Кончившаяся пачка архивируется, а не удаляется: иначе история
  * приёмов за прошлый месяц оборвалась бы вместе с ней (PLAN D3).
  */
-class PackageStockTransitionsTest {
+class PackageQuantityTransitionsTest {
 
     @Test
     fun consumingToZeroArchivesThePack() {
