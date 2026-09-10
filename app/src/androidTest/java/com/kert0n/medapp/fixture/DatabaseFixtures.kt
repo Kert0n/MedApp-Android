@@ -51,7 +51,7 @@ fun MedAppDatabase.courseRepository() = com.kert0n.medapp.storage.course.CourseR
 )
 
 fun MedAppDatabase.intakeRepository() = com.kert0n.medapp.storage.intake.IntakeRoomRepository(
-    this, intakes(), packages(), courses(), stockMovements(), syncOperations()
+    this, intakes(), packages(), courses(), syncOperations()
 )
 
 fun MedAppDatabase.queueRepository() =

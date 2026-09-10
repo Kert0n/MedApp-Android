@@ -10,6 +10,7 @@ import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.INTAKE
 import com.kert0n.medapp.fixture.LATER
+import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.SHARED_KIT
 import com.kert0n.medapp.fixture.activeCourse
@@ -38,6 +39,7 @@ import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.storage.intake.IntakeOutcome
 import com.kert0n.medapp.storage.intake.IntakeRoomRepository
 import com.kert0n.medapp.storage.medkit.toStorageEntity as toMedKitStorageEntity
+import com.kert0n.medapp.storage.course.CourseReallocation
 import com.kert0n.medapp.storage.pack.PackageAdjustment
 import com.kert0n.medapp.storage.pack.PackageRoomRepository
 import com.kert0n.medapp.storage.server.QueuedCommand
@@ -145,24 +147,18 @@ class TransactionBoundariesTest {
     @Test
     fun confirmingAnIntakeWritesFactStockAndMovementTogether() = runTest {
         courses.activate(draft(), planned = listOf(plannedIntake()), at = at)
-        val spent = paracetamol.consume(dose("2"))
 
         val applied = intakes.record(
             IntakeOutcome(
                 intake = plannedIntake().confirm(paracetamol, dose("2"), LATER),
                 expected = setOf(IntakeStatus.PLANNED, IntakeStatus.MISSED),
                 sync = IntakeSyncState(INTAKE, IntakeAccounting.LOCAL_APPLIED),
-                spent = spent,
-                movement = StockMovement.Recount(
-                    movementId, PACK, tablets("20"), tablets("18"), HOME_KIT, LATER, LATER
-                )
             )
         )
 
         assertTrue(applied)
         assertEquals(IntakeStatus.TAKEN, requireNotNull(intakes.find(INTAKE)).status)
         assertEquals(tablets("18"), requireNotNull(packages.find(PACK)).quantity)
-        assertEquals(1, database.stockMovements().ofPackage(PACK).size)
         assertEquals(
             IntakeAccounting.LOCAL_APPLIED,
             requireNotNull(intakes.syncStateOf(INTAKE)).accounting
@@ -177,18 +173,13 @@ class TransactionBoundariesTest {
             IntakeOutcome(
                 intake = plannedIntake().confirm(paracetamol, dose("2"), LATER),
                 expected = setOf(IntakeStatus.PLANNED),
-                sync = IntakeSyncState(INTAKE, IntakeAccounting.LOCAL_APPLIED),
-                spent = paracetamol.consume(dose("2")),
-                movement = StockMovement.Recount(
-                    movementId, PACK, tablets("20"), tablets("18"), HOME_KIT, LATER, LATER
-                )
+                sync = IntakeSyncState(INTAKE, IntakeAccounting.LOCAL_APPLIED)
             )
         }
         assertTrue(intakes.record(outcome()))
 
         assertFalse(intakes.record(outcome()))
         assertEquals(tablets("18"), requireNotNull(packages.find(PACK)).quantity)
-        assertEquals(1, database.stockMovements().ofPackage(PACK).size)
     }
 
     /**
@@ -207,10 +198,6 @@ class TransactionBoundariesTest {
                     intake = plannedIntake().confirm(paracetamol, dose("2"), LATER),
                     expected = setOf(IntakeStatus.PLANNED),
                     sync = IntakeSyncState(INTAKE, IntakeAccounting.PENDING, operationId = operation),
-                    spent = paracetamol.consume(dose("2")),
-                    movement = StockMovement.Recount(
-                        movementId, PACK, tablets("20"), tablets("18"), HOME_KIT, LATER, LATER
-                    ),
                     command = clash
                 )
             )
@@ -225,12 +212,11 @@ class TransactionBoundariesTest {
 
     /** Внеплановому приёму строки заранее нет: он заводится вставкой вместе с расходом (F5). */
     @Test
-    fun unplannedIntakeIsWrittenWithStockAndMovement() = runTest {
+    fun unplannedIntakeIsWrittenTogetherWithTheStock() = runTest {
         assertTrue(intakes.record(unplannedOutcome()))
 
         assertTrue(intakes.find(INTAKE) is UnplannedIntake)
         assertEquals(tablets("18"), requireNotNull(packages.find(PACK)).quantity)
-        assertEquals(1, database.stockMovements().ofPackage(PACK).size)
     }
 
     /** Повтор внепланового приёма узнаётся по тождеству и второй раз не списывает (D6). */
@@ -240,7 +226,6 @@ class TransactionBoundariesTest {
 
         assertFalse(intakes.record(unplannedOutcome()))
         assertEquals(tablets("18"), requireNotNull(packages.find(PACK)).quantity)
-        assertEquals(1, database.stockMovements().ofPackage(PACK).size)
     }
 
     /**
@@ -278,16 +263,26 @@ class TransactionBoundariesTest {
         packages.save(paracetamol, sync)
         courses.activate(draft(), planned = listOf(plannedIntake()), at = at)
 
+        assertTrue(intakes.record(confirmedOutcome()))
+
+        assertEquals(tablets("18"), requireNotNull(packages.find(PACK)).quantity)
+        assertEquals(sync, requireNotNull(database.packages().find(PACK)).pack.syncState())
+    }
+
+    /**
+     * Расход, уехавший командой, локального остатка не трогает: там лежит подтверждённое
+     * сервером, а незакрытую команду сворачивает очередь (PLAN E1).
+     */
+    @Test
+    fun spendingThatLeavesByCommandDoesNotTouchTheLocalAmount() = runTest {
+        courses.activate(draft(), planned = listOf(plannedIntake()), at = at)
+
         assertTrue(
             intakes.record(
                 IntakeOutcome(
                     intake = plannedIntake().confirm(paracetamol, dose("2"), LATER),
                     expected = setOf(IntakeStatus.PLANNED),
                     sync = IntakeSyncState(INTAKE, IntakeAccounting.PENDING, operationId = operation),
-                    spent = paracetamol.consume(dose("2")),
-                    movement = StockMovement.Recount(
-                        movementId, PACK, tablets("20"), tablets("18"), HOME_KIT, LATER, LATER
-                    ),
                     command = QueuedCommand(
                         operation,
                         PackageSyncCommand.Consume(PACK, dose("2"), INTAKE)
@@ -296,7 +291,21 @@ class TransactionBoundariesTest {
             )
         )
 
-        assertEquals(sync, requireNotNull(database.packages().find(PACK)).pack.syncState())
+        assertEquals(tablets("20"), requireNotNull(packages.find(PACK)).quantity)
+        assertEquals(1, database.syncOperations().all().size)
+    }
+
+    /** Пачки, из которой принято, уже нет — тогда и факт не записывается: половины расхода не бывает. */
+    @Test
+    fun anIntakeFromAPackageThatIsGoneIsNotRecorded() = runTest {
+        val outcome = IntakeOutcome(
+            intake = unplannedIntake(takenPackageId = OTHER_PACK, takenAmount = dose("2")),
+            expected = emptySet(),
+            sync = IntakeSyncState(INTAKE, IntakeAccounting.LOCAL_APPLIED)
+        )
+
+        assertFalse(intakes.record(outcome))
+        assertNull(intakes.find(INTAKE))
     }
 
     /** Закрытый план не возвращается пересчётом, прочитавшим курс до закрытия (PLAN D5, F5). */
@@ -311,7 +320,7 @@ class TransactionBoundariesTest {
 
         packages.adjust(
             PackageAdjustment.Recount(PACK, tablets("17"), movementId),
-            course = activation.course,
+            reallocation = CourseReallocation(activation.course, activation.course.revision),
             at = LATER
         )
 
@@ -322,21 +331,13 @@ class TransactionBoundariesTest {
     private fun confirmedOutcome() = IntakeOutcome(
         intake = plannedIntake().confirm(paracetamol, dose("2"), LATER),
         expected = setOf(IntakeStatus.PLANNED),
-        sync = IntakeSyncState(INTAKE, IntakeAccounting.LOCAL_APPLIED),
-        spent = paracetamol.consume(dose("2")),
-        movement = StockMovement.Recount(
-            movementId, PACK, tablets("20"), tablets("18"), HOME_KIT, LATER, LATER
-        )
+        sync = IntakeSyncState(INTAKE, IntakeAccounting.LOCAL_APPLIED)
     )
 
     private fun unplannedOutcome() = IntakeOutcome(
         intake = unplannedIntake(takenAmount = dose("2")),
         expected = emptySet(),
-        sync = IntakeSyncState(INTAKE, IntakeAccounting.LOCAL_APPLIED),
-        spent = paracetamol.consume(dose("2")),
-        movement = StockMovement.Recount(
-            movementId, PACK, tablets("20"), tablets("18"), HOME_KIT, LATER, LATER
-        )
+        sync = IntakeSyncState(INTAKE, IntakeAccounting.LOCAL_APPLIED)
     )
 
     @Test

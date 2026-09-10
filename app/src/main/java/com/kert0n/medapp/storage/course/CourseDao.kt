@@ -4,8 +4,9 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Transaction
-import androidx.room.Update
 import androidx.room.Upsert
+import com.kert0n.medapp.domain.course.Revision
+import java.time.Instant
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.Flow
 
@@ -60,24 +61,36 @@ interface CourseDao {
     }
 
     /**
-     * Пересчитанные выделения живого плана. Обновление, а не upsert: план, закрытый между чтением
-     * и записью, не возвращается — ноль изменённых строк значит, что писать некуда (PLAN D5, F5).
+     * Пересчитанные выделения живого плана. Запись условна по редакции: план, закрытый или уже
+     * пересчитанный между чтением и записью, не возвращается и не переписывается результатом,
+     * посчитанным из прошлого состава — ноль изменённых строк значит, что писать некуда
+     * (PLAN D5, F5).
+     *
+     * Меняются только редакция, время правки и источники: доза и расписание действующего курса
+     * неизменны, и пересчёт обеспечения их не касается.
      */
     @Transaction
     suspend fun updateAllocations(
         course: CourseStorageEntity,
-        sources: List<CourseSourceStorageEntity>
-    ) {
-        if (updateCourse(course) == 0) return
+        sources: List<CourseSourceStorageEntity>,
+        expected: Revision
+    ): Boolean {
+        if (reviseIfRevisionIs(course.id, expected.number, course.revision, course.updatedAt) == 0) {
+            return false
+        }
         deleteSourcesOf(course.id)
         insertSources(sources)
+        return true
     }
+
+    @Query(
+        "UPDATE courses SET revision = :revision, updated_at = :updatedAt " +
+            "WHERE id = :id AND revision = :expected"
+    )
+    suspend fun reviseIfRevisionIs(id: Uuid, expected: Long, revision: Long, updatedAt: Instant): Int
 
     @Upsert
     suspend fun upsertCourse(course: CourseStorageEntity)
-
-    @Update
-    suspend fun updateCourse(course: CourseStorageEntity): Int
 
     @Upsert
     suspend fun upsertRecord(record: CourseRecordStorageEntity)

@@ -1,10 +1,10 @@
 package com.kert0n.medapp.storage.pack
 
-import com.kert0n.medapp.domain.course.Course
 import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageAvailability
 import com.kert0n.medapp.network.pack.PackageSyncState
+import com.kert0n.medapp.storage.course.CourseReallocation
 import com.kert0n.medapp.storage.server.QueuedCommand
 import java.time.Instant
 import java.time.LocalDate
@@ -43,7 +43,7 @@ interface PackageStorageRepository {
 
     /**
      * Пересчёт, утилизация и перенос: движение и новое состояние пачки ложатся одной транзакцией
-     * вместе с пересчитанными выделениями [course] и исходящей командой [command] (PLAN F5).
+     * вместе с пересчитанными выделениями [reallocation] и исходящей командой [command] (PLAN F5).
      *
      * Переход применяется к нынешнему состоянию пачки, прочитанному в той же транзакции, поэтому
      * «было» в истории — настоящее «было». Обвязка синхронизации при этом не трогается: версии и
@@ -54,7 +54,7 @@ interface PackageStorageRepository {
      */
     suspend fun adjust(
         adjustment: PackageAdjustment,
-        course: Course? = null,
+        reallocation: CourseReallocation? = null,
         command: QueuedCommand? = null,
         at: Instant
     ): Boolean

@@ -1,7 +1,6 @@
 package com.kert0n.medapp.storage.pack
 
 import androidx.room.withTransaction
-import com.kert0n.medapp.domain.course.Course
 import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.pack.EffectiveAmount
 import com.kert0n.medapp.domain.pack.Package
@@ -12,6 +11,7 @@ import com.kert0n.medapp.network.pack.PackageSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.network.server.SyncOperationStatus
 import com.kert0n.medapp.storage.course.CourseDao
+import com.kert0n.medapp.storage.course.CourseReallocation
 import com.kert0n.medapp.storage.course.toSourceStorageEntities
 import com.kert0n.medapp.storage.course.toStorageEntity as toCourseStorageEntity
 import com.kert0n.medapp.storage.database.MedAppDatabase
@@ -63,7 +63,7 @@ class PackageRoomRepository @Inject constructor(
 
     override suspend fun adjust(
         adjustment: PackageAdjustment,
-        course: Course?,
+        reallocation: CourseReallocation?,
         command: QueuedCommand?,
         at: Instant
     ): Boolean = database.withTransaction {
@@ -75,10 +75,11 @@ class PackageRoomRepository @Inject constructor(
             applied.pack.toDetailsStorageEntity()
         )
         movements.insert(applied.movement.toMovementStorageEntity())
-        course?.let {
+        reallocation?.let { (plan, expected) ->
             courses.updateAllocations(
-                it.toCourseStorageEntity(),
-                it.medicine.toSourceStorageEntities(it.id)
+                plan.toCourseStorageEntity(),
+                plan.medicine.toSourceStorageEntities(plan.id),
+                expected
             )
         }
         command?.let {

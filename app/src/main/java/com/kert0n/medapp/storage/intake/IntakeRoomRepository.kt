@@ -5,7 +5,6 @@ import com.kert0n.medapp.domain.intake.Intake
 import com.kert0n.medapp.domain.intake.UnplannedIntake
 import androidx.room.withTransaction
 import com.kert0n.medapp.network.intake.IntakeSyncState
-import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.storage.course.CourseDao
 import com.kert0n.medapp.storage.course.toSourceStorageEntities
 import com.kert0n.medapp.storage.course.toStorageEntity as toCourseStorageEntity
@@ -14,8 +13,6 @@ import com.kert0n.medapp.storage.pack.PackageDao
 import com.kert0n.medapp.storage.pack.toDetailsStorageEntity
 import com.kert0n.medapp.storage.pack.toStorageEntity as toPackageStorageEntity
 import com.kert0n.medapp.storage.server.SyncOperationDao
-import com.kert0n.medapp.storage.stock.StockMovementDao
-import com.kert0n.medapp.storage.stock.toStorageEntity as toMovementStorageEntity
 import com.kert0n.medapp.storage.value.toStorageAmount
 import java.time.Instant
 import javax.inject.Inject
@@ -28,7 +25,6 @@ class IntakeRoomRepository @Inject constructor(
     private val intakes: IntakeDao,
     private val packages: PackageDao,
     private val courses: CourseDao,
-    private val movements: StockMovementDao,
     private val queue: SyncOperationDao
 ) : IntakeStorageRepository {
 
@@ -51,6 +47,14 @@ class IntakeRoomRepository @Inject constructor(
 
     override suspend fun record(outcome: IntakeOutcome): Boolean = database.withTransaction {
         val intake = outcome.intake
+        // Пачку читаем до ответа: списывать не из чего — значит и факта не записываем, иначе
+        // приём разошёлся бы с остатком.
+        val source = if (outcome.spendsLocally) {
+            val taken = requireNotNull(outcome.taken) { "локальный расход называет свою пачку" }
+            packages.find(taken.packageId) ?: return@withTransaction false
+        } else {
+            null
+        }
         val applied = if (intake is UnplannedIntake) {
             intakes.insertIfMissing(intake.toStorageEntity(outcome.sync)) != -1L
         } else {
@@ -70,16 +74,19 @@ class IntakeRoomRepository @Inject constructor(
         }
         if (!applied) return@withTransaction false
 
-        outcome.spent?.let {
+        source?.let {
             // Расход не трогает обвязку доставки: версия и картина броней остаются прежними (E3).
-            val sync = packages.find(it.id)?.pack?.syncState() ?: PackageSyncState(it.id)
-            packages.save(it.toPackageStorageEntity(sync), it.toDetailsStorageEntity())
+            val spent = it.toDomain().consume(requireNotNull(outcome.taken).amount)
+            packages.save(
+                spent.toPackageStorageEntity(it.pack.syncState()),
+                spent.toDetailsStorageEntity()
+            )
         }
-        outcome.movement?.let { movements.insert(it.toMovementStorageEntity()) }
-        outcome.course?.let {
+        outcome.reallocation?.let { (course, expected) ->
             courses.updateAllocations(
-                it.toCourseStorageEntity(),
-                it.medicine.toSourceStorageEntities(it.id)
+                course.toCourseStorageEntity(),
+                course.medicine.toSourceStorageEntities(course.id),
+                expected
             )
         }
         outcome.command?.let {
