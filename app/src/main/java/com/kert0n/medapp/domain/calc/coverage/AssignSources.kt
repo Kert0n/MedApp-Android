@@ -44,10 +44,7 @@ fun assignSources(
     val dose = course.dose ?: return upcoming.associate { it.id to null }
 
     // Вместимость источника: и намерение человека, и физика пачки, каждая в целых дозах.
-    val capacity = course.sources.map { source ->
-        val wholeDoses = availability[source.packageId]?.dosesIn(dose) ?: 0
-        source.packageId to minOf(source.allocatedDoses, wholeDoses)
-    }.toMutableList()
+    val capacity = sourceCapacity(course, dose, availability).toMutableList()
 
     var current = 0
     return upcoming.associate { intake ->
