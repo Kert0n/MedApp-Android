@@ -28,11 +28,13 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.seconds
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.uuid.Uuid
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -212,17 +214,40 @@ class MedAppAuthTest {
         assertEquals(0, resourceCalls.get())
     }
 
-    /** Ждавшие одну выдачу берут её результат, даже когда она не удалась. */
+    /**
+     * Ждавшие одну выдачу берут её результат, даже когда она не удалась. Выдача держится
+     * воротами, пока все восемь до неё не дошли: разделяется результат именно **ждавшими**, а
+     * пришедший после неудачи пробует заново — недоступность преходяща и не запоминается.
+     */
     @Test
     fun parallelRequestsShareOneFailedIssue() = runTest {
-        val client = client(tokenStatus = HttpStatusCode.ServiceUnavailable)
+        val issuing = CompletableDeferred<Unit>()
+        val client = medAppHttpClient(
+            MockEngine { request ->
+                if (request.url.encodedPath == "/v1/auth/token") {
+                    tokenCalls.incrementAndGet()
+                    issuing.await()
+                    respond("", HttpStatusCode.ServiceUnavailable)
+                } else {
+                    resourceCalls.incrementAndGet()
+                    respond("", HttpStatusCode.OK)
+                }
+            },
+            "https://medapp.test",
+            tokens = AccessTokens(Stored(StoredAccount.Present(account))),
+            retryDelay = { delayMillis(false) { 0L } }
+        )
 
-        val failures = (1..8)
-            .map { async { runCatching { client.get("/v1/users/me") }.exceptionOrNull() } }
-            .awaitAll()
+        val requests = (1..8).map {
+            async { runCatching { client.get("/v1/users/me") }.exceptionOrNull() }
+        }
+        runCurrent()
+        issuing.complete(Unit)
+        val failures = requests.awaitAll()
 
         assertTrue(failures.all { it is AccessTokenUnavailable })
         assertEquals(1, tokenCalls.get())
+        assertEquals(0, resourceCalls.get())
     }
 
     /**
