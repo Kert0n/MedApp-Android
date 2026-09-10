@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Снимает встроенный снимок словарей с сервера из local.properties учёткой пробного
+# пользователя A и кладёт его в app/src/main/assets/vocabulary.json.
+#
+# Происхождение — адрес и дата снятия — записывается в сам снимок: идентификаторы серверные,
+# и сверять их придётся с тем же сервером. Учётка и пропуск на экран не выводятся.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+props=local.properties
+prop() { grep -E "^$1=" "$props" | head -1 | cut -d= -f2- || true; }
+
+base=$(prop MEDAPP_BASE_URL)
+base=${base:-https://medapp.ru.net}
+login=$(prop MEDAPP_PROBE_A_LOGIN)
+key=$(prop MEDAPP_PROBE_A_KEY)
+if [ -z "$login" ] || [ -z "$key" ]; then
+    echo "Пробный пользователь A не заведён: сначала scripts/register-probe-users.sh" >&2
+    exit 1
+fi
+
+token=$(curl -sS --fail-with-body -X POST "$base/v1/auth/token" -u "$login:$key" \
+    | python3 -c "import json, sys; print(json.load(sys.stdin)['accessToken'])")
+units=$(curl -sS --fail-with-body "$base/v1/quantity-units" -H "Authorization: Bearer $token")
+forms=$(curl -sS --fail-with-body "$base/v1/form-types" -H "Authorization: Bearer $token")
+
+mkdir -p app/src/main/assets
+UNITS="$units" FORMS="$forms" ORIGIN="$base" python3 - > app/src/main/assets/vocabulary.json <<'PY'
+import datetime
+import json
+import os
+
+def by_id(entries):
+    return sorted(entries, key=lambda entry: entry["id"])
+
+print(json.dumps({
+    "origin": os.environ["ORIGIN"],
+    "capturedOn": datetime.datetime.now(datetime.timezone.utc).date().isoformat(),
+    "version": 1,
+    "quantityUnits": by_id(json.loads(os.environ["UNITS"])),
+    "formTypes": by_id(json.loads(os.environ["FORMS"])),
+}, ensure_ascii=False, indent=2))
+PY
+
+python3 -c "import json; s = json.load(open('app/src/main/assets/vocabulary.json')); print(f\"Снимок словарей с {s['origin']}: единиц {len(s['quantityUnits'])}, форм {len(s['formTypes'])}\")"
