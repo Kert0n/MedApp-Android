@@ -1,7 +1,5 @@
 package com.kert0n.medapp.domain.course
 
-import com.kert0n.medapp.domain.intake.CourseIntake
-import com.kert0n.medapp.domain.intake.IntakeStatus
 import com.kert0n.medapp.domain.pack.Availability
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.value.Doses
@@ -113,23 +111,27 @@ class PlannedCourse(
         medicine.dosesAfterIntake(packageId, dose, taken, availableAfter)
 
     /**
-     * Раскладывает неотвеченные пункты этого курса, данные в календарном порядке, по пачкам
-     * препарата: какой приём из какой пачки. `null` — приём не обеспечен, и полная доза
-     * «неизвестно откуда» за него не записывается; пачки вне препарата не подставляются (PLAN D5).
+     * Из каких пачек уйдут следующие [doses] доз — по одной пачке на дозу, в порядке расходования:
+     * сверху вниз, каждая пачка не больше выделенного и не больше целых доз, что в ней есть.
+     * `null` — доза не обеспечена: полная доза «неизвестно откуда» не записывается, и пачки вне
+     * препарата не подставляются (PLAN D5).
+     *
+     * Раскладку по конкретным приёмам делает сценарий: какие пункты ещё не отвечены и в каком они
+     * порядке — его знание, а курс отвечает, из чего они возьмутся. Спрашивать у курса список
+     * приёмов значило бы тянуть в него чужой агрегат ради двух проверок.
      */
-    fun assign(upcoming: List<CourseIntake>, availability: Availability): Map<Uuid, Uuid?> {
-        upcoming.forEach { intake ->
-            require(intake.courseId == id) { "пункт ${intake.id} не принадлежит курсу" }
-            require(intake.status == IntakeStatus.PLANNED) {
-                "раскладываются неотвеченные пункты, а не ${intake.status}"
-            }
-        }
-        val order = medicine.spend(dose, Doses(upcoming.size), availability)
-            .flatMap { (packageId, doses) -> List(doses.count) { packageId } }
-        return upcoming.withIndex().associate { (index, intake) ->
-            intake.id to order.getOrNull(index)
-        }
+    fun spendOrder(doses: Doses, availability: Availability): List<Uuid?> {
+        val fromPacks = medicine.spend(dose, doses, availability)
+            .flatMap { (packageId, taken) -> List(taken.count) { packageId } }
+        return List(doses.count) { fromPacks.getOrNull(it) }
     }
+
+    /**
+     * Сколько уйдёт из каждой пачки на следующие [doses] доз. Пачек, из которых не уходит ничего,
+     * в ответе нет; это тот же расход, что и [spendOrder], только величинами.
+     */
+    fun spending(doses: Doses, availability: Availability): Map<Uuid, Quantity> =
+        medicine.spend(dose, doses, availability).mapValues { (_, taken) -> dose * taken }
 
     /**
      * Календарь закончился и неотвеченных пунктов нет: выделения снимаются, пачки остаются — по

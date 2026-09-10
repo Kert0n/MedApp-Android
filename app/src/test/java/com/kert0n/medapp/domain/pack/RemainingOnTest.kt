@@ -1,5 +1,11 @@
 package com.kert0n.medapp.domain.pack
 
+import com.kert0n.medapp.domain.course.CourseStatus
+import com.kert0n.medapp.domain.course.PlannedCourse
+import com.kert0n.medapp.domain.intake.CourseIntake
+import com.kert0n.medapp.domain.intake.IntakeStatus
+import com.kert0n.medapp.domain.value.Doses
+import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.fixture.FIRST_SCHEDULED_ON
 import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.LATER
@@ -13,6 +19,7 @@ import com.kert0n.medapp.fixture.schedule
 import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
 import java.math.BigDecimal
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
@@ -50,14 +57,46 @@ class RemainingOnTest {
 
     private val course = activeCourse(schedule = week, sources = listOf(source(PACK, 7)))
 
+    /**
+     * Сборка, которую в приложении делает сценарий (PR 17), а домен не изображает: спросить у
+     * курсов, сколько уйдёт из каждой пачки, и дать каждой пачке её число. Здесь она развёрнута
+     * целиком, чтобы было видно, что ни курс не знает пачек списком, ни пачка — курсов.
+     */
+    private fun remainingOn(
+        date: LocalDate,
+        reportZone: ZoneId = MOSCOW,
+        now: Instant = this.now,
+        packages: List<PackageAvailability> = listOf(stockOf()),
+        courses: List<PlannedCourse> = listOf(course),
+        resolved: List<CourseIntake> = emptyList()
+    ): List<PackageForecast> {
+        val until = date.plusDays(1).atStartOfDay(reportZone).toInstant()
+        val availability = Availability.from(packages)
+        // Пункт опознаётся курсом и назначенными датой со временем, как при материализации (F4).
+        val answered = resolved
+            .filter { it.status != IntakeStatus.PLANNED }
+            .map { Triple(it.courseId, it.slot.localDate, it.slot.localTime) }
+            .toSet()
+        val spent = HashMap<Uuid, Quantity>()
+        for (course in courses) {
+            if (course.status != CourseStatus.ACTIVE) continue
+            val ahead = Doses(
+                course.schedule.occurrences(now, until)
+                    .count { Triple(course.id, it.localDate, it.localTime) !in answered }
+            )
+            for ((packageId, amount) in course.spending(ahead, availability)) {
+                spent[packageId] = spent[packageId]?.plus(amount) ?: amount
+            }
+        }
+        return packages.map { it.forecastOn(date, reportZone, now, spent[it.packageId] ?: tablets("0")) }
+    }
+
     @Test
     fun futureIntakesAreSubtractedForTheWholeInclusiveDay() {
         // Три дня прогноза: приёмы первого, второго и третьего дня уже вычтены — дата
         // включительна в зоне отчёта.
         val forecast = remainingOn(
             date = today.plusDays(2),
-            reportZone = MOSCOW,
-            now = now,
             packages = listOf(stockOf()),
             courses = listOf(course),
             resolved = emptyList()
@@ -73,8 +112,6 @@ class RemainingOnTest {
         val taken = plannedIntake().confirm(PACK, HOME_KIT, tablets("2"), LATER)
         val forecast = remainingOn(
             date = today.plusDays(2),
-            reportZone = MOSCOW,
-            now = now,
             packages = listOf(stockOf()),
             courses = listOf(course),
             resolved = listOf(taken)
@@ -87,8 +124,6 @@ class RemainingOnTest {
         val skipped = plannedIntake().skip(LATER)
         val forecast = remainingOn(
             date = today.plusDays(2),
-            reportZone = MOSCOW,
-            now = now,
             packages = listOf(stockOf()),
             courses = listOf(course),
             resolved = listOf(skipped)
@@ -102,8 +137,6 @@ class RemainingOnTest {
         val short = activeCourse(schedule = week, sources = listOf(source(PACK, 2)))
         val forecast = remainingOn(
             date = today.plusDays(6),
-            reportZone = MOSCOW,
-            now = now,
             packages = listOf(stockOf()),
             courses = listOf(short),
             resolved = emptyList()
@@ -120,8 +153,6 @@ class RemainingOnTest {
         )
         val forecast = remainingOn(
             date = today.plusDays(6),
-            reportZone = MOSCOW,
-            now = now,
             packages = listOf(stockOf(), stockOf(id = OTHER_PACK, quantity = "12")),
             courses = listOf(twoSources),
             resolved = emptyList()
@@ -136,8 +167,6 @@ class RemainingOnTest {
         // ответы (PLAN D4).
         val forecast = remainingOn(
             date = today.plusDays(2),
-            reportZone = MOSCOW,
-            now = now,
             packages = listOf(stockOf(known = false)),
             courses = listOf(course),
             resolved = emptyList()
@@ -156,8 +185,6 @@ class RemainingOnTest {
         )
         val forecast = remainingOn(
             date = today.plusDays(6),
-            reportZone = MOSCOW,
-            now = now,
             packages = listOf(stockOf(known = false), stockOf(id = OTHER_PACK, quantity = "12")),
             courses = listOf(twoSources),
             resolved = emptyList()
@@ -171,8 +198,6 @@ class RemainingOnTest {
         // Таблетки физически лежат в пачке, просто заявлены другими людьми.
         val forecast = remainingOn(
             date = today,
-            reportZone = MOSCOW,
-            now = now,
             packages = listOf(stockOf(claims = Claims(BigDecimal("15"), BigDecimal("10")))),
             courses = listOf(course),
             resolved = emptyList()
@@ -185,8 +210,6 @@ class RemainingOnTest {
     fun expiryIsMarkedAndDoesNotZeroTheAmount() {
         val forecast = remainingOn(
             date = today.plusDays(6),
-            reportZone = MOSCOW,
-            now = now,
             packages = listOf(stockOf(expiresOn = ExpiryDate(today.plusDays(3)))),
             courses = listOf(course),
             resolved = emptyList()
@@ -200,8 +223,6 @@ class RemainingOnTest {
         val cancelled = course.cancel(LATER)
         val forecast = remainingOn(
             date = today.plusDays(6),
-            reportZone = MOSCOW,
-            now = now,
             packages = listOf(stockOf()),
             courses = listOf(cancelled),
             resolved = emptyList()
@@ -222,8 +243,6 @@ class RemainingOnTest {
         val long = activeCourse(schedule = year, sources = listOf(source(PACK, 60)))
         val forecast = remainingOn(
             date = today.plusMonths(3),
-            reportZone = MOSCOW,
-            now = now,
             packages = listOf(stockOf(quantity = "200")),
             courses = listOf(long),
             resolved = emptyList()
@@ -235,10 +254,10 @@ class RemainingOnTest {
     @Test
     fun horizonIsThreeCalendarMonths() {
         assertThrows(IllegalArgumentException::class.java) {
-            remainingOn(today.plusMonths(3).plusDays(1), MOSCOW, now, listOf(stockOf()), listOf(course), emptyList())
+            remainingOn(today.plusMonths(3).plusDays(1))
         }
         assertThrows(IllegalArgumentException::class.java) {
-            remainingOn(today.minusDays(1), MOSCOW, now, listOf(stockOf()), listOf(course), emptyList())
+            remainingOn(today.minusDays(1))
         }
     }
 
