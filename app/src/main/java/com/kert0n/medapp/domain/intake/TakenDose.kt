@@ -1,5 +1,6 @@
 package com.kert0n.medapp.domain.intake
 
+import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.value.Quantity
 import java.time.Instant
 import kotlin.uuid.Uuid
@@ -16,6 +17,14 @@ data class TakenDose(
     val amount: Quantity,
     val at: Instant
 ) {
+    /**
+     * Из чего собирается факт: пачка, а не пара идентификаторов. Аптечка берётся у неё же,
+     * поэтому «принял из пачки, лежащей в другой аптечке» здесь невыразимо, а не проверяется.
+     * Первичный путь остаётся для восстановления сохранённого: там на руках только колонки.
+     */
+    constructor(pkg: Package, amount: Quantity, at: Instant) :
+        this(pkg.id, pkg.medKitId, amount, at)
+
     init {
         require(!amount.isZero) { "принятый ноль — это пропуск, а не приём" }
     }

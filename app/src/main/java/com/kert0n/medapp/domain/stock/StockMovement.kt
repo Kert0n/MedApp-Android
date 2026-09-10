@@ -1,5 +1,6 @@
 package com.kert0n.medapp.domain.stock
 
+import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.requireDecimalWithinLimits
 import com.kert0n.medapp.domain.value.requireOptionalText
@@ -75,21 +76,27 @@ sealed interface StockMovement {
     }
 
     /**
-     * Пачку перенесли из [from] в [to]. Одна запись с двумя концами: в источнике остаток
-     * уменьшился, в назначении вырос на то же количество, и разойтись концы не могут.
+     * Пачку перенесли из [sourceMedKitId] в [targetMedKitId]. Одна запись с двумя концами: в
+     * источнике остаток уменьшился, в назначении вырос на то же количество, и разойтись концы не
+     * могут.
+     *
+     * Концы названы по смыслу, а не `from`/`to`: аптечка и там и там, типом их не различить, и
+     * перепутанные местами они молча перевернули бы знак в отчёте (H6).
      */
     data class Transfer(
         override val id: Uuid,
         override val packageId: Uuid,
         val amount: Quantity,
-        val from: Uuid,
-        val to: Uuid,
+        val sourceMedKitId: Uuid,
+        val targetMedKitId: Uuid,
         override val occurredAt: Instant,
         override val observedAt: Instant,
         override val note: String? = null
     ) : StockMovement {
         init {
-            require(from != to) { "перенос внутри одной аптечки остаток не меняет" }
+            require(sourceMedKitId != targetMedKitId) {
+                "перенос внутри одной аптечки остаток не меняет"
+            }
             requireNote(note)
         }
         override val unitId: Uuid get() = amount.unitId
@@ -136,12 +143,14 @@ sealed interface StockMovement {
     }
 
     /**
-     * Насколько эта запись изменила остаток в аптечке [medKitId]. Знак задаёт вид: приход
+     * Насколько эта запись изменила остаток в аптечке [medKit]. Принимается сама аптечка: чужой
+     * `Uuid` здесь не упал бы, а тихо дал ноль — то есть неверное число в отчёте. Знак задаёт вид: приход
      * положителен, утилизация и утрата доступа отрицательны, пересчёт и чужое изменение — в обе
      * стороны. Концы переноса дают −и+, поэтому перенос внутри выбранных аптечек в их сумме
      * расходом не выглядит (H6).
      */
-    fun deltaIn(medKitId: Uuid): BigDecimal {
+    fun deltaIn(medKit: MedKit): BigDecimal {
+        val medKitId = medKit.id
         val (kit, delta) = when (this) {
             is Receipt -> this.medKitId to amount.amount
             is Recount -> this.medKitId to after.amount - before.amount
@@ -149,8 +158,8 @@ sealed interface StockMovement {
             is RemoteChange -> this.medKitId to delta
             is AccessLoss -> this.medKitId to amount.amount.negate()
             is Transfer -> return when (medKitId) {
-                from -> amount.amount.negate()
-                to -> amount.amount
+                sourceMedKitId -> amount.amount.negate()
+                targetMedKitId -> amount.amount
                 else -> BigDecimal.ZERO
             }
         }

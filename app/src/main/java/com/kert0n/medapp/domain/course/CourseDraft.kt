@@ -63,8 +63,8 @@ class CourseDraft(
     val allocatedDosesTotal: Doses get() = medicine.allocatedTotal
 
     /** Выделение пачки в единицах пачки; `null` — пачка не выбрана или доза ещё не задана. */
-    fun allocatedOf(packageId: Uuid): Quantity? {
-        val allocated = medicine.allocatedTo(packageId) ?: return null
+    fun allocatedOf(pkg: Package): Quantity? {
+        val allocated = medicine.allocatedTo(pkg.id) ?: return null
         return dose?.times(allocated)
     }
 
@@ -95,8 +95,8 @@ class CourseDraft(
             .map { changed(medicine = it, revision = revision.next(), updatedAt = at) }
 
     /** Отвязка последней пачки у черновика забывает форму и единицу: терять ещё нечего. */
-    fun detach(packageId: Uuid, at: Instant): CourseDraft = changed(
-        medicine = medicine.detach(packageId, forgetFormWhenEmpty = true),
+    fun detach(pkg: Package, at: Instant): CourseDraft = changed(
+        medicine = medicine.detach(pkg.id, forgetFormWhenEmpty = true),
         revision = revision.next(),
         updatedAt = at
     )
@@ -107,8 +107,8 @@ class CourseDraft(
         return changed(medicine = moved, revision = revision.next(), updatedAt = at)
     }
 
-    fun allocate(packageId: Uuid, doses: Doses, at: Instant): CourseDraft = changed(
-        medicine = medicine.allocate(packageId, doses),
+    fun allocate(pkg: Package, doses: Doses, at: Instant): CourseDraft = changed(
+        medicine = medicine.allocate(pkg.id, doses),
         revision = revision.next(),
         updatedAt = at
     )
@@ -117,9 +117,9 @@ class CourseDraft(
      * Верхняя граница ползунка пачки. Пока доза не задана, границы нет: выделять нечего, и ноль
      * здесь честнее выдуманного числа.
      */
-    fun maxDoses(packageId: Uuid, required: Doses, availability: Availability): Doses {
+    fun maxDoses(pkg: Package, required: Doses, availability: Availability): Doses {
         val dose = dose ?: return Doses.none
-        return medicine.maxDoses(packageId, dose, required, availability)
+        return medicine.maxDoses(pkg.id, dose, required, availability)
     }
 
     /**

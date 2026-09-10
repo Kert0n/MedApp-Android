@@ -85,8 +85,8 @@ class CourseMedicineTest {
     fun allocationOfASourceIsTheReservationInPackageUnits() {
         // Целевой объём серверной брони = выделение × доза (PLAN D5).
         val stack = draftWithDose().attach(home, doses = doses(5), at = LATER).getOrThrow()
-        assertEquals(Quantity(BigDecimal("10"), TABLETS), stack.allocatedOf(PACK))
-        assertNull(stack.allocatedOf(OTHER_PACK))
+        assertEquals(Quantity(BigDecimal("10"), TABLETS), stack.allocatedOf(home))
+        assertNull(stack.allocatedOf(dacha))
     }
 
     @Test
@@ -94,7 +94,7 @@ class CourseMedicineTest {
         // Выдумывать количество из незаданной дозы нельзя: «пачка выбрана, доза ещё нет» —
         // законное состояние черновика.
         val stack = course().attach(home, doses = doses(5), at = LATER).getOrThrow()
-        assertNull(stack.allocatedOf(PACK))
+        assertNull(stack.allocatedOf(home))
         assertEquals(doses(5), stack.allocatedDosesTotal)
     }
 
@@ -102,7 +102,7 @@ class CourseMedicineTest {
     fun changingSourcesAgesTheRevision() {
         val attached = draftWithDose().attach(home, doses = doses(5), at = LATER)
         assertEquals(Revision(1), attached.getOrThrow().revision)
-        assertEquals(Revision(2), attached.getOrThrow().detach(PACK, LATER).revision)
+        assertEquals(Revision(2), attached.getOrThrow().detach(home, LATER).revision)
     }
 
     @Test

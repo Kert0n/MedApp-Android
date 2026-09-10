@@ -6,6 +6,7 @@ import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.doses
 import com.kert0n.medapp.fixture.millilitres
+import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
 import org.junit.Assert.assertEquals
@@ -23,7 +24,7 @@ class DosesAfterIntakeTest {
     /** Пачке [PACK] выделено [allocated] доз, принято [taken], в ней осталось [left]. */
     private fun after(allocated: Int, taken: Quantity, left: Quantity, dose: Quantity = this.dose) =
         activeCourse(doseAmount = dose.amount, sources = listOf(source(PACK, allocated)))
-            .dosesAfterIntake(PACK, taken, left)
+            .dosesAfterIntake(pack(), taken, left)
 
     @Test
     fun fullDoseSpendsExactlyOneAllocatedDose() {
@@ -56,7 +57,7 @@ class DosesAfterIntakeTest {
         val elsewhere = activeCourse(sources = listOf(source(OTHER_PACK, 5)))
         assertEquals(
             doses(0),
-            elsewhere.dosesAfterIntake(PACK, tablets("2"), tablets("18"))
+            elsewhere.dosesAfterIntake(pack(), tablets("2"), tablets("18"))
         )
     }
 

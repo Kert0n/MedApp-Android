@@ -7,6 +7,7 @@ import com.kert0n.medapp.fixture.SHARED_KIT
 import com.kert0n.medapp.fixture.factsOf
 import com.kert0n.medapp.fixture.expiry
 import com.kert0n.medapp.fixture.withShared
+import com.kert0n.medapp.fixture.medKit
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.tablets
 
@@ -33,7 +34,7 @@ class PackageStateTransitionsTest {
 
     @Test(expected = IllegalStateException::class)
     fun inaccessiblePackIsNotMoved() {
-        pack(access = Package.Access.LOST).moveTo(SHARED_KIT)
+        pack(access = Package.Access.LOST).moveTo(medKit(id = SHARED_KIT, name = "Общая"))
     }
 
     @Test
@@ -73,14 +74,14 @@ class PackageStateTransitionsTest {
 
     @Test
     fun movingChangesOnlyTheKit() {
-        val moved = pack(claims = Claims(BigDecimal("5"))).moveTo(SHARED_KIT)
+        val moved = pack(claims = Claims(BigDecimal("5"))).moveTo(medKit(id = SHARED_KIT, name = "Общая"))
         assertEquals(SHARED_KIT, moved.medKitId)
         assertEquals(BigDecimal("5"), moved.claims?.total)
     }
 
     @Test(expected = IllegalArgumentException::class)
     fun movingIntoTheSameKitIsRefused() {
-        pack(medKitId = HOME_KIT).moveTo(HOME_KIT)
+        pack(medKitId = HOME_KIT).moveTo(medKit(id = HOME_KIT))
     }
 
     @Test

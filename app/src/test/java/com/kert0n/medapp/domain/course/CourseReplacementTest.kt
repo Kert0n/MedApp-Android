@@ -39,7 +39,7 @@ class CourseReplacementTest {
     private val oldRecord = courseRecord(startedAt = EARLIER)
 
     private val takenYesterday = plannedIntake(courseRevision = old.revision.number)
-        .confirm(PACK, HOME_KIT, tablets("2"), EARLIER)
+        .confirm(pack(), tablets("2"), EARLIER)
 
     private val plannedTomorrow = plannedIntake(
         id = Uuid.parse("00000000-0000-4000-8000-000000000071"),

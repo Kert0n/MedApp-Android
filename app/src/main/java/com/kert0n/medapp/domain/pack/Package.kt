@@ -1,5 +1,6 @@
 package com.kert0n.medapp.domain.pack
 
+import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.value.Quantity
 import java.time.Instant
 import java.time.LocalDate
@@ -70,13 +71,16 @@ class Package(
     }
 
     /**
-     * Перенос в другую аптечку меняет только принадлежность; что делать с бронями на границе
-     * публикации, решает сценарий переноса (PLAN E6).
+     * Перенос меняет только принадлежность; что делать с бронями на границе публикации, решает
+     * сценарий переноса (PLAN E6).
+     *
+     * Принимает саму аптечку, а не её идентификатор: у вызывающего она на руках, а подставить
+     * вместо неё чужой `Uuid` — пачки, формы, единицы — тогда становится нечем.
      */
-    fun moveTo(medKitId: Uuid): Package {
+    fun moveTo(target: MedKit): Package {
         requireUsable("перенос")
-        require(medKitId != this.medKitId) { "пачка уже лежит в этой аптечке" }
-        return changed(medKitId = medKitId)
+        require(target.id != medKitId) { "пачка уже лежит в этой аптечке" }
+        return changed(medKitId = target.id)
     }
 
     /**

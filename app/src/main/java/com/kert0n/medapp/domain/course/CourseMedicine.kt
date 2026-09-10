@@ -13,6 +13,10 @@ import kotlin.uuid.Uuid
  * Взаимозаменяемость приложение не выводит (C2), поэтому вопросы обеспечения задаются препарату
  * целиком. Разовую дозу знает курс и передаёт аргументом; [Availability] без числа по пачке
  * означает «неизвестно», и такая пачка ничего не обеспечивает, но выделение сохраняет.
+ *
+ * Состав адресуется идентификаторами, а не пачками: препарат хранит именно их, и держать внутри
+ * себя чужие сущности ему незачем. Наружу этим не пользуются — публичная сторона у лечения одна,
+ * и это курс: он принимает пачку и спрашивает препарат уже её идентификатором.
  */
 data class CourseMedicine(
     val sources: List<CourseSource> = emptyList(),
@@ -34,13 +38,13 @@ data class CourseMedicine(
     val allocatedTotal: Doses
         get() = sources.fold(Doses.none) { total, source -> total + source.allocatedDoses }
 
-    fun allocatedTo(packageId: Uuid): Doses? =
+    internal fun allocatedTo(packageId: Uuid): Doses? =
         sources.firstOrNull { it.packageId == packageId }?.allocatedDoses
 
-    fun holds(packageId: Uuid): Boolean = sources.any { it.packageId == packageId }
+    internal fun holds(packageId: Uuid): Boolean = sources.any { it.packageId == packageId }
 
     /** Подключает пачку последней в расходе; отказ называет причину, ведущую к действию. */
-    fun attach(pkg: Package, doses: Doses): Result<CourseMedicine> {
+    internal fun attach(pkg: Package, doses: Doses): Result<CourseMedicine> {
         val rejection = when {
             pkg.lifecycle != Package.Lifecycle.ACTIVE ||
                 pkg.access != Package.Access.AVAILABLE -> CourseRejected.Reason.PACKAGE_UNUSABLE
@@ -66,7 +70,7 @@ data class CourseMedicine(
      * единицу: черновику терять нечего, а у назначенного курса в них уже записаны доза и
      * расписание (PLAN D5).
      */
-    fun detach(packageId: Uuid, forgetFormWhenEmpty: Boolean): CourseMedicine {
+    internal fun detach(packageId: Uuid, forgetFormWhenEmpty: Boolean): CourseMedicine {
         requireHolds(packageId)
         val left = sources.filterNot { it.packageId == packageId }
         val forget = left.isEmpty() && forgetFormWhenEmpty
@@ -78,7 +82,7 @@ data class CourseMedicine(
     }
 
     /** Переставляет пачку: место в препарате — очередь в расходе. */
-    fun reorder(from: Int, to: Int): CourseMedicine {
+    internal fun reorder(from: Int, to: Int): CourseMedicine {
         require(from in sources.indices && to in sources.indices) {
             "источника нет на позиции: $from → $to при ${sources.size} источниках"
         }
@@ -89,7 +93,7 @@ data class CourseMedicine(
     }
 
     /** Задаёт выделение пачки в целых дозах; верхнюю границу называет [maxDoses]. */
-    fun allocate(packageId: Uuid, doses: Doses): CourseMedicine {
+    internal fun allocate(packageId: Uuid, doses: Doses): CourseMedicine {
         requireHolds(packageId)
         return copy(sources = sources.map {
             if (it.packageId == packageId) CourseSource(packageId, doses) else it

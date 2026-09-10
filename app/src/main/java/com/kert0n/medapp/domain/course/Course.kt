@@ -22,6 +22,11 @@ import kotlin.uuid.Uuid
  * обеспечение, предел ползунка, зажим при нехватке, пересчёт после приёма, порядок расхода. Доза —
  * его основная ценность, и просить её со стороны ему незачем.
  *
+ * **На входе — пачка, на выходе — её идентификатор.** Вызывающий пачку держит, и передавать
+ * вместо неё `Uuid` значит терять то, ради чего в домене вообще есть сущности: подставить форму
+ * или единицу вместо пачки становится нечем. Обратно курс отдаёт идентификаторы — самих пачек он
+ * не хранит и выдумывать их не станет.
+ *
  * Сущность: тождество — [id], общее у плана и записи, потому что эпизод лечения один.
  */
 class Course(
@@ -56,8 +61,8 @@ class Course(
      * Выделение пачки **в единицах пачки** — та самая величина, которую видит серверная бронь:
      * целевой объём равен `allocatedDoses × dose` (PLAN D5). `null` — пачка не в препарате курса.
      */
-    fun allocatedOf(packageId: Uuid): Quantity? =
-        medicine.allocatedTo(packageId)?.let { dose * it }
+    fun allocatedOf(pkg: Package): Quantity? =
+        medicine.allocatedTo(pkg.id)?.let { dose * it }
 
     /** Пачки действующего курса менять можно: это не изменение дозы или календаря (PLAN D5). */
     fun attach(pkg: Package, doses: Doses, at: Instant): Result<Course> =
@@ -68,8 +73,8 @@ class Course(
      * Отвязка последней пачки форму и единицу не забывает: в них записаны доза и прошлые приёмы.
      * Курс просто становится необеспеченным (PLAN D5).
      */
-    fun detach(packageId: Uuid, at: Instant): Course = changed(
-        medicine = medicine.detach(packageId, forgetFormWhenEmpty = false),
+    fun detach(pkg: Package, at: Instant): Course = changed(
+        medicine = medicine.detach(pkg.id, forgetFormWhenEmpty = false),
         revision = revision.next(),
         updatedAt = at
     )
@@ -80,8 +85,8 @@ class Course(
         return changed(medicine = moved, revision = revision.next(), updatedAt = at)
     }
 
-    fun allocate(packageId: Uuid, doses: Doses, at: Instant): Course = changed(
-        medicine = medicine.allocate(packageId, doses),
+    fun allocate(pkg: Package, doses: Doses, at: Instant): Course = changed(
+        medicine = medicine.allocate(pkg.id, doses),
         revision = revision.next(),
         updatedAt = at
     )
@@ -99,8 +104,8 @@ class Course(
      * Верхняя граница ползунка пачки в целых дозах: меньшее из того, что пачка даёт, и того, что
      * потребность оставляет сверх выделенного остальным (PLAN D5).
      */
-    fun maxDoses(packageId: Uuid, required: Doses, availability: Availability): Doses =
-        medicine.maxDoses(packageId, dose, required, availability)
+    fun maxDoses(pkg: Package, required: Doses, availability: Availability): Doses =
+        medicine.maxDoses(pkg.id, dose, required, availability)
 
     /**
      * Курс с выделениями, зажатыми под нехватку и оставшуюся потребность. Доза, расписание и даты
@@ -119,8 +124,8 @@ class Course(
      * Сколько целых доз остаётся выделено пачке после подтверждённого приёма: не больше
      * выделенного за вычетом расхода и не больше того, что в пачке осталось (PLAN D5).
      */
-    fun dosesAfterIntake(packageId: Uuid, taken: Quantity, availableAfter: Quantity): Doses =
-        medicine.dosesAfterIntake(packageId, dose, taken, availableAfter)
+    fun dosesAfterIntake(pkg: Package, taken: Quantity, availableAfter: Quantity): Doses =
+        medicine.dosesAfterIntake(pkg.id, dose, taken, availableAfter)
 
     /**
      * Из каких пачек уйдут следующие [doses] доз — по одной пачке на дозу, в порядке расходования:

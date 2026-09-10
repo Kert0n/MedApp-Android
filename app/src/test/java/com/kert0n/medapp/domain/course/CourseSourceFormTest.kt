@@ -81,7 +81,7 @@ class CourseSourceFormTest {
         // Иначе доза и расписание мгновенно потеряли бы смысл, а состоявшиеся приёмы остались бы
         // с единицей, которой у курса больше нет. Курс просто становится необеспеченным.
         val active = activeCourse(sources = listOf(source(PACK, 5)))
-        val unsupplied = active.detach(PACK, LATER)
+        val unsupplied = active.detach(tabletPack, LATER)
         assertEquals(emptyList<CourseSource>(), unsupplied.sources)
         assertEquals(TABLET_FORM, unsupplied.formId)
         assertEquals(TABLETS, unsupplied.unitId)
@@ -92,7 +92,7 @@ class CourseSourceFormTest {
     @Test
     fun detachingTheLastSourceOfADraftForgetsFormAndUnit() {
         val chosen = draft().attach(tabletPack, doses = doses(5), at = LATER).getOrThrow()
-        val emptied = chosen.detach(PACK, LATER)
+        val emptied = chosen.detach(tabletPack, LATER)
         assertNull(emptied.formId)
         assertNull(emptied.unitId)
         assertNull(emptied.dose)
@@ -106,7 +106,7 @@ class CourseSourceFormTest {
         val two = draft()
             .attach(tabletPack, doses = doses(5), at = LATER).getOrThrow()
             .attach(second, doses = doses(4), at = LATER).getOrThrow()
-        val one = two.detach(PACK, LATER)
+        val one = two.detach(tabletPack, LATER)
         assertEquals(TABLET_FORM, one.formId)
         assertEquals(TABLETS, one.unitId)
     }
@@ -116,7 +116,7 @@ class CourseSourceFormTest {
         val capsules = pack(id = OTHER_PACK, formId = CAPSULE_FORM, quantity = millilitres("10"))
         val restarted = draft()
             .attach(tabletPack, doses = doses(5), at = LATER).getOrThrow()
-            .detach(PACK, LATER)
+            .detach(tabletPack, LATER)
             .attach(capsules, doses = doses(1), at = LATER).getOrThrow()
         assertEquals(CAPSULE_FORM, restarted.formId)
         assertEquals(MILLILITRES, restarted.unitId)
@@ -126,7 +126,7 @@ class CourseSourceFormTest {
     fun unsuppliedActiveCourseStillDemandsItsOwnFormBack() {
         // Форма осталась, поэтому подключить пачку другой формы к нему по-прежнему нельзя.
         val capsules = pack(id = OTHER_PACK, formId = CAPSULE_FORM, quantity = tablets("10"))
-        val unsupplied = activeCourse(sources = listOf(source(PACK, 5))).detach(PACK, LATER)
+        val unsupplied = activeCourse(sources = listOf(source(PACK, 5))).detach(tabletPack, LATER)
         assertEquals(
             CourseRejected.Reason.FORM_MISMATCH,
             unsupplied.attach(capsules, doses = doses(1), at = LATER).rejection()

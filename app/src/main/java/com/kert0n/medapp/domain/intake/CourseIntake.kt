@@ -1,6 +1,7 @@
 package com.kert0n.medapp.domain.intake
 
 import com.kert0n.medapp.domain.course.Revision
+import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.course.ScheduledOccurrence
 import com.kert0n.medapp.domain.value.Quantity
 import java.time.Instant
@@ -55,14 +56,14 @@ class CourseIntake(
 
     /**
      * Подтверждение: фактические количество и пачка могут отличаться от плана, расход равен факту
-     * (PLAN D5). Подтверждается неотвеченный или пропущенный по времени пункт; повторное
+     * (PLAN D5). Принимается сама пачка — аптечку и единицу события она приносит с собой. Подтверждается неотвеченный или пропущенный по времени пункт; повторное
      * подтверждение — второй факт со своим идентификатором, и здесь оно отвергается (E2).
      */
-    fun confirm(packageId: Uuid, medKitId: Uuid, amount: Quantity, at: Instant): CourseIntake {
+    fun confirm(pkg: Package, amount: Quantity, at: Instant): CourseIntake {
         check(answer == null || answer is IntakeAnswer.Missed) {
             "подтверждается неотвеченный приём, а не $status"
         }
-        return answered(IntakeAnswer.Taken(TakenDose(packageId, medKitId, amount, at)))
+        return answered(IntakeAnswer.Taken(TakenDose(pkg, amount, at)))
     }
 
     /**
