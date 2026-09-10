@@ -40,14 +40,15 @@ class AccountRegistrationTest {
 
     private fun registration(
         stored: Memory,
-        status: HttpStatusCode = HttpStatusCode.OK
+        status: HttpStatusCode = HttpStatusCode.OK,
+        key: String = "k3y-once"
     ) = AccountRegistration(
         MedAppApi(
             medAppHttpClient(
                 MockEngine { request ->
                     requests += request.headers[REGISTRATION_TOKEN_HEADER]
                     respond(
-                        if (status == HttpStatusCode.OK) """{"login":"$login","key":"k3y-once"}""" else "",
+                        if (status == HttpStatusCode.OK) """{"login":"$login","key":"$key"}""" else "",
                         status,
                         headersOf(HttpHeaders.ContentType, "application/json")
                     )
@@ -95,6 +96,20 @@ class AccountRegistrationTest {
         val outcome = registration(stored, HttpStatusCode.Forbidden).ensure()
 
         assertEquals(AccountRegistration.Outcome.Failed(ApiFailure.RegistrationRefused), outcome)
+        assertEquals(StoredAccount.Absent, stored.account)
+    }
+
+    /**
+     * Учётка без ключа ничего не открывает, и отвергается она на границе разбора: наружу идёт
+     * объявленный исход операции, а не исключение сетевого слоя.
+     */
+    @Test
+    fun accountWithoutAKeyIsARefusalNotAnException() = runTest {
+        val stored = Memory(StoredAccount.Absent)
+
+        val outcome = registration(stored, key = "").ensure()
+
+        assertEquals(AccountRegistration.Outcome.Failed(ApiFailure.OutcomeUnknown), outcome)
         assertEquals(StoredAccount.Absent, stored.account)
     }
 
