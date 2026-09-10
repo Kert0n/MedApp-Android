@@ -228,6 +228,10 @@ adb devices   # проверить, что устройство на месте,
   -Pandroid.testInstrumentationRunnerArguments.class=com.kert0n.medapp.network.server.ContractProbe
 ```
 
+Встроенный снимок словарей снимает `scripts/capture-vocabulary.sh`. Во встроенный ассет он пишет
+только снимок с боевого адреса — идентификаторы у каждого сервера свои, — а для другого сервера
+путь вывода называется аргументом.
+
 Учётки лежат в `local.properties`, который в git не попадает: `MEDAPP_BASE_URL`,
 `MEDAPP_REGISTRATION_TOKEN` и два пробных пользователя `MEDAPP_PROBE_A_LOGIN/KEY`,
 `MEDAPP_PROBE_B_LOGIN/KEY`. **Пробные пользователи заводятся один раз** —
