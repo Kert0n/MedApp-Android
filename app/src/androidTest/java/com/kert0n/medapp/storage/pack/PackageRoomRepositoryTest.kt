@@ -12,6 +12,8 @@ import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.inMemoryDatabase
 import com.kert0n.medapp.fixture.medKit
 import com.kert0n.medapp.fixture.pack
+import com.kert0n.medapp.fixture.packageRepository
+import com.kert0n.medapp.fixture.queueRepository
 import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.network.pack.PackageSyncCommand
@@ -55,8 +57,8 @@ class PackageRoomRepositoryTest {
     @Before
     fun openDatabase() = runTest {
         database = inMemoryDatabase()
-        repository = PackageRoomRepository(database.packages(), database.syncOperations())
-        queue = SyncOperationRoomRepository(database.syncOperations())
+        repository = database.packageRepository()
+        queue = database.queueRepository()
         database.medKits().upsert(medKit().toMedKitStorageEntity())
         repository.save(paracetamol)
     }

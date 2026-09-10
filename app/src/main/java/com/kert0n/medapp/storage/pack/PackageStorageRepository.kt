@@ -38,4 +38,12 @@ interface PackageStorageRepository {
 
     /** `null` снимает картину броней: аптечка не опубликована либо доступ утрачен. */
     suspend fun saveClaims(packageId: Uuid, claims: Claims?)
+
+    /**
+     * Пересчёт, утилизация, архивирование и перенос: движение и новое состояние пачки ложатся
+     * одной транзакцией вместе с пересчитанными выделениями и исходящей командой (PLAN F5).
+     *
+     * Откат не оставляет ни движения без остатка, ни остатка без следа в истории.
+     */
+    suspend fun adjust(adjustment: PackageAdjustment, at: Instant)
 }

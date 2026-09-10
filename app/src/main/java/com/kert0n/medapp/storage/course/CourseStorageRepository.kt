@@ -3,6 +3,9 @@ package com.kert0n.medapp.storage.course
 import com.kert0n.medapp.domain.course.Course
 import com.kert0n.medapp.domain.course.CourseDraft
 import com.kert0n.medapp.domain.course.CourseRecord
+import com.kert0n.medapp.domain.intake.CourseIntake
+import com.kert0n.medapp.storage.server.QueuedCommand
+import java.time.Instant
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.Flow
 
@@ -34,4 +37,32 @@ interface CourseStorageRepository {
 
     /** Какому активному курсу отдана пачка; `null` — она свободна (PLAN F1, F2). */
     suspend fun courseHolding(packageId: Uuid): Uuid?
+
+    /**
+     * Активация: план и запись эпизода заводятся **одной** транзакцией и с одним назначением.
+     * Ни того ни другого в базе поодиночке не бывает (PLAN F5).
+     *
+     * Здесь же занимаются пачки, материализуется окно расписания и ставятся команды броней.
+     * Занятая другим курсом пачка отвергается первичным ключом назначения, а не проверкой
+     * перед вставкой, и тогда транзакция откатывается целиком.
+     */
+    suspend fun activate(
+        activation: CourseDraft.Activation,
+        planned: List<CourseIntake> = emptyList(),
+        commands: List<QueuedCommand> = emptyList(),
+        at: Instant
+    )
+
+    /**
+     * Конец лечения: запись закрывается **вместе** с удалением плана. Строки `courses` после
+     * этого не существует, а `course_records` остаётся навсегда (PLAN D5, F5).
+     *
+     * Будущие пункты отменяются, назначения освобождаются, брони снимаются командами.
+     */
+    suspend fun close(
+        record: CourseRecord,
+        cancelled: List<CourseIntake> = emptyList(),
+        commands: List<QueuedCommand> = emptyList(),
+        at: Instant
+    )
 }

@@ -28,4 +28,13 @@ interface IntakeStorageRepository {
     suspend fun materialise(planned: List<CourseIntake>): Int
 
     suspend fun plannedBefore(until: Instant): List<CourseIntake>
+
+    /**
+     * Ответ на приём целиком: условный переход статуса, локальный остаток либо команда расхода,
+     * движение, пересчитанные выделения курса и учёт — одной транзакцией (PLAN F5).
+     *
+     * `false` означает, что приём уже отвечен: условный переход не нашёл ожидаемого статуса, и
+     * повтор ничего не списал.
+     */
+    suspend fun record(outcome: IntakeOutcome): Boolean
 }

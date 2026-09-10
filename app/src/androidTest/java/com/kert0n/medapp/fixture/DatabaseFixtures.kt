@@ -37,3 +37,22 @@ fun reopenFileDatabase(name: String): MedAppDatabase {
 suspend fun rejectedByDatabase(block: suspend () -> Unit): Throwable =
     runCatching { block() }.exceptionOrNull()
         ?: throw AssertionError("база приняла запись, которую схема запрещает")
+
+/**
+ * Репозитории поверх открытой базы. Транзакции F5 идут через несколько таблиц, поэтому у их
+ * владельцев несколько DAO; собирать их в каждом тесте заново значило бы повторять граф руками.
+ */
+fun MedAppDatabase.packageRepository() = com.kert0n.medapp.storage.pack.PackageRoomRepository(
+    this, packages(), courses(), stockMovements(), syncOperations()
+)
+
+fun MedAppDatabase.courseRepository() = com.kert0n.medapp.storage.course.CourseRoomRepository(
+    this, courses(), intakes(), syncOperations()
+)
+
+fun MedAppDatabase.intakeRepository() = com.kert0n.medapp.storage.intake.IntakeRoomRepository(
+    this, intakes(), packages(), courses(), stockMovements(), syncOperations()
+)
+
+fun MedAppDatabase.queueRepository() =
+    com.kert0n.medapp.storage.server.SyncOperationRoomRepository(syncOperations())

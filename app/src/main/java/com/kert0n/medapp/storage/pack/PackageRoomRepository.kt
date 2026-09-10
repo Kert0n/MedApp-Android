@@ -1,5 +1,6 @@
 package com.kert0n.medapp.storage.pack
 
+import androidx.room.withTransaction
 import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.pack.EffectiveAmount
 import com.kert0n.medapp.domain.pack.Package
@@ -9,8 +10,14 @@ import com.kert0n.medapp.network.pack.PackageQueueState
 import com.kert0n.medapp.network.pack.PackageSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.network.server.SyncOperationStatus
+import com.kert0n.medapp.storage.course.CourseDao
+import com.kert0n.medapp.storage.course.toSourceStorageEntities
+import com.kert0n.medapp.storage.course.toStorageEntity as toCourseStorageEntity
+import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.storage.server.SyncOperationDao
 import com.kert0n.medapp.storage.server.SyncOperationStorageRow
+import com.kert0n.medapp.storage.stock.StockMovementDao
+import com.kert0n.medapp.storage.stock.toStorageEntity as toMovementStorageEntity
 import java.time.Instant
 import java.time.LocalDate
 import javax.inject.Inject
@@ -22,7 +29,10 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 
 class PackageRoomRepository @Inject constructor(
+    private val database: MedAppDatabase,
     private val packages: PackageDao,
+    private val courses: CourseDao,
+    private val movements: StockMovementDao,
     private val queue: SyncOperationDao
 ) : PackageStorageRepository {
 
@@ -58,6 +68,28 @@ class PackageRoomRepository @Inject constructor(
         if (claims == null) packages.deleteClaims(packageId)
         else packages.upsertClaims(claims.toStorageEntity(packageId))
     }
+
+    override suspend fun adjust(adjustment: PackageAdjustment, at: Instant) =
+        database.withTransaction {
+            val pack = adjustment.pack
+            packages.save(pack.toStorageEntity(adjustment.sync), pack.toDetailsStorageEntity())
+            movements.insert(adjustment.movement.toMovementStorageEntity())
+            adjustment.course?.let {
+                courses.upsertCourse(it.toCourseStorageEntity())
+                courses.deleteSourcesOf(it.id)
+                courses.insertSources(it.medicine.toSourceStorageEntities(it.id))
+            }
+            adjustment.command?.let {
+                queue.enqueue(
+                    id = it.id,
+                    command = it.command,
+                    createdAt = at,
+                    groupId = it.groupId,
+                    dependsOn = it.dependsOn
+                )
+            }
+            Unit
+        }
 
     /**
      * «Есть свободное» запросом не выражается: это вычитание чужих броней и выделения из оценки
