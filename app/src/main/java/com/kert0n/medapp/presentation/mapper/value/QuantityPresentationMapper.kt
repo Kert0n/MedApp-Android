@@ -1,8 +1,8 @@
 package com.kert0n.medapp.presentation.mapper.value
 
-import com.kert0n.medapp.domain.model.value.QUANTITY_MAX_INTEGER_DIGITS
-import com.kert0n.medapp.domain.model.value.QUANTITY_SCALE
-import com.kert0n.medapp.domain.model.value.Quantity
+import com.kert0n.medapp.domain.value.QUANTITY_MAX_INTEGER_DIGITS
+import com.kert0n.medapp.domain.value.QUANTITY_SCALE
+import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.presentation.dto.value.QuantityPresentationDTO
 import com.kert0n.medapp.presentation.mapper.PresentationMapping
 import java.math.BigDecimal

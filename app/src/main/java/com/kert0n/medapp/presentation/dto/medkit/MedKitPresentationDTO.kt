@@ -1,6 +1,6 @@
 package com.kert0n.medapp.presentation.dto.medkit
 
-import com.kert0n.medapp.domain.model.medkit.KitPublication
+import com.kert0n.medapp.domain.medkit.KitPublication
 import java.time.Instant
 import kotlin.uuid.Uuid
 

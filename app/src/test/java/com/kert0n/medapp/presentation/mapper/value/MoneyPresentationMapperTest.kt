@@ -1,6 +1,6 @@
 package com.kert0n.medapp.presentation.mapper.value
 
-import com.kert0n.medapp.domain.model.value.Money
+import com.kert0n.medapp.domain.value.Money
 import com.kert0n.medapp.presentation.dto.value.MoneyPresentationDTO
 
 import java.math.BigDecimal

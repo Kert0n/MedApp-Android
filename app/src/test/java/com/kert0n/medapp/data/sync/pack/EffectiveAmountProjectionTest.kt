@@ -1,7 +1,7 @@
 package com.kert0n.medapp.data.sync.pack
 
-import com.kert0n.medapp.domain.model.pack.EffectiveAmount
-import com.kert0n.medapp.domain.model.pack.PackageSharedFacts
+import com.kert0n.medapp.domain.pack.EffectiveAmount
+import com.kert0n.medapp.domain.pack.PackageSharedFacts
 import com.kert0n.medapp.fixture.INTAKE
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.TABLET_FORM

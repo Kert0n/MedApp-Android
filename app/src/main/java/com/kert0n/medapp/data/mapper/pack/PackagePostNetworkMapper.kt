@@ -2,7 +2,7 @@ package com.kert0n.medapp.data.mapper.pack
 
 import com.kert0n.medapp.data.mapper.value.toNetworkAmount
 import com.kert0n.medapp.data.remote.dto.pack.PackagePostNetworkDTO
-import com.kert0n.medapp.domain.model.pack.Package
+import com.kert0n.medapp.domain.pack.Package
 
 /**
  * Серверная часть упаковки для создания: домен → провод.

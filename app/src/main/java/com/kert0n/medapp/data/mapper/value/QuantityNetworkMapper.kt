@@ -1,6 +1,6 @@
 package com.kert0n.medapp.data.mapper.value
 
-import com.kert0n.medapp.domain.model.value.Quantity
+import com.kert0n.medapp.domain.value.Quantity
 
 /**
  * Десятичная строка для провода (PLAN B2): без экспоненты и без знака.

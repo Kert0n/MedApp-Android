@@ -1,7 +1,7 @@
 package com.kert0n.medapp.presentation.mapper.pack
 
-import com.kert0n.medapp.domain.model.pack.Package
-import com.kert0n.medapp.domain.model.value.Quantity
+import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.presentation.dto.pack.ClaimsPresentationDTO
 import com.kert0n.medapp.presentation.dto.pack.PackagePresentationDTO
 import com.kert0n.medapp.presentation.dto.value.MoneyPresentationDTO

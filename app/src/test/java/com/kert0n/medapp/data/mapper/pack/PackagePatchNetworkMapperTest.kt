@@ -2,7 +2,7 @@ package com.kert0n.medapp.data.mapper.pack
 
 import com.kert0n.medapp.data.remote.dto.pack.PackagePatchNetworkDTO
 import com.kert0n.medapp.data.sync.pack.PackageSyncState
-import com.kert0n.medapp.domain.model.value.Money
+import com.kert0n.medapp.domain.value.Money
 
 import com.kert0n.medapp.fixture.CAPSULE_FORM
 import com.kert0n.medapp.fixture.PACK

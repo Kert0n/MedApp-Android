@@ -1,12 +1,12 @@
 package com.kert0n.medapp.fixture
 
-import com.kert0n.medapp.domain.calc.schedule.ScheduledOccurrence
-import com.kert0n.medapp.domain.model.intake.CourseIntake
-import com.kert0n.medapp.domain.model.intake.Intake
-import com.kert0n.medapp.domain.model.intake.IntakeStatus
-import com.kert0n.medapp.domain.model.intake.TakenDose
-import com.kert0n.medapp.domain.model.intake.UnplannedIntake
-import com.kert0n.medapp.domain.model.value.Quantity
+import com.kert0n.medapp.domain.course.ScheduledOccurrence
+import com.kert0n.medapp.domain.intake.CourseIntake
+import com.kert0n.medapp.domain.intake.Intake
+import com.kert0n.medapp.domain.intake.IntakeStatus
+import com.kert0n.medapp.domain.intake.TakenDose
+import com.kert0n.medapp.domain.intake.UnplannedIntake
+import com.kert0n.medapp.domain.value.Quantity
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime

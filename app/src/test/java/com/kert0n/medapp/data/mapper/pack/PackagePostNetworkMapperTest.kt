@@ -1,7 +1,7 @@
 package com.kert0n.medapp.data.mapper.pack
 
-import com.kert0n.medapp.domain.model.pack.PACKAGE_DESCRIPTION_MAX_LENGTH
-import com.kert0n.medapp.domain.model.value.Quantity
+import com.kert0n.medapp.domain.pack.PACKAGE_DESCRIPTION_MAX_LENGTH
+import com.kert0n.medapp.domain.value.Quantity
 
 import com.kert0n.medapp.data.remote.dto.pack.PackagePostNetworkDTO
 import com.kert0n.medapp.data.sync.pack.PackageSyncState

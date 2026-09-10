@@ -2,8 +2,8 @@ package com.kert0n.medapp.data.mapper.pack
 
 import com.kert0n.medapp.data.remote.dto.pack.PackagePatchNetworkDTO
 import com.kert0n.medapp.data.sync.pack.PackageSyncState
-import com.kert0n.medapp.domain.model.pack.Package
-import com.kert0n.medapp.domain.model.pack.PackageFacts
+import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.pack.PackageFacts
 
 /**
  * Сравнивает сохранённую доменную форму с тем, что известно о пачке, и оставляет только

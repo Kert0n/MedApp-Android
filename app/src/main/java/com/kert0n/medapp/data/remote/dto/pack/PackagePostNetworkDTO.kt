@@ -1,12 +1,12 @@
 package com.kert0n.medapp.data.remote.dto.pack
 
-import com.kert0n.medapp.domain.model.pack.PACKAGE_CATEGORY_MAX_LENGTH
-import com.kert0n.medapp.domain.model.pack.PACKAGE_COUNTRY_MAX_LENGTH
-import com.kert0n.medapp.domain.model.pack.PACKAGE_DESCRIPTION_MAX_LENGTH
-import com.kert0n.medapp.domain.model.pack.PACKAGE_MANUFACTURER_MAX_LENGTH
-import com.kert0n.medapp.domain.model.pack.PACKAGE_NAME_MAX_LENGTH
-import com.kert0n.medapp.domain.model.value.requireOptionalText
-import com.kert0n.medapp.domain.model.value.requireText
+import com.kert0n.medapp.domain.pack.PACKAGE_CATEGORY_MAX_LENGTH
+import com.kert0n.medapp.domain.pack.PACKAGE_COUNTRY_MAX_LENGTH
+import com.kert0n.medapp.domain.pack.PACKAGE_DESCRIPTION_MAX_LENGTH
+import com.kert0n.medapp.domain.pack.PACKAGE_MANUFACTURER_MAX_LENGTH
+import com.kert0n.medapp.domain.pack.PACKAGE_NAME_MAX_LENGTH
+import com.kert0n.medapp.domain.value.requireOptionalText
+import com.kert0n.medapp.domain.value.requireText
 import kotlin.uuid.Uuid
 
 /**

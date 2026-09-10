@@ -1,8 +1,8 @@
 package com.kert0n.medapp.presentation.dto.pack
 
-import com.kert0n.medapp.domain.model.pack.ExpiryDate
-import com.kert0n.medapp.domain.model.pack.PackageAccess
-import com.kert0n.medapp.domain.model.pack.PackageLifecycle
+import com.kert0n.medapp.domain.pack.ExpiryDate
+import com.kert0n.medapp.domain.pack.PackageAccess
+import com.kert0n.medapp.domain.pack.PackageLifecycle
 import com.kert0n.medapp.presentation.dto.value.MoneyPresentationDTO
 import com.kert0n.medapp.presentation.dto.value.QuantityPresentationDTO
 import java.time.Instant

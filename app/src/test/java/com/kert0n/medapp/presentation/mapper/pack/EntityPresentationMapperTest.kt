@@ -1,11 +1,11 @@
 package com.kert0n.medapp.presentation.mapper.pack
 
-import com.kert0n.medapp.domain.model.medkit.KitPublication
-import com.kert0n.medapp.domain.model.medkit.MedKit
-import com.kert0n.medapp.domain.model.pack.Claims
-import com.kert0n.medapp.domain.model.pack.Package
-import com.kert0n.medapp.domain.model.pack.PackageLifecycle
-import com.kert0n.medapp.domain.model.value.Money
+import com.kert0n.medapp.domain.medkit.KitPublication
+import com.kert0n.medapp.domain.medkit.MedKit
+import com.kert0n.medapp.domain.pack.Claims
+import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.pack.PackageLifecycle
+import com.kert0n.medapp.domain.value.Money
 import com.kert0n.medapp.presentation.dto.medkit.MedKitPresentationDTO
 import com.kert0n.medapp.presentation.dto.pack.PackagePresentationDTO
 import com.kert0n.medapp.presentation.mapper.medkit.toPresentationDTO

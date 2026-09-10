@@ -1,14 +1,14 @@
 package com.kert0n.medapp.fixture
 
-import com.kert0n.medapp.domain.model.course.Course
-import com.kert0n.medapp.domain.model.course.CourseDraft
-import com.kert0n.medapp.domain.model.course.CourseSchedule
-import com.kert0n.medapp.domain.model.course.CourseSource
-import com.kert0n.medapp.domain.model.value.Doses
-import com.kert0n.medapp.domain.model.course.CourseStatus
-import com.kert0n.medapp.domain.model.course.PlannedCourse
-import com.kert0n.medapp.domain.model.course.SourceStack
-import com.kert0n.medapp.domain.model.value.Quantity
+import com.kert0n.medapp.domain.course.Course
+import com.kert0n.medapp.domain.course.CourseDraft
+import com.kert0n.medapp.domain.course.CourseSchedule
+import com.kert0n.medapp.domain.course.CourseSource
+import com.kert0n.medapp.domain.value.Doses
+import com.kert0n.medapp.domain.course.CourseStatus
+import com.kert0n.medapp.domain.course.PlannedCourse
+import com.kert0n.medapp.domain.course.SourceStack
+import com.kert0n.medapp.domain.value.Quantity
 import java.math.BigDecimal
 import java.time.DayOfWeek
 import java.time.Instant

@@ -1,7 +1,7 @@
 package com.kert0n.medapp.data.sync.pack
 
-import com.kert0n.medapp.domain.model.pack.PackageSharedFacts
-import com.kert0n.medapp.domain.model.value.Quantity
+import com.kert0n.medapp.domain.pack.PackageSharedFacts
+import com.kert0n.medapp.domain.value.Quantity
 import kotlin.uuid.Uuid
 
 /**

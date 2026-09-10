@@ -1,6 +1,6 @@
 package com.kert0n.medapp.presentation.mapper.medkit
 
-import com.kert0n.medapp.domain.model.medkit.MedKit
+import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.presentation.dto.medkit.MedKitPresentationDTO
 import java.time.Instant
 

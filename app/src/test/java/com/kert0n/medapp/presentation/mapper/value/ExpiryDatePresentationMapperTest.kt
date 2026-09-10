@@ -1,6 +1,6 @@
 package com.kert0n.medapp.presentation.mapper.value
 
-import com.kert0n.medapp.domain.model.pack.ExpiryDate
+import com.kert0n.medapp.domain.pack.ExpiryDate
 import com.kert0n.medapp.presentation.dto.value.ExpiryDatePresentationDTO
 
 import java.time.LocalDate

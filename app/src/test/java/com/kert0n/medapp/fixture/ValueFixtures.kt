@@ -1,8 +1,8 @@
 package com.kert0n.medapp.fixture
 
-import com.kert0n.medapp.domain.calc.availability.Availability
-import com.kert0n.medapp.domain.model.value.Doses
-import com.kert0n.medapp.domain.model.value.Quantity
+import com.kert0n.medapp.domain.pack.Availability
+import com.kert0n.medapp.domain.value.Doses
+import com.kert0n.medapp.domain.value.Quantity
 import java.math.BigDecimal
 import kotlin.uuid.Uuid
 
