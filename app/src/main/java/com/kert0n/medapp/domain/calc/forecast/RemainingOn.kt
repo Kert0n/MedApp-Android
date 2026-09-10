@@ -4,7 +4,7 @@ import com.kert0n.medapp.domain.calc.availability.Availability
 import com.kert0n.medapp.domain.calc.coverage.sourceCapacity
 import com.kert0n.medapp.domain.calc.coverage.spendTopDown
 import com.kert0n.medapp.domain.calc.schedule.occurrences
-import com.kert0n.medapp.domain.model.course.Course
+import com.kert0n.medapp.domain.model.course.PlannedCourse
 import com.kert0n.medapp.domain.model.course.CourseStatus
 import com.kert0n.medapp.domain.model.intake.Intake
 import com.kert0n.medapp.domain.model.intake.IntakeStatus
@@ -46,7 +46,7 @@ fun remainingOn(
     reportZone: ZoneId,
     now: Instant,
     packages: List<PackageAvailability>,
-    courses: List<Course>,
+    courses: List<PlannedCourse>,
     resolved: List<CourseIntake>
 ): List<PackageForecast> {
     // `atZone().toLocalDate()`: `LocalDate.ofInstant` требует API 34 при нижней границе 29.
@@ -72,8 +72,8 @@ fun remainingOn(
     val doseOf = HashMap<Uuid, Quantity>()
     for (course in courses) {
         if (course.status != CourseStatus.ACTIVE) continue
-        val schedule = course.schedule ?: continue
-        val dose = course.dose ?: continue
+        val schedule = course.schedule
+        val dose = course.dose
         val ahead = Doses(
             occurrences(schedule, now, until)
                 .count { Triple(course.id, it.localDate, it.localTime) !in answered }

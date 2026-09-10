@@ -1,7 +1,7 @@
 package com.kert0n.medapp.domain.calc.coverage
 
 import com.kert0n.medapp.domain.calc.availability.Availability
-import com.kert0n.medapp.domain.model.course.Course
+import com.kert0n.medapp.domain.model.course.PlannedCourse
 import com.kert0n.medapp.domain.model.intake.CourseIntake
 import com.kert0n.medapp.domain.model.intake.Intake
 import com.kert0n.medapp.domain.model.intake.IntakeStatus
@@ -34,7 +34,7 @@ import kotlin.uuid.Uuid
  * такой источник за обеспеченный нельзя (PLAN D5).
  */
 fun assignSources(
-    course: Course,
+    course: PlannedCourse,
     upcoming: List<CourseIntake>,
     availability: Availability
 ): Map<Uuid, Uuid?> {
@@ -44,7 +44,7 @@ fun assignSources(
             "раскладываются неотвеченные пункты, а не ${intake.status}"
         }
     }
-    val dose = course.dose ?: return upcoming.associate { it.id to null }
+    val dose = course.dose
 
     // Вместимость источника: и намерение человека, и физика пачки, каждая в целых дозах.
     val capacity = sourceCapacity(course, dose, availability).toMutableList()

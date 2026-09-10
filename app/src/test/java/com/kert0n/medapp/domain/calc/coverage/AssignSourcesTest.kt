@@ -125,13 +125,6 @@ class AssignSourcesTest {
     }
 
     @Test
-    fun courseWithoutADoseSuppliesNothing() {
-        val noDose = course(sources = emptyList())
-        val found = assignSources(noDose, plan, availability)
-        assertEquals(List(5) { null }, plan.map { found[it.id] })
-    }
-
-    @Test
     fun onlyUnansweredItemsOfThisCourseAreLaidOut() {
         val answered = plannedIntake().confirm(PACK, HOME_KIT, tablets("2"), LATER)
         val course = activeCourse(sources = listOf(source(PACK, 5)))

@@ -1,7 +1,7 @@
 package com.kert0n.medapp.domain.calc.coverage
 
 import com.kert0n.medapp.domain.calc.availability.Availability
-import com.kert0n.medapp.domain.model.course.Course
+import com.kert0n.medapp.domain.model.course.PlannedCourse
 import com.kert0n.medapp.domain.model.value.Doses
 import com.kert0n.medapp.domain.model.value.Quantity
 import kotlin.uuid.Uuid
@@ -17,7 +17,7 @@ import kotlin.uuid.Uuid
  * ноль: до сверки он за обеспеченный не выдаётся (PLAN D5).
  */
 internal fun sourceCapacity(
-    course: Course,
+    course: PlannedCourse,
     dose: Quantity,
     availability: Availability
 ): List<Pair<Uuid, Doses>> = course.sources.map { source ->

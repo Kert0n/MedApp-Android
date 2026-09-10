@@ -5,8 +5,12 @@ import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.LATER
 import com.kert0n.medapp.fixture.TABLETS
+import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.course
+import com.kert0n.medapp.fixture.doses
+import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.schedule
+import com.kert0n.medapp.fixture.tablets
 import java.math.BigDecimal
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -66,7 +70,7 @@ class CourseTest {
 
     @Test
     fun settingTheDraftDoseRaisesTheRevision() {
-        val dosed = course().setDraftDose(BigDecimal("2"), at = LATER)
+        val dosed = course().setDose(BigDecimal("2"), at = LATER)
         assertEquals(BigDecimal("2"), dosed.doseAmount)
         assertEquals(1L, dosed.revision)
         assertEquals(LATER, dosed.updatedAt)
@@ -76,20 +80,20 @@ class CourseTest {
     fun settingTheDraftScheduleRaisesTheRevision() {
         // Расписание меняет состав будущих пунктов, поэтому редакция растёт — в отличие от
         // переименования.
-        val planned = course().setDraftSchedule(schedule(), at = LATER)
+        val planned = course().setSchedule(schedule(), at = LATER)
         assertEquals(schedule(), planned.schedule)
         assertEquals(1L, planned.revision)
     }
 
-    @Test(expected = IllegalStateException::class)
-    fun scheduleOfAnActiveCourseIsRefused() {
-        activeCourse().setDraftSchedule(schedule(), at = LATER)
-    }
-
-    @Test(expected = IllegalStateException::class)
-    fun doseOfAnActiveCourseIsRefused() {
-        // Изменившееся лечение — отмена прежнего курса и новый, а не правка действующего.
-        activeCourse().setDraftDose(BigDecimal("3"), at = LATER)
+    @Test
+    fun activationCarriesTheDoseAndScheduleOverUnchanged() {
+        // Менять их после активации нечем: переходов `setDose` и `setSchedule` у назначенного
+        // курса нет вовсе. Изменившееся лечение — отмена прежнего курса и новый (PLAN D5).
+        val draft = course(doseAmount = BigDecimal("2"), schedule = schedule())
+            .attach(pack(formId = TABLET_FORM), doses(1), LATER).getOrThrow()
+        val planned = draft.activate(LATER).getOrThrow()
+        assertEquals(tablets("2"), planned.dose)
+        assertEquals(schedule(), planned.schedule)
     }
 
     @Test(expected = IllegalArgumentException::class)

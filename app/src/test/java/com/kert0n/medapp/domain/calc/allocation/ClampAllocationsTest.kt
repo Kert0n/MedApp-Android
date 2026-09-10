@@ -47,7 +47,7 @@ class ClampAllocationsTest {
         val after = clamped.fold(course) { acc, s -> acc.allocate(s.packageId, s.allocatedDoses, LATER) }
         assertEquals(listOf(doses(0), doses(0)), after.sources.map { it.allocatedDoses })
         assertEquals(course.schedule, after.schedule)
-        assertEquals(course.doseAmount, after.doseAmount)
+        assertEquals(course.dose, after.dose)
         assertEquals(course.unitId, after.unitId)
         assertEquals(course.formId, after.formId)
         assertEquals(course.status, after.status)
@@ -117,6 +117,6 @@ class ClampAllocationsTest {
             clampAllocations(course, requiredDoses = doses(28), availability = available)
                 .map { it.allocatedDoses }
         )
-        assertEquals(BigDecimal("2"), course.doseAmount)
+        assertEquals(tablets("2"), course.dose)
     }
 }

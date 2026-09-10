@@ -113,7 +113,7 @@ class CourseSourceStackTest {
         val widened = active.attach(dacha, doses = doses(4), at = LATER).getOrThrow()
         assertEquals(doses(9), widened.allocatedDosesTotal)
         assertEquals(schedule(), widened.schedule)
-        assertEquals(BigDecimal("2"), widened.doseAmount)
+        assertEquals(tablets("2"), widened.dose)
     }
 
     @Test
@@ -137,15 +137,15 @@ class CourseSourceStackTest {
     fun activationRequiresScheduleDoseAndSource() {
         val bare = course()
         assertEquals(CourseRejection.SCHEDULE_MISSING, bare.activate(LATER).rejection())
-        val scheduled = bare.setDraftSchedule(schedule(), LATER)
+        val scheduled = bare.setSchedule(schedule(), LATER)
         assertEquals(CourseRejection.DOSE_MISSING, scheduled.activate(LATER).rejection())
-        val dosed = scheduled.setDraftDose(BigDecimal("2"), LATER)
+        val dosed = scheduled.setDose(BigDecimal("2"), LATER)
         // Единицы всё ещё нет — её фиксирует первый источник, поэтому доза не собралась.
         assertEquals(CourseRejection.DOSE_MISSING, dosed.activate(LATER).rejection())
         val sourced = dosed.attach(home, doses = doses(5), at = LATER).getOrThrow()
         val active = sourced.activate(LATER).getOrThrow()
         assertEquals(CourseStatus.ACTIVE, active.status)
-        assertEquals(CourseRejection.NOT_DRAFT, active.activate(LATER).rejection())
+        // Повторная активация невыразима: у назначенного курса этого перехода нет.
     }
 
     @Test
@@ -161,7 +161,7 @@ class CourseSourceStackTest {
         // Активация не меняет ни расписания, ни источников: материализованным пунктам нечего
         // объявлять устаревшими.
         val ready = draftWithDose()
-            .setDraftSchedule(schedule(), LATER)
+            .setSchedule(schedule(), LATER)
             .attach(home, doses = doses(5), at = LATER).getOrThrow()
         assertEquals(ready.revision, ready.activate(LATER).getOrThrow().revision)
     }

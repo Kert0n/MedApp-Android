@@ -1,10 +1,14 @@
 package com.kert0n.medapp.fixture
 
 import com.kert0n.medapp.domain.model.course.Course
+import com.kert0n.medapp.domain.model.course.CourseDraft
 import com.kert0n.medapp.domain.model.course.CourseSchedule
 import com.kert0n.medapp.domain.model.course.CourseSource
 import com.kert0n.medapp.domain.model.value.Doses
 import com.kert0n.medapp.domain.model.course.CourseStatus
+import com.kert0n.medapp.domain.model.course.PlannedCourse
+import com.kert0n.medapp.domain.model.course.SourceStack
+import com.kert0n.medapp.domain.model.value.Quantity
 import java.math.BigDecimal
 import java.time.DayOfWeek
 import java.time.Instant
@@ -49,7 +53,7 @@ fun schedule(
     zone = zone
 )
 
-/** Курс: тест называет только то, что проверяет. По умолчанию — черновик с одним названием. */
+/** Черновик: тест называет только то, что проверяет. По умолчанию — одно название. */
 fun course(
     id: Uuid = COURSE,
     title: String = "Парацетамол, пять дней",
@@ -59,28 +63,24 @@ fun course(
     formId: Uuid? = null,
     schedule: CourseSchedule? = null,
     sources: List<CourseSource> = emptyList(),
-    status: CourseStatus = CourseStatus.DRAFT,
     revision: Long = 0,
     createdAt: Instant = EARLIER,
     updatedAt: Instant = EARLIER
-) = Course(
+) = CourseDraft(
     id = id,
     title = title,
     note = note,
     doseAmount = doseAmount,
-    unitId = unitId,
-    formId = formId,
     schedule = schedule,
-    sources = sources,
-    status = status,
+    stack = SourceStack(items = sources, formId = formId, unitId = unitId),
     revision = revision,
     createdAt = createdAt,
     updatedAt = updatedAt
 )
 
 /**
- * Действующий курс: доза, единица, форма и расписание у него уже есть по инварианту, и называть
- * их в каждом тесте незачем. По умолчанию — две таблетки раз в день неделю.
+ * Назначенный курс: доза, единица, форма и расписание у него есть по типу, и называть их в
+ * каждом тесте незачем. По умолчанию — две таблетки раз в день неделю.
  */
 fun activeCourse(
     id: Uuid = COURSE,
@@ -89,17 +89,19 @@ fun activeCourse(
     formId: Uuid = TABLET_FORM,
     schedule: CourseSchedule = schedule(),
     sources: List<CourseSource> = emptyList(),
+    status: CourseStatus = CourseStatus.ACTIVE,
     revision: Long = 1,
+    createdAt: Instant = EARLIER,
     updatedAt: Instant = EARLIER
-) = course(
+) = PlannedCourse(
     id = id,
-    doseAmount = doseAmount,
-    unitId = unitId,
-    formId = formId,
+    title = "Парацетамол, пять дней",
+    dose = Quantity(doseAmount, unitId),
     schedule = schedule,
-    sources = sources,
-    status = CourseStatus.ACTIVE,
+    stack = SourceStack(items = sources, formId = formId, unitId = unitId),
+    status = status,
     revision = revision,
+    createdAt = createdAt,
     updatedAt = updatedAt
 )
 

@@ -1,7 +1,7 @@
 package com.kert0n.medapp.domain.calc.allocation
 
 import com.kert0n.medapp.domain.calc.availability.Availability
-import com.kert0n.medapp.domain.model.course.Course
+import com.kert0n.medapp.domain.model.course.PlannedCourse
 import com.kert0n.medapp.domain.model.course.CourseSource
 import com.kert0n.medapp.domain.model.value.Doses
 import com.kert0n.medapp.domain.model.value.Quantity
@@ -30,11 +30,11 @@ import kotlin.uuid.Uuid
  * выделение — решение человека, а не следствие поставки.
  */
 fun clampAllocations(
-    course: Course,
+    course: PlannedCourse,
     requiredDoses: Doses,
     availability: Availability
 ): List<CourseSource> {
-    val dose = requireNotNull(course.dose) { "пересчёт выделения без дозы курса не определён" }
+    val dose = course.dose
     val clamped = course.sources.map { source ->
         val available = availability.known(source.packageId) ?: return@map source
         val fits = available.dosesIn(dose)

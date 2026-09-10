@@ -2,7 +2,7 @@ package com.kert0n.medapp.domain.calc.coverage
 
 import com.kert0n.medapp.domain.calc.availability.Availability
 import com.kert0n.medapp.domain.calc.schedule.ScheduledOccurrence
-import com.kert0n.medapp.domain.model.course.Course
+import com.kert0n.medapp.domain.model.course.PlannedCourse
 import com.kert0n.medapp.domain.model.value.Doses
 import com.kert0n.medapp.domain.model.value.Quantity
 import kotlin.uuid.Uuid
@@ -25,11 +25,11 @@ import kotlin.uuid.Uuid
  * пачки по одной таблетке при дозе в две таблетки дают ноль приёмов, а не один.
  */
 fun coverage(
-    course: Course,
+    course: PlannedCourse,
     remaining: List<ScheduledOccurrence>,
     availability: Availability
 ): CourseCoverage {
-    val dose = requireNotNull(course.dose) { "обеспечение без дозы курса не определено" }
+    val dose = course.dose
     val requiredDoses = Doses(remaining.size)
 
     var unknown = false

@@ -83,14 +83,6 @@ class MaxDosesTest {
     }
 
     @Test
-    fun sliderWithoutADoseIsNotDefined() {
-        val noDose = course(sources = emptyList())
-        assertThrows(IllegalArgumentException::class.java) {
-            maxDoses(PACK, noDose, requiredDoses = doses(10), availability = availability)
-        }
-    }
-
-    @Test
     fun fractionalDoseIsCountedAsWhole() {
         // Половина таблетки — законная доза; из двадцати таблеток это сорок приёмов.
         val halves = activeCourse(doseAmount = BigDecimal("0.5"), sources = listOf(source(PACK, 0)))

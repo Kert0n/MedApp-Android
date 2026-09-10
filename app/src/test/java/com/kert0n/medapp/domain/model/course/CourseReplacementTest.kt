@@ -46,14 +46,6 @@ class CourseReplacementTest {
     )
 
     @Test
-    fun activeDoseAndScheduleAreNotEditable() {
-        assertThrows(IllegalStateException::class.java) { old.setDraftDose(BigDecimal("3"), LATER) }
-        assertThrows(IllegalStateException::class.java) {
-            old.setDraftSchedule(schedule(times = listOf(LocalTime.of(21, 0))), LATER)
-        }
-    }
-
-    @Test
     fun replacementIsAnotherCourseAndTheOldOneStaysAsHistory() {
         val cancelled = old.cancel(LATER)
         val replacement = course(
@@ -63,7 +55,7 @@ class CourseReplacementTest {
             createdAt = LATER,
             updatedAt = LATER
         )
-            .setDraftSchedule(schedule(times = listOf(LocalTime.of(9, 0), LocalTime.of(21, 0))), LATER)
+            .setSchedule(schedule(times = listOf(LocalTime.of(9, 0), LocalTime.of(21, 0))), LATER)
             .attach(pack(id = PACK, formId = TABLET_FORM, quantity = tablets("20")), doses = doses(5), at = LATER)
             .getOrThrow()
             .activate(LATER)
@@ -76,7 +68,7 @@ class CourseReplacementTest {
         // История прежнего курса на месте: расписание, доза и стек источников остались как были.
         assertEquals(CourseStatus.CANCELLED, cancelled.status)
         assertEquals(schedule(), cancelled.schedule)
-        assertEquals(BigDecimal("2"), cancelled.doseAmount)
+        assertEquals(tablets("2"), cancelled.dose)
         assertEquals(TABLETS, cancelled.unitId)
         assertEquals(listOf(PACK), cancelled.sources.map { it.packageId })
         // Выделение освобождено — броней у отменённого курса нет.
@@ -106,9 +98,5 @@ class CourseReplacementTest {
         val cancelled = old.cancel(LATER)
         assertThrows(IllegalStateException::class.java) { cancelled.cancel(LATER) }
         assertThrows(IllegalStateException::class.java) { cancelled.complete(LATER) }
-        assertEquals(
-            CourseRejection.NOT_DRAFT,
-            (cancelled.activate(LATER).exceptionOrNull() as CourseRejected).reason
-        )
     }
 }
