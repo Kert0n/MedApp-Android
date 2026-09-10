@@ -14,6 +14,7 @@ import com.kert0n.medapp.storage.pack.toStorageEntity as toPackageStorageEntity
 import com.kert0n.medapp.storage.server.SyncOperationDao
 import com.kert0n.medapp.storage.stock.StockMovementDao
 import com.kert0n.medapp.storage.stock.toStorageEntity as toMovementStorageEntity
+import com.kert0n.medapp.storage.value.toStorageAmount
 import java.time.Instant
 import javax.inject.Inject
 import kotlin.uuid.Uuid
@@ -55,7 +56,7 @@ class IntakeRoomRepository @Inject constructor(
             at = outcome.answeredAt,
             packageId = taken?.packageId,
             medKitId = taken?.medKitId,
-            amount = taken?.amount?.quantity?.let { it.amount.toPlainString() },
+            amount = taken?.amount?.quantity?.toStorageAmount(),
             unitId = outcome.intake.unitId,
             accounting = outcome.sync.accounting,
             operationId = outcome.sync.operationId
