@@ -79,7 +79,7 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
         call(HttpMethod.Get, "/v1/med-kits", HttpStatusCode.OK, required(ListSerializer(MedKitSummaryNetworkDTO.serializer())))
 
     suspend fun medKit(medKitId: Uuid): ApiResult<MedKitNetworkDTO> =
-        call(HttpMethod.Get, "/v1/med-kits/$medKitId", HttpStatusCode.OK, required(MedKitNetworkDTO.serializer()))
+        call(HttpMethod.Get, medKitPath(medKitId), HttpStatusCode.OK, required(MedKitNetworkDTO.serializer()))
 
     suspend fun quantityUnits(): ApiResult<List<VocabularyEntryNetworkDTO>> =
         call(HttpMethod.Get, "/v1/quantity-units", HttpStatusCode.OK, required(ListSerializer(VocabularyEntryNetworkDTO.serializer())))
@@ -96,7 +96,7 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
 
     /** Удаляет аптечку у всех; [transferTo] переносит содержимое в другую аптечку вызывающего. */
     suspend fun deleteMedKit(medKitId: Uuid, transferTo: Uuid? = null): ApiResult<Unit> =
-        call(HttpMethod.Delete, "/v1/med-kits/$medKitId", HttpStatusCode.NoContent, none) {
+        call(HttpMethod.Delete, medKitPath(medKitId), HttpStatusCode.NoContent, none) {
             transferTo?.let { parameter("targetMedKitId", it.toString()) }
         }
 
@@ -119,15 +119,15 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
         }
 
     suspend fun packageSnapshot(packageId: Uuid): ApiResult<PackageSnapshotNetworkDTO> =
-        call(HttpMethod.Get, "/v1/drugs/$packageId", HttpStatusCode.OK, required(PackageSnapshotNetworkDTO.serializer()))
+        call(HttpMethod.Get, packagePath(packageId), HttpStatusCode.OK, required(PackageSnapshotNetworkDTO.serializer()))
 
     suspend fun patchPackage(packageId: Uuid, patch: PackagePatchNetworkDTO): ApiResult<PackageSnapshotNetworkDTO> =
-        call(HttpMethod.Patch, "/v1/drugs/$packageId", HttpStatusCode.OK, required(PackageSnapshotNetworkDTO.serializer())) {
+        call(HttpMethod.Patch, packagePath(packageId), HttpStatusCode.OK, required(PackageSnapshotNetworkDTO.serializer())) {
             json(patch)
         }
 
     suspend fun deletePackage(packageId: Uuid, version: ResourceVersion?): ApiResult<Unit> =
-        call(HttpMethod.Delete, "/v1/drugs/$packageId", HttpStatusCode.NoContent, none) {
+        call(HttpMethod.Delete, packagePath(packageId), HttpStatusCode.NoContent, none) {
             version(version)
         }
 
@@ -159,23 +159,23 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
     // Брони
 
     suspend fun claims(): ApiResult<List<ClaimNetworkDTO>> =
-        call(HttpMethod.Get, "/v1/reservations", HttpStatusCode.OK, required(ListSerializer(ClaimNetworkDTO.serializer())))
+        call(HttpMethod.Get, CLAIMS_PATH, HttpStatusCode.OK, required(ListSerializer(ClaimNetworkDTO.serializer())))
 
     suspend fun claim(packageId: Uuid): ApiResult<ClaimNetworkDTO> =
-        call(HttpMethod.Get, "/v1/reservations/$packageId", HttpStatusCode.OK, required(ClaimNetworkDTO.serializer()))
+        call(HttpMethod.Get, claimPath(packageId), HttpStatusCode.OK, required(ClaimNetworkDTO.serializer()))
 
     suspend fun createClaim(claim: ClaimPostNetworkDTO): ApiResult<ClaimNetworkDTO> =
-        call(HttpMethod.Post, "/v1/reservations", HttpStatusCode.Created, required(ClaimNetworkDTO.serializer())) {
+        call(HttpMethod.Post, CLAIMS_PATH, HttpStatusCode.Created, required(ClaimNetworkDTO.serializer())) {
             json(claim)
         }
 
     suspend fun patchClaim(packageId: Uuid, claim: ClaimPatchNetworkDTO): ApiResult<ClaimNetworkDTO> =
-        call(HttpMethod.Patch, "/v1/reservations/$packageId", HttpStatusCode.OK, required(ClaimNetworkDTO.serializer())) {
+        call(HttpMethod.Patch, claimPath(packageId), HttpStatusCode.OK, required(ClaimNetworkDTO.serializer())) {
             json(claim)
         }
 
     suspend fun deleteClaim(packageId: Uuid, version: ResourceVersion?): ApiResult<Unit> =
-        call(HttpMethod.Delete, "/v1/reservations/$packageId", HttpStatusCode.NoContent, none) {
+        call(HttpMethod.Delete, claimPath(packageId), HttpStatusCode.NoContent, none) {
             version(version)
         }
 
@@ -283,8 +283,20 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
         version?.let { parameter("version", it.number) }
     }
 
+    /**
+     * Пути ресурсов, у которых несколько операций: чтение, правка и удаление одного ресурса
+     * называют его одним путём.
+     */
     private companion object {
         const val REGISTER_PATH = "/v1/auth/register"
+        const val CLAIMS_PATH = "/v1/reservations"
+
+        fun medKitPath(medKitId: Uuid) = "/v1/med-kits/$medKitId"
+
+        fun packagePath(packageId: Uuid) = "/v1/drugs/$packageId"
+
+        fun claimPath(packageId: Uuid) = "$CLAIMS_PATH/$packageId"
+
         const val TEMPLATE_QUERY_MAX = 200
         const val TEMPLATE_LIMIT_MAX = 50
     }
