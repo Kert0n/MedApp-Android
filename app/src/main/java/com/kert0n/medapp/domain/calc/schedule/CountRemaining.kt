@@ -1,0 +1,34 @@
+package com.kert0n.medapp.domain.calc.schedule
+
+import com.kert0n.medapp.domain.model.course.CourseSchedule
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalTime
+
+/**
+ * Сколько пунктов расписания ещё ждут ответа, начиная с [from] и до конца календаря курса.
+ *
+ * **Строится окном, а не на год вперёд.** Приёмы материализуются на шестьдесят дней (PLAN F4), и
+ * если считать потребность по строкам, годовой курс окажется «нужно 240», а не «нужно 1460»:
+ * обеспечение занизилось бы ровно на то, что ещё не достроено. Поэтому потребность считается
+ * календарём, а не числом строк, и пустое окно не завершает курс, у которого впереди ещё есть
+ * назначенные пункты.
+ *
+ * [resolved] — уже отвеченные пункты по их **исходным** дате и времени: то же тождество, что у
+ * материализации (PLAN F4), поэтому разрешение перехода на летнее время на подсчёт не влияет.
+ * Отвеченным может оказаться и будущий пункт — пропустить приём заранее человек вправе.
+ *
+ * Просроченные неотвеченные пункты в прошлом остаются потребностью, и попадают они в подсчёт
+ * выбором [from]: вызывающий начинает не с «сейчас», а с начала текущего дня курса, если
+ * сегодняшний утренний приём ещё ждёт ответа.
+ */
+fun countRemaining(
+    schedule: CourseSchedule,
+    from: Instant,
+    resolved: Set<Pair<LocalDate, LocalTime>>
+): Int {
+    // Конец берётся с запасом в сутки: последний пункт мог сдвинуться вперёд переходом часов.
+    val until = schedule.endInclusive.plusDays(2).atStartOfDay(schedule.zone).toInstant()
+    if (!until.isAfter(from)) return 0
+    return occurrences(schedule, from, until).count { (it.localDate to it.localTime) !in resolved }
+}
