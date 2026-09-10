@@ -1,0 +1,82 @@
+package com.kert0n.medapp.storage.pack
+
+import androidx.room.ColumnInfo
+import androidx.room.Entity
+import androidx.room.Index
+import androidx.room.PrimaryKey
+import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.pack.PackageSharedFacts
+import com.kert0n.medapp.network.pack.PackageSyncState
+import com.kert0n.medapp.storage.value.toStorageAmount
+import com.kert0n.medapp.storage.value.toStorageSortKey
+import java.time.Instant
+import kotlin.uuid.Uuid
+
+/**
+ * Подтверждённая серверная часть упаковки: то, что снимок переписывает целиком. Личные сведения
+ * лежат отдельной строкой, иначе срок годности и цена стирались бы при каждом обновлении
+ * (PLAN F1).
+ *
+ * `version`, `claims_version` и `synced_at` — обвязка доставки: это `PackageSyncState` сетевого
+ * слоя, а не свойство пачки. `quantity_sort` — производная колонка порядка (PLAN F3).
+ */
+@Entity(
+    tableName = "packages",
+    indices = [Index("med_kit_id")]
+)
+class PackageStorageEntity(
+    @PrimaryKey val id: Uuid,
+    @ColumnInfo(name = "med_kit_id") val medKitId: Uuid,
+    val name: String,
+    val quantity: String,
+    @ColumnInfo(name = "quantity_sort") val quantitySort: String,
+    @ColumnInfo(name = "quantity_unit_id") val quantityUnitId: Uuid,
+    @ColumnInfo(name = "form_id") val formId: Uuid? = null,
+    val category: String? = null,
+    val manufacturer: String? = null,
+    val country: String? = null,
+    val description: String? = null,
+    val version: Long? = null,
+    @ColumnInfo(name = "claims_version") val claimsVersion: Long? = null,
+    val lifecycle: Package.Lifecycle = Package.Lifecycle.ACTIVE,
+    val access: Package.Access = Package.Access.AVAILABLE,
+    @ColumnInfo(name = "synced_at") val syncedAt: Instant? = null
+) {
+    fun sharedFacts(): PackageSharedFacts = PackageSharedFacts(
+        name = name,
+        formId = formId,
+        category = category,
+        manufacturer = manufacturer,
+        country = country,
+        description = description
+    )
+
+    fun syncState(): PackageSyncState = PackageSyncState(
+        packageId = id,
+        version = version,
+        claimsVersion = claimsVersion,
+        syncedAt = syncedAt
+    )
+}
+
+fun Package.toStorageEntity(sync: PackageSyncState = PackageSyncState(id)): PackageStorageEntity {
+    require(sync.packageId == id) { "обвязка синхронизации принадлежит своей пачке" }
+    return PackageStorageEntity(
+        id = id,
+        medKitId = medKitId,
+        name = facts.name,
+        quantity = quantity.toStorageAmount(),
+        quantitySort = quantity.toStorageSortKey(),
+        quantityUnitId = quantity.unitId,
+        formId = facts.formId,
+        category = facts.category,
+        manufacturer = facts.manufacturer,
+        country = facts.country,
+        description = facts.description,
+        version = sync.version,
+        claimsVersion = sync.claimsVersion,
+        lifecycle = lifecycle,
+        access = access,
+        syncedAt = sync.syncedAt
+    )
+}

@@ -113,6 +113,15 @@ android {
         compose = true
         buildConfig = true
     }
+
+    /**
+     * Фикстуры домена нужны обоим уровням: значения и сущности одни и те же, а база
+     * проверяется в androidTest (PLAN J1). Второй набор строителей разошёлся бы с первым.
+     */
+    sourceSets {
+        getByName("test").kotlin.srcDir("src/sharedTest/java")
+        getByName("androidTest").kotlin.srcDir("src/sharedTest/java")
+    }
 }
 
 /**
