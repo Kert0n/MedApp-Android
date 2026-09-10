@@ -60,6 +60,8 @@ class PackageQueueState(
     private val projected: Projected =
         unclosed.fold(Projected(confirmed, changed = false)) { acc, command ->
             val next = command.appliedTo(acc.amount) ?: return@fold acc
+            // Пересчёт заменяет число целиком, поэтому чужая единица сменила бы её молча.
+            require(next.unitId == confirmed.unitId) { "команда пачки измеряется её единицей" }
             Projected(next, changed = true)
         }
 

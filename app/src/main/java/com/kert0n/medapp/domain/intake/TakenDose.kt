@@ -22,5 +22,11 @@ data class TakenDose(
      * поэтому «принял из пачки, лежащей в другой аптечке» здесь невыразимо, а не проверяется.
      * Первичный путь остаётся для восстановления сохранённого: там на руках только колонки.
      */
-    constructor(pkg: Package, amount: Dose, at: Instant) : this(pkg.id, pkg.medKitId, amount, at)
+    constructor(pkg: Package, amount: Dose, at: Instant) : this(pkg.id, pkg.medKitId, amount, at) {
+        // Пачку передают целиком как раз затем, чтобы проверить это отношение: две таблетки из
+        // флакона, который меряют миллилитрами, — не факт, а испорченная история.
+        require(amount.unitId == pkg.quantity.unitId) {
+            "принятое измеряется единицей той пачки, из которой взято"
+        }
+    }
 }

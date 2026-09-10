@@ -6,6 +6,7 @@ import com.kert0n.medapp.fixture.INTAKE
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.TABLET_FORM
+import com.kert0n.medapp.fixture.millilitres
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.tablets
@@ -70,6 +71,17 @@ class PackageQueueStateTest {
                 pack(quantity = tablets("20")),
                 listOf(PackageSyncCommand.Consume(OTHER_PACK, dose("3"), INTAKE))
             )
+        }
+    }
+
+    @Test
+    fun aCommandInAnotherUnitIsNotFoldedIn() {
+        // Пересчёт заменяет число целиком: чужая единица сменила бы единицу пачки молча.
+        assertThrows(IllegalArgumentException::class.java) {
+            PackageQueueState(
+                pack(quantity = tablets("20")),
+                listOf(PackageSyncCommand.CorrectStock(PACK, millilitres("30")))
+            ).amount
         }
     }
 

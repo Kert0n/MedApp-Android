@@ -158,6 +158,16 @@ class IntakeTest {
     }
 
     @Test
+    fun theFactAgreesWithThePackItCameFrom() {
+        // Пачку передают целиком как раз затем, чтобы это проверить: две таблетки из флакона,
+        // который меряют миллилитрами, — не факт, а испорченная история.
+        val syrup = pack(quantity = millilitres("100"))
+        assertThrows(IllegalArgumentException::class.java) {
+            plannedIntake().confirm(syrup, dose("2"), LATER)
+        }
+    }
+
+    @Test
     fun takingZeroIsASkipAndNotAnIntake() {
         // Проверка переехала на саму дозу: собрать её из нуля нельзя, и до подтверждения дело
         // уже не доходит.
