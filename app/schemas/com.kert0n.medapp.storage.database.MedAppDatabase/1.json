@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "3738813beec17019dc9f9f1b2f8f0a65",
+    "identityHash": "2334ff8fe34f60e00515ad38c018cdca",
     "entities": [
       {
         "tableName": "quantity_units",
@@ -959,11 +959,250 @@
             ]
           }
         ]
+      },
+      {
+        "tableName": "sync_operations",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `kind` TEXT NOT NULL, `payload` TEXT NOT NULL, `payload_version` INTEGER NOT NULL, `sequence` INTEGER NOT NULL, `status` TEXT NOT NULL, `attempts` INTEGER NOT NULL, `created_at` INTEGER NOT NULL, `package_id` TEXT, `med_kit_id` TEXT, `group_id` TEXT, `last_error` TEXT, `last_tried_at` INTEGER, `reconciled_by` TEXT, `prepared_method` TEXT, `prepared_path` TEXT, `prepared_query` TEXT, `prepared_body` TEXT, `prepared_drug_version` INTEGER, `prepared_claims_version` INTEGER, `prepared_quantity_before` TEXT, `prepared_mine_before` TEXT, `prepared_unit_id` TEXT, `prepared_at` INTEGER, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadVersion",
+            "columnName": "payload_version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sequence",
+            "columnName": "sequence",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attempts",
+            "columnName": "attempts",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "packageId",
+            "columnName": "package_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "medKitId",
+            "columnName": "med_kit_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "groupId",
+            "columnName": "group_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastError",
+            "columnName": "last_error",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastTriedAt",
+            "columnName": "last_tried_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "reconciledBy",
+            "columnName": "reconciled_by",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "prepared.method",
+            "columnName": "prepared_method",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "prepared.path",
+            "columnName": "prepared_path",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "prepared.query",
+            "columnName": "prepared_query",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "prepared.body",
+            "columnName": "prepared_body",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "prepared.drugVersion",
+            "columnName": "prepared_drug_version",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "prepared.claimsVersion",
+            "columnName": "prepared_claims_version",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "prepared.quantityBefore",
+            "columnName": "prepared_quantity_before",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "prepared.mineBefore",
+            "columnName": "prepared_mine_before",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "prepared.unitId",
+            "columnName": "prepared_unit_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "prepared.at",
+            "columnName": "prepared_at",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sync_operations_sequence",
+            "unique": true,
+            "columnNames": [
+              "sequence"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_sync_operations_sequence` ON `${TABLE_NAME}` (`sequence`)"
+          },
+          {
+            "name": "index_sync_operations_package_id_sequence",
+            "unique": false,
+            "columnNames": [
+              "package_id",
+              "sequence"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sync_operations_package_id_sequence` ON `${TABLE_NAME}` (`package_id`, `sequence`)"
+          },
+          {
+            "name": "index_sync_operations_status",
+            "unique": false,
+            "columnNames": [
+              "status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sync_operations_status` ON `${TABLE_NAME}` (`status`)"
+          },
+          {
+            "name": "index_sync_operations_group_id",
+            "unique": false,
+            "columnNames": [
+              "group_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sync_operations_group_id` ON `${TABLE_NAME}` (`group_id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "sync_operation_dependencies",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`operation_id` TEXT NOT NULL, `depends_on_id` TEXT NOT NULL, PRIMARY KEY(`operation_id`, `depends_on_id`), FOREIGN KEY(`operation_id`) REFERENCES `sync_operations`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`depends_on_id`) REFERENCES `sync_operations`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "operationId",
+            "columnName": "operation_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dependsOnId",
+            "columnName": "depends_on_id",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "operation_id",
+            "depends_on_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sync_operation_dependencies_depends_on_id",
+            "unique": false,
+            "columnNames": [
+              "depends_on_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sync_operation_dependencies_depends_on_id` ON `${TABLE_NAME}` (`depends_on_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "sync_operations",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "operation_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "sync_operations",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "depends_on_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '3738813beec17019dc9f9f1b2f8f0a65')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '2334ff8fe34f60e00515ad38c018cdca')"
     ]
   }
 }

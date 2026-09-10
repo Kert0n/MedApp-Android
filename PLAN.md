@@ -1629,18 +1629,18 @@ enum class SyncOperationStatus {
 }
 
 // network/server — запись очереди связывает команду и подготовленный запрос (PR 4)
-data class SyncOperation(
+class SyncOperation(
     val id: Uuid,                       // syncId для Consume по курсу
     val command: SyncCommand,           // маркер-интерфейс поверх корней по понятиям
+    val sequence: Long,                 // монотонный счётчик базы
+    val createdAt: Instant,
+    val payloadVersion: Int,
     val prepared: PreparedRequest?,     // замораживается ДО первой отправки
     val groupId: Uuid?,
-    val sequence: Long,                 // монотонный счётчик базы
-    val dependsOn: List<Uuid>,
+    dependsOn: Set<Uuid>,               // своя копия; порядок и повтор здесь ничего не значат
     val status: SyncOperationStatus,
     val attempts: Int,
     val lastError: String?,
-    val payloadVersion: Int,
-    val createdAt: Instant,
     val lastTriedAt: Instant?,
     val reconciledBy: Uuid?             // операция ручного пересчёта
 )
@@ -1669,6 +1669,9 @@ data class SyncOperation(
 Подготовленный запрос сохраняется до сети и неизменен, включая исходные версии. Второй офлайн-приём
 подготовится только после установления результата первого. После смерти процесса `SENDING`
 становится `VERIFYING`, а не новым неподготовленным расходом.
+
+Зависимости — **множество**, а не список: порядок между ними ничего не значит, и повтор тоже,
+а список потребовал бы проверки уникальности там, где её выражает тип.
 
 `groupId` и зависимости выражают публикацию и сохранение нескольких источников. Группа успешна,
 только если успешны требуемые эффекты; частичная отправка показывается явно. Уменьшения броней идут
@@ -1909,8 +1912,8 @@ sealed interface MedKitRemoval {
 | `active_package_assignments`  | **`package_id` PRIMARY KEY**, `course_id` FK                                                                                                                                      | Это и есть механизм «одна пачка — один активный курс». Проверка «а нет ли уже» перед вставкой не годится: два экрана записали бы одновременно и оба увидели бы пусто. Строка появляется при `activate()`, исчезает при завершении, отмене и отвязке                                        |
 | `intakes`                     | поля `CourseIntake` и `UnplannedIntake` в одной таблице, вид различается наличием курса, **без колонок учёта**; `accounting`, `operation_id`, `reconciliation_id` — обвязка синхронизации (`IntakeSyncState`); UNIQUE(`course_id`,`scheduled_on`,`scheduled_time`); FK на плановую/фактическую `packages` **RESTRICT**, FK на `course_records` **RESTRICT** | История не удаляется каскадом. Колонки учёта живут в той же строке, но доменная модель их не носит: их меняют только транзакционные сценарии F5, и правила о приёме их не читают (D6) |
 | `stock_adjustments`           | поля `StockMovement`; FK на `packages` **RESTRICT**                                                                                                                               | Одна строка на движение; у `Transfer` обе аптечки и одно количество, поэтому концы переноса не расходятся                                                                                                                                                                                   |
-| `sync_operations`             | поля `SyncOperation`; `kind` + `payload` + `payload_version`; `package_id?`; `sequence` UNIQUE, монотонен                                                                                                                                | Очередь. Вид команды хранится дискриминатором колонки и её конвертером. `package_id` называет затронутую пачку и `NULL` у команд аптечки: порядок по одной упаковке строится запросом, а не доменной функцией |
-| `sync_operation_dependencies` | `operation_id` FK, `depends_on_id` FK; PK(пара)                                                                                                                                   | Зависимости отдельной таблицей, а не размазанными по payload                                                                                                                                                                                                                               |
+| `sync_operations`             | поля `SyncOperation`; `kind` + `payload` + `payload_version`; `package_id?`, `med_kit_id?`; подготовленный запрос колонками `prepared_*`; `sequence` UNIQUE, монотонен                                                                                                                                | Очередь. Вид команды хранится дискриминатором колонки и её конвертером. `package_id` называет затронутую пачку и `NULL` у команд аптечки: порядок по одной упаковке строится запросом, а не доменной функцией. Подготовленный запрос лежит колонками той же строки: он рождается и умирает вместе со своей операцией |
+| `sync_operation_dependencies` | `operation_id` FK **RESTRICT**, `depends_on_id` FK **RESTRICT**; PK(пара)                                                                                                                                   | Зависимости отдельной таблицей, а не размазанными по payload                                                                                                                                                                                                                               |
 | `notification_log`            | `key`, `delivery`, `kind`, `shown_at`; PK(`key`,`delivery`)                                                                                                                       | Без него ежедневная проверка сообщала бы об одной просрочке каждый день                                                                                                                                                                                                                    |
 
 ## F2. Ограничения в схеме, а не в коде

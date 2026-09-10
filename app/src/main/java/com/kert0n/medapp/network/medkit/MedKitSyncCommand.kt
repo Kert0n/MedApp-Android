@@ -1,5 +1,6 @@
 package com.kert0n.medapp.network.medkit
 
+import com.kert0n.medapp.network.server.SyncCommand
 import kotlin.uuid.Uuid
 
 /**
@@ -14,7 +15,7 @@ import kotlin.uuid.Uuid
  * с записью очереди `SyncOperation` (PLAN E2, PR 4), когда у него будет потребитель — вводить его
  * заранее значило бы завести тип без единого места, где он нужен.
  */
-sealed interface MedKitSyncCommand {
+sealed interface MedKitSyncCommand : SyncCommand {
 
     val medKitId: Uuid
 

@@ -17,6 +17,9 @@ import com.kert0n.medapp.storage.pack.ClaimsStorageEntity
 import com.kert0n.medapp.storage.pack.PackageDao
 import com.kert0n.medapp.storage.pack.PackageDetailsStorageEntity
 import com.kert0n.medapp.storage.pack.PackageStorageEntity
+import com.kert0n.medapp.storage.server.SyncOperationDao
+import com.kert0n.medapp.storage.server.SyncOperationDependencyStorageEntity
+import com.kert0n.medapp.storage.server.SyncOperationStorageEntity
 import com.kert0n.medapp.storage.stock.StockMovementDao
 import com.kert0n.medapp.storage.stock.StockMovementStorageEntity
 import com.kert0n.medapp.storage.value.DosageFormStorageEntity
@@ -41,7 +44,9 @@ import com.kert0n.medapp.storage.value.QuantityUnitStorageEntity
         CourseSourceStorageEntity::class,
         ActivePackageAssignmentStorageEntity::class,
         IntakeStorageEntity::class,
-        StockMovementStorageEntity::class
+        StockMovementStorageEntity::class,
+        SyncOperationStorageEntity::class,
+        SyncOperationDependencyStorageEntity::class
     ],
     version = MedAppDatabase.VERSION,
     exportSchema = true
@@ -58,6 +63,8 @@ abstract class MedAppDatabase : RoomDatabase() {
     abstract fun intakes(): IntakeDao
 
     abstract fun stockMovements(): StockMovementDao
+
+    abstract fun syncOperations(): SyncOperationDao
 
     companion object {
         const val VERSION = 1
