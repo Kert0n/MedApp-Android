@@ -1899,7 +1899,7 @@ sealed interface MedKitRemoval {
 | таблица                       | колонки                                                                                                                                                                           | почему так                                                                                                                                                                                                                                                                                 |
 |-------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `med_kits`                    | `id` PK, `name`, `location?`, `publication`, `participant_count`, `created_at`, `synced_at`                                                                                       | Снимок трогает **только** `participant_count`, точечным `UPDATE`: название и место хранения серверу неизвестны                                                                                                                                                                             |
-| `packages`                    | `id` PK, `med_kit_id`, `name`, `quantity`, `quantity_sort`, `quantity_unit_id`, `form_id?`, `category?`, `manufacturer?`, `country?`, `description?`, `version?`, `claims_version?`, `lifecycle`, `access`, `synced_at` | Подтверждённая серверная часть; локальные пачки обновляют доменные сценарии F5. `quantity_sort` — та же десятичная строка, дополненная нулями до предельной ширины величины: порядок по остатку получается `ORDER BY` без `CAST(… AS REAL)` (F3)                                                                                                                                                                                                             |
+| `packages`                    | `id` PK, `med_kit_id`, `name`, `name_search`, `quantity`, `quantity_sort`, `quantity_unit_id`, `form_id?`, `category?`, `manufacturer?`, `country?`, `description?`, `version?`, `claims_version?`, `lifecycle`, `access`, `synced_at` | Подтверждённая серверная часть; локальные пачки обновляют доменные сценарии F5. `quantity_sort` — та же десятичная строка, дополненная нулями до предельной ширины величины: порядок по остатку получается `ORDER BY` без `CAST(… AS REAL)` (F3). `name_search` — название в нижнем регистре: без него поиск без учёта регистра по-русски не работает, потому что `lower()` и `COLLATE NOCASE` в SQLite знают только латиницу                                                                                                                                                                                                             |
 | `package_details`             | `package_id` PK/FK **RESTRICT**, `expires_on?`, `default_intake_amount?`, `default_intake_unit_id?`, `note?`, `price?`, `currency?`, `purchased_on?`, `opened_on?`, `added_at`, `template_id?` | Отдельно, потому что снимок переписывает серверную строку целиком — в одной таблице срок годности стирался бы при каждом обновлении. **Строка создаётся всегда**, включая пачки из снимка: тогда `added_at` — момент первого наблюдения, и обязательное поле домена никогда не отсутствует |
 | `claims`                      | `package_id` PK/FK **RESTRICT**, `total`, `mine?`                                                                                                                                              | Отдельно: картину броней двигают чужие действия. Версия картины — предусловие, она в колонках `packages` вместе с остальной обвязкой синхронизации                                                                                                                                          |
 | `quantity_units`              | `id` PK, `name`                                                                                                                                                                   | Словарь с **серверными** идентификаторами                                                                                                                                                                                                                                                  |
@@ -2372,27 +2372,42 @@ Material 3, зелёная палитра: `primary #1B6B4A`, `primaryContainer 
 ## H4. Поиск, фильтр, сортировка
 
 ```kotlin
+// storage/pack — описание запроса к хранилищу; домен о нём не знает
 data class PackageQuery(
-    val medKitId: Uuid?,          // null — по всем доступным аптечкам
-    val text: String,
-    val filter: PackageFilter?,   // ПО ОДНОМУ параметру
-    val sort: PackageSort
-)
+    val medKitId: Uuid? = null,        // null — по всем доступным аптечкам
+    val text: String = "",
+    val filter: Filter? = null,        // ПО ОДНОМУ параметру
+    val sort: Sort = Sort.NAME,
+    val includeArchived: Boolean = false
+) {
+    // Текст в том виде, в каком его сравнивает база: приведение к нижнему регистру делает
+    // Kotlin, потому что lower() и COLLATE NOCASE в SQLite знают только латиницу.
+    val searchText: String
 
-sealed interface PackageFilter {
-    data object Expired : PackageFilter
-    data class ExpiringWithin(val days: Long) : PackageFilter
-    data object OnCourse : PackageFilter
-    data object HasFree : PackageFilter
-    data class OfCategory(val category: String) : PackageFilter
-    data class OfForm(val formId: Uuid) : PackageFilter
+    sealed interface Filter {
+        data object Expired : Filter
+        data class ExpiringWithin(val days: Long) : Filter
+        data object OnCourse : Filter
+        data object HasFree : Filter     // единственный, что не выражается запросом
+        data class OfCategory(val category: String) : Filter
+        data class OfForm(val formId: Uuid) : Filter
+    }
+
+    enum class Sort { NAME, EXPIRY, ADDED_AT, QUANTITY }   // QUANTITY — от меньшего
 }
-
-enum class PackageSort { NAME, EXPIRY, ADDED_AT, QUANTITY }
 ```
 
 **Порядок нажатий результат не меняет.** Конвейер один: `аптечки → поиск → фильтр → просроченные
 вперёд → сортировка`. Состояние экрана хранит три независимых поля, а не историю действий.
+
+**`HasFree` накладывается поверх запроса.** «Свободно» — это вычитание чужих броней и своих
+выделений из **оценки** количества, а оценка зависит от незакрытых команд очереди (D4, E1).
+Запросом это не выражается: величины хранятся десятичными строками, и `CAST(… AS REAL)` запрещён
+(F3). Поэтому выборку сужает репозиторий, и пачка, требующая сверки, свободной не считается.
+
+**Порядок по остатку и поиск опираются на производные колонки** `quantity_sort` и `name_search`
+(F1): первая даёт числовой порядок текстовым сравнением, вторая — поиск без учёта регистра
+по-русски.
 
 ## H5. Справочник и сканер
 

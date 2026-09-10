@@ -7,6 +7,7 @@ import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
 import java.time.Instant
+import java.time.LocalDate
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.Flow
 
@@ -46,6 +47,58 @@ interface PackageDao {
         upsertServerPart(pack)
         insertDetailsIfMissing(observedPackageDetails(pack.id, observedAt))
     }
+
+
+    /**
+     * Один запрос отвечает на поиск, фильтр и сортировку сразу, и просроченные идут первыми при
+     * любой сортировке: порядок нажатий на экране результат не меняет (PLAN H4).
+     *
+     * `HasFree` сюда не приходит — он не выражается запросом (см. `PackageQuery.Filter`), и
+     * репозиторий накладывает его поверх выборки.
+     */
+    @Transaction
+    @Query(
+        """
+        SELECT p.* FROM packages p
+        JOIN package_details d ON d.package_id = p.id
+        LEFT JOIN active_package_assignments a ON a.package_id = p.id
+        WHERE (:includeArchived OR p.lifecycle = 'ACTIVE')
+          AND (:medKitId IS NULL OR p.med_kit_id = :medKitId)
+          AND (:text = '' OR p.name_search LIKE '%' || :text || '%')
+          AND (
+            :filter = 'NONE'
+            OR (:filter = 'EXPIRED' AND d.expires_on IS NOT NULL AND d.expires_on < :today)
+            OR (
+              :filter = 'EXPIRING'
+              AND d.expires_on IS NOT NULL
+              AND d.expires_on >= :today
+              AND d.expires_on <= :until
+            )
+            OR (:filter = 'ON_COURSE' AND a.package_id IS NOT NULL)
+            OR (:filter = 'CATEGORY' AND p.category = :category)
+            OR (:filter = 'FORM' AND p.form_id = :formId)
+          )
+        ORDER BY
+          CASE WHEN d.expires_on IS NOT NULL AND d.expires_on < :today THEN 0 ELSE 1 END,
+          CASE WHEN :sort = 'EXPIRY' THEN (d.expires_on IS NULL) END,
+          CASE WHEN :sort = 'EXPIRY' THEN d.expires_on END,
+          CASE WHEN :sort = 'ADDED_AT' THEN -d.added_at END,
+          CASE WHEN :sort = 'QUANTITY' THEN p.quantity_unit_id END,
+          CASE WHEN :sort = 'QUANTITY' THEN p.quantity_sort END,
+          p.name_search
+        """
+    )
+    fun query(
+        medKitId: Uuid?,
+        text: String,
+        filter: String,
+        today: LocalDate,
+        until: LocalDate?,
+        category: String?,
+        formId: Uuid?,
+        sort: String,
+        includeArchived: Boolean
+    ): Flow<List<PackageStorageRow>>
 
     @Upsert
     suspend fun upsertServerPart(pack: PackageStorageEntity)

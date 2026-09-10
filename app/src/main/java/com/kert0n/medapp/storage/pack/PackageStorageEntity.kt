@@ -18,16 +18,23 @@ import kotlin.uuid.Uuid
  * (PLAN F1).
  *
  * `version`, `claims_version` и `synced_at` — обвязка доставки: это `PackageSyncState` сетевого
- * слоя, а не свойство пачки. `quantity_sort` — производная колонка порядка (PLAN F3).
+ * слоя, а не свойство пачки.
+ *
+ * Две производные колонки существуют ради одного запроса списка (PLAN H4). `quantity_sort` —
+ * то же число, дополненное нулями до предельной ширины величины, поэтому порядок по остатку
+ * получается без `CAST(… AS REAL)` (F3). `name_search` — название в нижнем регистре: `lower()`
+ * и `COLLATE NOCASE` в SQLite знают только латиницу, и по-русски поиск без учёта регистра иначе
+ * не работает.
  */
 @Entity(
     tableName = "packages",
-    indices = [Index("med_kit_id")]
+    indices = [Index("med_kit_id"), Index("name_search")]
 )
 class PackageStorageEntity(
     @PrimaryKey val id: Uuid,
     @ColumnInfo(name = "med_kit_id") val medKitId: Uuid,
     val name: String,
+    @ColumnInfo(name = "name_search") val nameSearch: String,
     val quantity: String,
     @ColumnInfo(name = "quantity_sort") val quantitySort: String,
     @ColumnInfo(name = "quantity_unit_id") val quantityUnitId: Uuid,
@@ -65,6 +72,7 @@ fun Package.toStorageEntity(sync: PackageSyncState = PackageSyncState(id)): Pack
         id = id,
         medKitId = medKitId,
         name = facts.name,
+        nameSearch = facts.name.lowercase(),
         quantity = quantity.toStorageAmount(),
         quantitySort = quantity.toStorageSortKey(),
         quantityUnitId = quantity.unitId,
