@@ -19,8 +19,7 @@ data class PackageQueueState(
 ) {
 
     init {
-        // Чужая команда в этой свёртке дала бы неверный остаток молча. Раньше проверять было
-        // нечем: состояние не знало, чьё оно.
+        // Чужая команда в этой свёртке дала бы неверный остаток молча.
         require(unclosed.all { it.packageId == packageId }) {
             "в остаток пачки $packageId сворачиваются только её команды"
         }
@@ -49,11 +48,7 @@ data class PackageQueueState(
     /** В число вложено незакрытое изменение количества; правка описания или брони не в счёт. */
     val hasUnconfirmedChanges: Boolean get() = projected.changed
 
-    /**
-     * Одна свёртка на оба вопроса. Прежде «меняет ли команда количество» спрашивалось зондом —
-     * применением к произвольному числу и проверкой на `null`; теперь это то, что свёртка и так
-     * узнала по дороге.
-     */
+    /** Одна свёртка на оба вопроса: меняла ли команда количество, она узнаёт по дороге. */
     private val projected: Projected =
         unclosed.fold(Projected(confirmed, changed = false)) { acc, command ->
             val next = command.appliedTo(acc.amount) ?: return@fold acc
