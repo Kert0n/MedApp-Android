@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "06aae96c2612caf23f6f88afc41900d6",
+    "identityHash": "c4803b2ecbef6857d9951f9c2f5eca11",
     "entities": [
       {
         "tableName": "quantity_units",
@@ -296,11 +296,53 @@
             ]
           }
         ]
+      },
+      {
+        "tableName": "claims",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`package_id` TEXT NOT NULL, `total` TEXT NOT NULL, `mine` TEXT, PRIMARY KEY(`package_id`), FOREIGN KEY(`package_id`) REFERENCES `packages`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "packageId",
+            "columnName": "package_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "total",
+            "columnName": "total",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mine",
+            "columnName": "mine",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "package_id"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "packages",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "package_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '06aae96c2612caf23f6f88afc41900d6')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c4803b2ecbef6857d9951f9c2f5eca11')"
     ]
   }
 }

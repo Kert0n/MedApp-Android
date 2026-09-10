@@ -5,6 +5,7 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import com.kert0n.medapp.storage.medkit.MedKitDao
 import com.kert0n.medapp.storage.medkit.MedKitStorageEntity
+import com.kert0n.medapp.storage.pack.ClaimsStorageEntity
 import com.kert0n.medapp.storage.pack.PackageDao
 import com.kert0n.medapp.storage.pack.PackageDetailsStorageEntity
 import com.kert0n.medapp.storage.pack.PackageStorageEntity
@@ -22,7 +23,8 @@ import com.kert0n.medapp.storage.value.QuantityUnitStorageEntity
         DosageFormStorageEntity::class,
         MedKitStorageEntity::class,
         PackageStorageEntity::class,
-        PackageDetailsStorageEntity::class
+        PackageDetailsStorageEntity::class,
+        ClaimsStorageEntity::class
     ],
     version = MedAppDatabase.VERSION,
     exportSchema = true

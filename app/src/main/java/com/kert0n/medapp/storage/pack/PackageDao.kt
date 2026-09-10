@@ -56,6 +56,13 @@ interface PackageDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertDetailsIfMissing(details: PackageDetailsStorageEntity)
 
+    @Upsert
+    suspend fun upsertClaims(claims: ClaimsStorageEntity)
+
+    /** Утрата доступа и снятие публикации не оставляют картины броней: её больше не существует. */
+    @Query("DELETE FROM claims WHERE package_id = :packageId")
+    suspend fun deleteClaims(packageId: Uuid)
+
     @Query("DELETE FROM packages WHERE id = :id")
     suspend fun delete(id: Uuid)
 }
