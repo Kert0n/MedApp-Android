@@ -2,7 +2,14 @@ package com.kert0n.medapp.di
 
 import android.content.Context
 import androidx.room.Room
+import com.kert0n.medapp.storage.course.CourseDao
 import com.kert0n.medapp.storage.database.MedAppDatabase
+import com.kert0n.medapp.storage.intake.IntakeDao
+import com.kert0n.medapp.storage.medkit.MedKitDao
+import com.kert0n.medapp.storage.pack.PackageDao
+import com.kert0n.medapp.storage.server.NotificationLogDao
+import com.kert0n.medapp.storage.server.SyncOperationDao
+import com.kert0n.medapp.storage.stock.StockMovementDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -25,4 +32,25 @@ object DatabaseModule {
     @Singleton
     fun medAppDatabase(@ApplicationContext context: Context): MedAppDatabase =
         Room.databaseBuilder(context, MedAppDatabase::class.java, MedAppDatabase.NAME).build()
+
+    @Provides
+    fun medKitDao(database: MedAppDatabase): MedKitDao = database.medKits()
+
+    @Provides
+    fun packageDao(database: MedAppDatabase): PackageDao = database.packages()
+
+    @Provides
+    fun courseDao(database: MedAppDatabase): CourseDao = database.courses()
+
+    @Provides
+    fun intakeDao(database: MedAppDatabase): IntakeDao = database.intakes()
+
+    @Provides
+    fun stockMovementDao(database: MedAppDatabase): StockMovementDao = database.stockMovements()
+
+    @Provides
+    fun syncOperationDao(database: MedAppDatabase): SyncOperationDao = database.syncOperations()
+
+    @Provides
+    fun notificationLogDao(database: MedAppDatabase): NotificationLogDao = database.notificationLog()
 }

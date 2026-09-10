@@ -1,0 +1,56 @@
+package com.kert0n.medapp.di
+
+import com.kert0n.medapp.storage.course.CourseRoomRepository
+import com.kert0n.medapp.storage.course.CourseStorageRepository
+import com.kert0n.medapp.storage.intake.IntakeRoomRepository
+import com.kert0n.medapp.storage.intake.IntakeStorageRepository
+import com.kert0n.medapp.storage.medkit.MedKitRoomRepository
+import com.kert0n.medapp.storage.medkit.MedKitStorageRepository
+import com.kert0n.medapp.storage.pack.PackageRoomRepository
+import com.kert0n.medapp.storage.pack.PackageStorageRepository
+import com.kert0n.medapp.storage.server.SyncOperationRoomRepository
+import com.kert0n.medapp.storage.server.SyncOperationStorageRepository
+import com.kert0n.medapp.storage.stock.StockMovementRoomRepository
+import com.kert0n.medapp.storage.stock.StockMovementStorageRepository
+import dagger.Binds
+import dagger.Module
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import javax.inject.Singleton
+
+/**
+ * Хранение выдаётся графом интерфейсом, а не реализацией: экрану нужен ответ на вопрос, а не
+ * Room. Тому же служит подмена в тестах представления, где базы нет вовсе (PLAN H1).
+ */
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class StorageModule {
+
+    @Binds
+    @Singleton
+    abstract fun medKits(implementation: MedKitRoomRepository): MedKitStorageRepository
+
+    @Binds
+    @Singleton
+    abstract fun packages(implementation: PackageRoomRepository): PackageStorageRepository
+
+    @Binds
+    @Singleton
+    abstract fun courses(implementation: CourseRoomRepository): CourseStorageRepository
+
+    @Binds
+    @Singleton
+    abstract fun intakes(implementation: IntakeRoomRepository): IntakeStorageRepository
+
+    @Binds
+    @Singleton
+    abstract fun stockMovements(
+        implementation: StockMovementRoomRepository
+    ): StockMovementStorageRepository
+
+    @Binds
+    @Singleton
+    abstract fun syncOperations(
+        implementation: SyncOperationRoomRepository
+    ): SyncOperationStorageRepository
+}

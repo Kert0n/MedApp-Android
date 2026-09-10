@@ -116,6 +116,24 @@ interface PackageDao {
     @Query("DELETE FROM claims WHERE package_id = :packageId")
     suspend fun deleteClaims(packageId: Uuid)
 
+    /**
+     * Выделения активных курсов по названным пачкам. Активность видна по назначению: черновик
+     * пачку не занимает, и его выделения в расчёт свободного не входят (PLAN D5, F1).
+     */
+    @Query(
+        """
+        SELECT s.package_id AS package_id, s.allocated_doses AS allocated_doses,
+               c.dose_amount AS dose_amount, c.unit_id AS unit_id
+        FROM course_sources s
+        JOIN active_package_assignments a
+          ON a.package_id = s.package_id AND a.course_id = s.course_id
+        JOIN courses c ON c.id = s.course_id
+        WHERE s.package_id IN (:packageIds)
+          AND c.dose_amount IS NOT NULL AND c.unit_id IS NOT NULL
+        """
+    )
+    fun observeAllocations(packageIds: List<Uuid>): Flow<List<PackageAllocationRow>>
+
     @Query("DELETE FROM packages WHERE id = :id")
     suspend fun delete(id: Uuid)
 }
