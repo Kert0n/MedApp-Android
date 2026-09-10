@@ -47,7 +47,7 @@ class CourseStorageRow(
         prescription = Prescription(
             dose = storedDose(
                 requireNotNull(course.doseAmount) { "у начатого лечения доза назначена" },
-                requireNotNull(course.unitId) { "доза измеряется единицей источников курса" }
+                requireNotNull(course.unitId) { "у начатого лечения записана единица дозы" }
             ),
             schedule = requireNotNull(schedule()) { "у начатого лечения расписание назначено" }
         ),

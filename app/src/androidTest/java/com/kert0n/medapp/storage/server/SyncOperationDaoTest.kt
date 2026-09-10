@@ -14,6 +14,7 @@ import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.network.medkit.MedKitSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncCommand
 import com.kert0n.medapp.network.server.PreparedRequest
+import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.network.server.SyncOperation
 import com.kert0n.medapp.network.server.SyncOperationStatus
 import com.kert0n.medapp.storage.database.MedAppDatabase
@@ -152,8 +153,8 @@ class SyncOperationDaoTest {
             path = "/drugs/$PACK",
             query = mapOf("mode" to "absolute"),
             body = """{"amount":"10"}""",
-            drugVersion = 7,
-            claimsVersion = 3,
+            drugVersion = ResourceVersion(7),
+            claimsVersion = ResourceVersion(3),
             quantityBefore = tablets("12"),
             mineBefore = tablets("2"),
             preparedAt = createdAt

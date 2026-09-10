@@ -2,6 +2,7 @@ package com.kert0n.medapp.storage.server
 
 import androidx.room.ColumnInfo
 import com.kert0n.medapp.network.server.PreparedRequest
+import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.storage.value.storedQuantity
 import com.kert0n.medapp.storage.value.toStorageAmount
 import java.time.Instant
@@ -34,8 +35,8 @@ class PreparedRequestStorageColumns(
         path = path,
         query = Json.decodeFromString(queryFormat, query),
         body = body,
-        drugVersion = drugVersion,
-        claimsVersion = claimsVersion,
+        drugVersion = drugVersion?.let(::ResourceVersion),
+        claimsVersion = claimsVersion?.let(::ResourceVersion),
         quantityBefore = quantityBefore?.let { storedQuantity(it, requireUnit()) },
         mineBefore = mineBefore?.let { storedQuantity(it, requireUnit()) },
         preparedAt = at
@@ -51,8 +52,8 @@ fun PreparedRequest.toStorageColumns(): PreparedRequestStorageColumns =
         path = path,
         query = Json.encodeToString(queryFormat, query),
         body = body,
-        drugVersion = drugVersion,
-        claimsVersion = claimsVersion,
+        drugVersion = drugVersion?.number,
+        claimsVersion = claimsVersion?.number,
         quantityBefore = quantityBefore?.toStorageAmount(),
         mineBefore = mineBefore?.toStorageAmount(),
         unitId = unitId,

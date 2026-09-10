@@ -15,8 +15,8 @@ data class PreparedRequest(
     val path: String,
     val query: Map<String, String> = emptyMap(),
     val body: String? = null,
-    val drugVersion: Long? = null,
-    val claimsVersion: Long? = null,
+    val drugVersion: ResourceVersion? = null,
+    val claimsVersion: ResourceVersion? = null,
     val quantityBefore: Quantity? = null,
     val mineBefore: Quantity? = null,
     val preparedAt: Instant
@@ -24,10 +24,6 @@ data class PreparedRequest(
     init {
         require(method.isNotBlank()) { "у запроса есть метод" }
         require(path.isNotBlank()) { "у запроса есть путь" }
-        require(drugVersion == null || drugVersion >= 0) { "версия пачки не бывает отрицательной" }
-        require(claimsVersion == null || claimsVersion >= 0) {
-            "версия картины броней не бывает отрицательной"
-        }
         require(
             quantityBefore == null || mineBefore == null ||
                 quantityBefore.unitId == mineBefore.unitId

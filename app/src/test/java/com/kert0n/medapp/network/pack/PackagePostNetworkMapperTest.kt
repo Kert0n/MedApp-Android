@@ -1,5 +1,6 @@
 package com.kert0n.medapp.network.pack
 
+import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
 import com.kert0n.medapp.domain.value.Quantity
 
@@ -30,7 +31,7 @@ class PackagePostNetworkMapperTest {
     private val onServer = onServer()
 
     /** Пачка уже создана на сервере: у неё есть предусловие. */
-    private val synced = PackageSyncState(packageId = PACK, version = 7)
+    private val synced = PackageSyncState(packageId = PACK, version = ResourceVersion(7))
 
     /** Пачка ещё только заводится: предусловия нет. */
     private val notSynced = PackageSyncState(packageId = PACK)

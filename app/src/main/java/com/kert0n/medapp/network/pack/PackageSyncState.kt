@@ -1,5 +1,6 @@
 package com.kert0n.medapp.network.pack
 
+import com.kert0n.medapp.network.server.ResourceVersion
 import java.time.Instant
 import kotlin.uuid.Uuid
 
@@ -19,17 +20,10 @@ import kotlin.uuid.Uuid
  */
 data class PackageSyncState(
     val packageId: Uuid,
-    val version: Long? = null,        // null — на сервере пачка ещё не создана
-    val claimsVersion: Long? = null,  // null — картина броней не читалась
+    val version: ResourceVersion? = null,        // null — на сервере пачка ещё не создана
+    val claimsVersion: ResourceVersion? = null,  // null — картина броней не читалась
     val syncedAt: Instant? = null
 ) {
-    init {
-        require(version == null || version >= 0) { "версия пачки не бывает отрицательной" }
-        require(claimsVersion == null || claimsVersion >= 0) {
-            "версия картины броней не бывает отрицательной"
-        }
-    }
-
     /** Существует ли пачка на сервере — единственный осмысленный вопрос к версии вне сети. */
     val isOnServer: Boolean get() = version != null
 }

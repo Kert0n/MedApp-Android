@@ -11,6 +11,7 @@ import com.kert0n.medapp.fixture.expiry
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.network.pack.PackageSyncState
+import com.kert0n.medapp.network.server.ResourceVersion
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
@@ -80,8 +81,8 @@ class PackageStorageMapperTest {
     fun syncStateTravelsInColumnsAndNotInTheDomainPackage() {
         val sync = PackageSyncState(
             packageId = PACK,
-            version = 7,
-            claimsVersion = 3,
+            version = ResourceVersion(7),
+            claimsVersion = ResourceVersion(3),
             syncedAt = Instant.parse("2026-09-10T12:00:00Z")
         )
         val stored = full.toStorageEntity(sync)
@@ -96,7 +97,7 @@ class PackageStorageMapperTest {
 
     @Test
     fun syncStateOfAnotherPackageIsRejected() {
-        val alien = PackageSyncState(packageId = HOME_KIT, version = 1)
+        val alien = PackageSyncState(packageId = HOME_KIT, version = ResourceVersion(1))
         val failure = runCatching { full.toStorageEntity(alien) }.exceptionOrNull()
         assertEquals(IllegalArgumentException::class, failure!!::class)
     }

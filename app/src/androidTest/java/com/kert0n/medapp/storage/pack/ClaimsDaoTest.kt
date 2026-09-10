@@ -6,6 +6,7 @@ import com.kert0n.medapp.fixture.inMemoryDatabase
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.network.pack.PackageSyncState
+import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import java.math.BigDecimal
 import java.time.Instant
@@ -64,8 +65,8 @@ class ClaimsDaoTest {
     fun claimsVersionLivesWithTheOtherPreconditions() = runTest {
         val sync = PackageSyncState(
             packageId = PACK,
-            version = 4,
-            claimsVersion = 9,
+            version = ResourceVersion(4),
+            claimsVersion = ResourceVersion(9),
             syncedAt = Instant.parse("2026-09-10T12:00:00Z")
         )
         packages.upsertServerPart(shared.toStorageEntity(sync))

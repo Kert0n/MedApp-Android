@@ -18,6 +18,7 @@ import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.network.pack.PackageSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncState
+import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.network.server.SyncOperationStatus
 import com.kert0n.medapp.storage.course.ActivePackageAssignmentStorageEntity
 import com.kert0n.medapp.storage.course.toSourceStorageEntities
@@ -167,7 +168,7 @@ class PackageRoomRepositoryTest {
 
     @Test
     fun snapshotKeepsLocalDetailsAndPreconditions() = runTest {
-        val sync = PackageSyncState(PACK, version = 5, claimsVersion = 2, syncedAt = at)
+        val sync = PackageSyncState(PACK, version = ResourceVersion(5), claimsVersion = ResourceVersion(2), syncedAt = at)
         repository.applyServerSnapshot(paracetamol.correctTo(tablets("11")), sync, at)
 
         assertEquals(tablets("11"), requireNotNull(repository.find(PACK)).quantity)

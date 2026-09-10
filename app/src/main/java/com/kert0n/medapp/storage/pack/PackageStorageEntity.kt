@@ -7,6 +7,7 @@ import androidx.room.PrimaryKey
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
 import com.kert0n.medapp.network.pack.PackageSyncState
+import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.storage.value.toStorageAmount
 import com.kert0n.medapp.storage.value.toStorageSortKey
 import java.time.Instant
@@ -60,8 +61,8 @@ class PackageStorageEntity(
 
     fun syncState(): PackageSyncState = PackageSyncState(
         packageId = id,
-        version = version,
-        claimsVersion = claimsVersion,
+        version = version?.let(::ResourceVersion),
+        claimsVersion = claimsVersion?.let(::ResourceVersion),
         syncedAt = syncedAt
     )
 }
@@ -81,8 +82,8 @@ fun Package.toStorageEntity(sync: PackageSyncState = PackageSyncState(id)): Pack
         manufacturer = facts.manufacturer,
         country = facts.country,
         description = facts.description,
-        version = sync.version,
-        claimsVersion = sync.claimsVersion,
+        version = sync.version?.number,
+        claimsVersion = sync.claimsVersion?.number,
         lifecycle = lifecycle,
         access = access,
         syncedAt = sync.syncedAt

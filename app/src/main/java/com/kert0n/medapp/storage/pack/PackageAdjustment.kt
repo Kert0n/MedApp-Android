@@ -23,6 +23,5 @@ class PackageAdjustment(
 ) {
     init {
         require(movement.packageId == pack.id) { "движение записывается по своей пачке" }
-        require(sync.packageId == pack.id) { "обвязка синхронизации принадлежит своей пачке" }
     }
 }
