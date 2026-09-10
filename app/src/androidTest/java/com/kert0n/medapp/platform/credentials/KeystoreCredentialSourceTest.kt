@@ -108,6 +108,18 @@ class KeystoreCredentialSourceTest {
         assertEquals(StoredAccount.Unreadable, source.read())
     }
 
+    /**
+     * Повреждённый файл хранилища — та же утрата: спрашивают человека, а не заводят вторую
+     * учётку поверх локальных данных.
+     */
+    @Test
+    fun damagedStoreIsUnreadableNotAbsent() = runTest {
+        file.parentFile?.mkdirs()
+        file.writeBytes(byteArrayOf(0x4D, 0x65, 0x64, 0x41, 0x70, 0x70, 0x21, 0x00, 0x7F))
+
+        assertEquals(StoredAccount.Unreadable, source.read())
+    }
+
     /** Шифротекст привязан к своему логину: подставленный рядом чужой логин его не откроет. */
     @Test
     fun ciphertextDoesNotOpenUnderAnotherLogin() = runTest {

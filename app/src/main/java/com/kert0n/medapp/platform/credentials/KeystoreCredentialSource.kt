@@ -9,6 +9,7 @@ import com.kert0n.medapp.di.IoDispatcher
 import com.kert0n.medapp.network.account.AccountCredentials
 import com.kert0n.medapp.network.account.CredentialSource
 import com.kert0n.medapp.network.account.StoredAccount
+import java.io.IOException
 import java.security.GeneralSecurityException
 import java.security.ProviderException
 import java.util.Base64
@@ -24,7 +25,9 @@ import kotlinx.coroutines.withContext
  * копии и переноса, поэтому шифротекст без своего ключа никуда не уезжает.
  *
  * Сохранённое, которое не открывается, — это [StoredAccount.Unreadable], а не отсутствие учётки:
- * сброс хранилища не должен выглядеть приглашением зарегистрироваться заново.
+ * сброс хранилища не должен выглядеть приглашением зарегистрироваться заново. Повреждённый файл
+ * DataStore попадает в тот же случай, и обработчика, который молча заменил бы его пустым, здесь
+ * нет: пустой файл — это «учётки нет», то есть приглашение завести вторую поверх локальных данных.
  */
 class KeystoreCredentialSource @Inject constructor(
     @CredentialsStore private val store: DataStore<Preferences>,
@@ -33,17 +36,19 @@ class KeystoreCredentialSource @Inject constructor(
 ) : CredentialSource {
 
     override suspend fun read(): StoredAccount = withContext(io) {
-        val saved = store.data.first()
-        val login = saved[LOGIN] ?: return@withContext StoredAccount.Absent
-        val iv = saved[KEY_IV]
-        val ciphertext = saved[KEY_CIPHERTEXT]
-        if (iv == null || ciphertext == null) return@withContext StoredAccount.Unreadable
         try {
+            val saved = store.data.first()
+            val login = saved[LOGIN] ?: return@withContext StoredAccount.Absent
+            val iv = saved[KEY_IV]
+            val ciphertext = saved[KEY_CIPHERTEXT]
+            if (iv == null || ciphertext == null) return@withContext StoredAccount.Unreadable
             val plain = key.open(
                 KeystoreKey.Sealed(decode(iv), decode(ciphertext)),
                 associated = login.encodeToByteArray()
             )
             StoredAccount.Present(AccountCredentials(Uuid.parse(login), plain.decodeToString()))
+        } catch (_: IOException) {
+            StoredAccount.Unreadable
         } catch (_: GeneralSecurityException) {
             StoredAccount.Unreadable
         } catch (_: ProviderException) {
