@@ -5,6 +5,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.kert0n.medapp.network.account.AccessTokens
 import com.kert0n.medapp.network.account.AccountCredentials
 import com.kert0n.medapp.network.account.CredentialSource
+import com.kert0n.medapp.network.account.CredentialsSaved
 import com.kert0n.medapp.network.account.StoredAccount
 import com.kert0n.medapp.network.medkit.MedKitPostNetworkDTO
 import com.kert0n.medapp.network.medkit.MembershipPostNetworkDTO
@@ -41,7 +42,7 @@ class ContractProbe {
 
     private class Fixed(private val account: AccountCredentials) : CredentialSource {
         override suspend fun read(): StoredAccount = StoredAccount.Present(account)
-        override suspend fun save(credentials: AccountCredentials) =
+        override suspend fun save(credentials: AccountCredentials): CredentialsSaved =
             error("проба учёток не заводит: они заведены один раз и лежат в local.properties")
     }
 

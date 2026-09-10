@@ -8,5 +8,6 @@ interface CredentialSource {
 
     suspend fun read(): StoredAccount
 
-    suspend fun save(credentials: AccountCredentials)
+    /** Записать выданную учётку. Исход, а не исключение: ключ выдан один раз (PLAN G2). */
+    suspend fun save(credentials: AccountCredentials): CredentialsSaved
 }

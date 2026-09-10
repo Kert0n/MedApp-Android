@@ -24,10 +24,15 @@ class AccountRegistrationTest {
 
     private val login = Uuid.parse("00000000-0000-4000-8000-000000000071")
 
-    private class Memory(var account: StoredAccount) : CredentialSource {
+    private class Memory(
+        var account: StoredAccount,
+        private val writable: Boolean = true
+    ) : CredentialSource {
         override suspend fun read(): StoredAccount = account
-        override suspend fun save(credentials: AccountCredentials) {
+        override suspend fun save(credentials: AccountCredentials): CredentialsSaved {
+            if (!writable) return CredentialsSaved.LOST
             account = StoredAccount.Present(credentials)
+            return CredentialsSaved.SAVED
         }
     }
 
@@ -91,6 +96,22 @@ class AccountRegistrationTest {
 
         assertEquals(AccountRegistration.Outcome.Failed(ApiFailure.RegistrationRefused), outcome)
         assertEquals(StoredAccount.Absent, stored.account)
+    }
+
+    /**
+     * Ключ показан один раз: не записанный, он утрачен вместе с учёткой. Повтор поверх второй
+     * учётки не заводит, хотя хранилище по-прежнему говорит «учётки нет».
+     */
+    @Test
+    fun keyThatCouldNotBeStoredIsNotRegisteredAgain() = runTest {
+        val stored = Memory(StoredAccount.Absent, writable = false)
+        val registration = registration(stored)
+
+        assertEquals(AccountRegistration.Outcome.KeyLost, registration.ensure())
+        assertEquals(AccountRegistration.Outcome.KeyLost, registration.ensure())
+
+        assertEquals(StoredAccount.Absent, stored.account)
+        assertEquals(listOf<String?>("build-token"), requests)
     }
 
     @Test

@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.test.platform.app.InstrumentationRegistry
 import com.kert0n.medapp.network.account.AccountCredentials
+import com.kert0n.medapp.network.account.CredentialsSaved
 import com.kert0n.medapp.network.account.StoredAccount
 import java.io.File
 import java.security.KeyStore
@@ -39,6 +40,7 @@ class KeystoreCredentialSourceTest {
 
     private lateinit var scope: CoroutineScope
     private lateinit var file: File
+    private lateinit var blocked: File
     private lateinit var store: DataStore<Preferences>
     private lateinit var source: KeystoreCredentialSource
 
@@ -46,6 +48,7 @@ class KeystoreCredentialSourceTest {
     fun openStore() {
         scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
         file = File(context.cacheDir, "$alias.preferences_pb")
+        blocked = File(context.cacheDir, "$alias.blocked")
         store = PreferenceDataStoreFactory.create(scope = scope) { file }
         source = KeystoreCredentialSource(store, KeystoreKey(alias), Dispatchers.IO)
     }
@@ -54,6 +57,7 @@ class KeystoreCredentialSourceTest {
     fun closeStore() {
         scope.cancel()
         file.delete()
+        blocked.delete()
         keyStore().deleteEntry(alias)
     }
 
@@ -118,6 +122,23 @@ class KeystoreCredentialSourceTest {
         file.writeBytes(byteArrayOf(0x4D, 0x65, 0x64, 0x41, 0x70, 0x70, 0x21, 0x00, 0x7F))
 
         assertEquals(StoredAccount.Unreadable, source.read())
+    }
+
+    /**
+     * Ключ, который не удалось записать, — исход, а не исключение: сервер показал его один раз,
+     * и решение принимает человек, а не молчаливый повтор регистрации.
+     */
+    @Test
+    fun keyThatCannotBeWrittenIsReportedAsLost() = runTest {
+        // Обычный файл на месте каталога: DataStore не создаст под ним свой файл.
+        blocked.writeBytes(ByteArray(0))
+        val unwritable = KeystoreCredentialSource(
+            PreferenceDataStoreFactory.create(scope = scope) { File(blocked, "credentials.preferences_pb") },
+            KeystoreKey(alias),
+            Dispatchers.IO
+        )
+
+        assertEquals(CredentialsSaved.LOST, unwritable.save(credentials))
     }
 
     /** Шифротекст привязан к своему логину: подставленный рядом чужой логин его не откроет. */

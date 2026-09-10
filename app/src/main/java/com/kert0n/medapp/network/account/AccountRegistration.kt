@@ -15,7 +15,8 @@ import kotlinx.coroutines.sync.withLock
  * перерегистрируют — это решение человека, потому что брони на старом ключе уже не снять.
  *
  * Регистрация одна на всех вызывающих: два экрана, спросившие одновременно, не заведут двух
- * учёток.
+ * учёток. Ключ, который не удалось записать, тоже не приводит ко второй: [Outcome.KeyLost]
+ * запоминается, и хранилище, снова показывающее «учётки нет», регистрацию не запускает.
  */
 @Singleton
 class AccountRegistration @Inject constructor(
@@ -33,6 +34,12 @@ class AccountRegistration @Inject constructor(
         data object Unreadable : Outcome
 
         /**
+         * Сервер учётку выдал, а записать её не удалось: ключ показан один раз, и он утрачен
+         * вместе с учёткой. Спрашивают человека — второй учётки поверх не заводят.
+         */
+        data object KeyLost : Outcome
+
+        /**
          * Сервер учётку не выдал. После [ApiFailure.OutcomeUnknown] повтор может оставить на
          * сервере лишнюю пустую учётку — данных на ней нет, и потерять нечего.
          */
@@ -41,17 +48,27 @@ class AccountRegistration @Inject constructor(
 
     private val mutex = Mutex()
 
+    /** Ключ, который не лёг на устройство. Повторная регистрация поверх него не запускается. */
+    private var keyLost = false
+
     suspend fun ensure(): Outcome = mutex.withLock {
+        if (keyLost) return@withLock Outcome.KeyLost
         when (credentials.read()) {
             is StoredAccount.Present -> Outcome.Ready
             StoredAccount.Unreadable -> Outcome.Unreadable
             StoredAccount.Absent -> when (val result = api.register(registrationToken)) {
-                is ApiResult.Success -> {
-                    credentials.save(AccountCredentials(result.value.login, result.value.key))
-                    Outcome.Ready
-                }
+                is ApiResult.Success -> keep(AccountCredentials(result.value.login, result.value.key))
                 is ApiResult.Failure -> Outcome.Failed(result.failure)
             }
         }
     }
+
+    private suspend fun keep(account: AccountCredentials): Outcome =
+        when (credentials.save(account)) {
+            CredentialsSaved.SAVED -> Outcome.Ready
+            CredentialsSaved.LOST -> {
+                keyLost = true
+                Outcome.KeyLost
+            }
+        }
 }

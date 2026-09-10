@@ -3,6 +3,7 @@ package com.kert0n.medapp.network.server
 import com.kert0n.medapp.network.account.AccessTokens
 import com.kert0n.medapp.network.account.AccountCredentials
 import com.kert0n.medapp.network.account.CredentialSource
+import com.kert0n.medapp.network.account.CredentialsSaved
 import com.kert0n.medapp.network.account.StoredAccount
 import com.kert0n.medapp.network.medkit.MedKitPostNetworkDTO
 import com.kert0n.medapp.network.medkit.MembershipPostNetworkDTO
@@ -294,7 +295,7 @@ class MedAppApiTest {
         val stored = object : CredentialSource {
             override suspend fun read(): StoredAccount =
                 StoredAccount.Present(AccountCredentials(kit, "k"))
-            override suspend fun save(credentials: AccountCredentials) = Unit
+            override suspend fun save(credentials: AccountCredentials) = CredentialsSaved.SAVED
         }
         val result = api(tokens = AccessTokens(stored)) { line ->
             if (line == "POST /v1/auth/token") HttpStatusCode.ServiceUnavailable to "" else routes[line]

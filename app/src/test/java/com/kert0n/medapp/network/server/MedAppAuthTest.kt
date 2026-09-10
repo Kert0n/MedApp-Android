@@ -4,6 +4,7 @@ import com.kert0n.medapp.network.account.AccessTokenUnavailable
 import com.kert0n.medapp.network.account.AccessTokens
 import com.kert0n.medapp.network.account.AccountCredentials
 import com.kert0n.medapp.network.account.CredentialSource
+import com.kert0n.medapp.network.account.CredentialsSaved
 import com.kert0n.medapp.network.account.StoredAccount
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandleScope
@@ -39,8 +40,9 @@ class MedAppAuthTest {
 
     private class Stored(var account: StoredAccount) : CredentialSource {
         override suspend fun read(): StoredAccount = account
-        override suspend fun save(credentials: AccountCredentials) {
+        override suspend fun save(credentials: AccountCredentials): CredentialsSaved {
             account = StoredAccount.Present(credentials)
+            return CredentialsSaved.SAVED
         }
     }
 

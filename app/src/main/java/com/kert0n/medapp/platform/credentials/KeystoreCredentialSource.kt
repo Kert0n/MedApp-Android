@@ -8,6 +8,7 @@ import com.kert0n.medapp.di.CredentialsStore
 import com.kert0n.medapp.di.IoDispatcher
 import com.kert0n.medapp.network.account.AccountCredentials
 import com.kert0n.medapp.network.account.CredentialSource
+import com.kert0n.medapp.network.account.CredentialsSaved
 import com.kert0n.medapp.network.account.StoredAccount
 import java.io.IOException
 import java.security.GeneralSecurityException
@@ -58,13 +59,22 @@ class KeystoreCredentialSource @Inject constructor(
         }
     }
 
-    override suspend fun save(credentials: AccountCredentials): Unit = withContext(io) {
+    override suspend fun save(credentials: AccountCredentials): CredentialsSaved = withContext(io) {
         val login = credentials.login.toString()
-        val sealed = key.seal(credentials.key.encodeToByteArray(), associated = login.encodeToByteArray())
-        store.edit {
-            it[LOGIN] = login
-            it[KEY_IV] = encode(sealed.iv)
-            it[KEY_CIPHERTEXT] = encode(sealed.ciphertext)
+        try {
+            val sealed = key.seal(credentials.key.encodeToByteArray(), associated = login.encodeToByteArray())
+            store.edit {
+                it[LOGIN] = login
+                it[KEY_IV] = encode(sealed.iv)
+                it[KEY_CIPHERTEXT] = encode(sealed.ciphertext)
+            }
+            CredentialsSaved.SAVED
+        } catch (_: IOException) {
+            CredentialsSaved.LOST
+        } catch (_: GeneralSecurityException) {
+            CredentialsSaved.LOST
+        } catch (_: ProviderException) {
+            CredentialsSaved.LOST
         }
     }
 
