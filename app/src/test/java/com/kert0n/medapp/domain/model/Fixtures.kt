@@ -22,9 +22,10 @@ val SHARED_KIT: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000012")
 val PACK: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000021")
 
 /**
- * Пачка в любом сохранённом состоянии: тест называет только то, что проверяет, и не тонет в
- * двадцати аргументах. Идёт через [Package.restore], потому что тестам нужны и архивные пачки,
- * и пачки с версией — то, чего [Package.create] по построению не даёт.
+ * Пачка: тест называет только то, что проверяет, и не тонет в двадцати аргументах.
+ *
+ * Описательные поля принимаются россыпью и собираются в [PackageFacts] здесь — так тесту не
+ * приходится знать, из чего состоит пачка, чтобы поменять в ней одно название.
  */
 fun pack(
     id: Uuid = PACK,
@@ -43,49 +44,36 @@ fun pack(
     purchasedOn: LocalDate? = null,
     openedOn: LocalDate? = null,
     templateId: Uuid? = null,
-    version: Long? = null,
     claims: Claims? = null,
-    status: PackageStatus = PackageStatus.ACTIVE,
-    syncedAt: Instant? = null
-) = Package.restore(
+    lifecycle: PackageLifecycle = PackageLifecycle.ACTIVE,
+    access: PackageAccess = PackageAccess.AVAILABLE
+) = Package(
     id = id,
     medKitId = medKitId,
-    name = name,
+    facts = PackageFacts(
+        name = name,
+        formId = formId,
+        category = category,
+        manufacturer = manufacturer,
+        country = country,
+        description = description,
+        expiresOn = expiresOn,
+        defaultIntakeAmount = defaultIntakeAmount,
+        note = note,
+        price = price,
+        purchasedOn = purchasedOn,
+        openedOn = openedOn
+    ),
     quantity = quantity,
-    formId = formId,
-    category = category,
-    manufacturer = manufacturer,
-    country = country,
-    description = description,
-    expiresOn = expiresOn,
-    defaultIntakeAmount = defaultIntakeAmount,
-    note = note,
-    price = price,
-    purchasedOn = purchasedOn,
-    openedOn = openedOn,
     addedAt = Instant.EPOCH,
     templateId = templateId,
-    version = version,
     claims = claims,
-    status = status,
-    syncedAt = syncedAt
+    lifecycle = lifecycle,
+    access = access
 )
 
 val TABLET_FORM: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000041")
 val CAPSULE_FORM: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000042")
 
-/** Форма, загруженная из пачки: круговой тест начинается с того, что уже сохранено. */
-fun factsOf(pkg: Package) = PackageFacts(
-    name = pkg.name,
-    formId = pkg.formId,
-    category = pkg.category,
-    manufacturer = pkg.manufacturer,
-    country = pkg.country,
-    description = pkg.description,
-    expiresOn = pkg.expiresOn,
-    defaultIntakeAmount = pkg.defaultIntakeAmount,
-    note = pkg.note,
-    price = pkg.price,
-    purchasedOn = pkg.purchasedOn,
-    openedOn = pkg.openedOn
-)
+/** Сведения, взятые у пачки: круговой тест начинается с того, что уже сохранено. */
+fun factsOf(pkg: Package): PackageFacts = pkg.facts

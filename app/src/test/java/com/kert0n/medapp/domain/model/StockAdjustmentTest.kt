@@ -8,8 +8,8 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * Движение остатка собирается фабрикой своего вида, поэтому знак и аптечки не проверяются, а
- * получаются. Тесты проверяют именно это: неверное движение не отвергается, а не записывается.
+ * Вид движения — это тип, поэтому знак и аптечки не проверяются, а получаются. Тесты проверяют
+ * именно это: неверное движение не отвергается, а не выражается.
  */
 class StockAdjustmentTest {
 
@@ -18,33 +18,31 @@ class StockAdjustmentTest {
 
     @Test
     fun arrivalAndConsumptionDifferBySignWithoutTheCallerChoosingIt() {
-        val added = StockAdjustment.initial(id, PACK, tablets("20"), HOME_KIT, moment, moment)
-        val thrownOut = StockAdjustment.disposal(id, PACK, tablets("2"), HOME_KIT, moment, moment)
+        val added = StockAdjustment.Initial(id, PACK, tablets("20"), HOME_KIT, moment, moment)
+        val thrownOut = StockAdjustment.Disposal(id, PACK, tablets("2"), HOME_KIT, moment, moment)
         assertEquals(BigDecimal("20"), added.delta)
         assertEquals(BigDecimal("-2"), thrownOut.delta)
     }
 
     @Test
     fun unitComesFromTheAmountAndCannotContradictIt() {
-        val added = StockAdjustment.initial(id, PACK, millilitres("100"), HOME_KIT, moment, moment)
+        val added = StockAdjustment.Initial(id, PACK, millilitres("100"), HOME_KIT, moment, moment)
         assertEquals(MILLILITRES, added.unitId)
     }
 
     @Test
     fun transferOutHappensInTheSourceKit() {
-        val moved = StockAdjustment.transferOut(
+        val moved = StockAdjustment.TransferOut(
             id, PACK, tablets("20"), from = HOME_KIT, to = SHARED_KIT,
             occurredAt = moment, observedAt = moment
         )
         assertEquals(HOME_KIT, moved.medKitId)
-        assertEquals(HOME_KIT, moved.fromMedKitId)
-        assertEquals(SHARED_KIT, moved.toMedKitId)
         assertEquals(BigDecimal("-20"), moved.delta)
     }
 
     @Test
     fun transferInHappensInTheDestinationKit() {
-        val arrived = StockAdjustment.transferIn(
+        val arrived = StockAdjustment.TransferIn(
             id, PACK, tablets("20"), from = HOME_KIT, to = SHARED_KIT,
             occurredAt = moment, observedAt = moment
         )
@@ -55,7 +53,7 @@ class StockAdjustmentTest {
     @Test(expected = IllegalArgumentException::class)
     fun transferIntoTheSameKitIsRejected() {
         // Остаток от такого переноса не меняется, а в истории он выглядел бы событием.
-        StockAdjustment.transferOut(
+        StockAdjustment.TransferOut(
             id, PACK, tablets("20"), from = HOME_KIT, to = HOME_KIT,
             occurredAt = moment, observedAt = moment
         )
@@ -63,11 +61,11 @@ class StockAdjustmentTest {
 
     @Test
     fun recountTakesBothAmountsAndWorksOutTheSign() {
-        val found = StockAdjustment.correction(
+        val found = StockAdjustment.Correction(
             id, PACK, from = tablets("3"), to = tablets("12"),
             medKitId = HOME_KIT, occurredAt = moment, observedAt = moment
         )
-        val lost = StockAdjustment.correction(
+        val lost = StockAdjustment.Correction(
             id, PACK, from = tablets("12"), to = tablets("3"),
             medKitId = HOME_KIT, occurredAt = moment, observedAt = moment
         )
@@ -77,7 +75,7 @@ class StockAdjustmentTest {
 
     @Test(expected = IllegalArgumentException::class)
     fun recountAcrossUnitsIsRejected() {
-        StockAdjustment.correction(
+        StockAdjustment.Correction(
             id, PACK, from = tablets("3"), to = millilitres("3"),
             medKitId = HOME_KIT, occurredAt = moment, observedAt = moment
         )
@@ -85,10 +83,10 @@ class StockAdjustmentTest {
 
     @Test
     fun remoteChangeIsSignedAndItsMomentMayBeUnknown() {
-        val up = StockAdjustment.remoteChange(
+        val up = StockAdjustment.RemoteChange(
             id, PACK, BigDecimal("3"), TABLETS, HOME_KIT, observedAt = moment
         )
-        val down = StockAdjustment.remoteChange(
+        val down = StockAdjustment.RemoteChange(
             id, PACK, BigDecimal("-3"), TABLETS, HOME_KIT, observedAt = moment
         )
         assertEquals(BigDecimal("3"), up.delta)
@@ -99,21 +97,29 @@ class StockAdjustmentTest {
     @Test
     fun accessLossTakesTheWholeRemainderOut() {
         val lost =
-            StockAdjustment.accessLost(id, PACK, tablets("7"), SHARED_KIT, observedAt = moment)
+            StockAdjustment.AccessLost(id, PACK, tablets("7"), SHARED_KIT, observedAt = moment)
         assertEquals(BigDecimal("-7"), lost.delta)
         assertNull(lost.occurredAt)
     }
 
+    @Test
+    fun momentOfOurOwnActionIsRequiredByTheTypeItself() {
+        // У Disposal occurredAt не Instant?, а Instant: «своё изменение без момента» не собрать,
+        // и проверять это в init больше не нужно.
+        val ours = StockAdjustment.Disposal(id, PACK, tablets("1"), HOME_KIT, moment, moment)
+        assertEquals(moment, ours.occurredAt)
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun sevenFractionDigitsAreRejected() {
-        StockAdjustment.remoteChange(
+        StockAdjustment.RemoteChange(
             id, PACK, BigDecimal("-0.0000001"), TABLETS, HOME_KIT, observedAt = moment
         )
     }
 
     @Test(expected = IllegalArgumentException::class)
     fun overlongNoteIsRejected() {
-        StockAdjustment.disposal(
+        StockAdjustment.Disposal(
             id, PACK, tablets("1"), HOME_KIT, moment, moment,
             note = "я".repeat(ADJUSTMENT_NOTE_MAX_LENGTH + 1)
         )

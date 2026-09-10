@@ -4,30 +4,14 @@ import java.time.Instant
 import kotlin.uuid.Uuid
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Упаковка и аптечка — сущности: тождество переживает изменение полей, а собрать их можно только
- * названным путём. Здесь проверяется именно это, а не отдельные переходы (PLAN D2, D3).
+ * Упаковка и аптечка — сущности: тождество переживает изменение полей, а конструктор проверяет
+ * то, что верно про них всегда (PLAN D2, D3).
  */
 class PackageIdentityTest {
-
-    private val facts = PackageFacts(
-        name = "Парацетамол",
-        formId = TABLET_FORM,
-        category = null,
-        manufacturer = null,
-        country = null,
-        description = null,
-        expiresOn = null,
-        defaultIntakeAmount = null,
-        note = null,
-        price = null,
-        purchasedOn = null,
-        openedOn = null
-    )
 
     @Test
     fun packWithLessLeftIsTheSamePack() {
@@ -45,69 +29,46 @@ class PackageIdentityTest {
     }
 
     @Test
-    fun newPackIsActiveAndKnowsNothingAboutTheServer() {
-        val created = Package.create(
+    fun packIsBuiltByItsOwnConstructor() {
+        // Фабрики нет: когда пачку позволено завести — правило сценария добавления, а не модели.
+        val built = Package(
             id = PACK,
             medKitId = HOME_KIT,
+            facts = PackageFacts(name = "Парацетамол", formId = TABLET_FORM),
             quantity = tablets("20"),
-            facts = facts,
             addedAt = Instant.EPOCH
         )
-        assertEquals(PackageStatus.ACTIVE, created.status)
-        assertNull(created.version)
-        assertNull(created.claims)
-        assertNull(created.syncedAt)
-        assertEquals("Парацетамол", created.name)
-        assertEquals(TABLET_FORM, created.formId)
+        assertEquals(PackageLifecycle.ACTIVE, built.lifecycle)
+        assertEquals(PackageAccess.AVAILABLE, built.access)
+        assertEquals("Парацетамол", built.name)
+        assertEquals(TABLET_FORM, built.facts.formId)
     }
 
     @Test(expected = IllegalArgumentException::class)
-    fun emptyPackCannotBeCreated() {
-        // Заводить нечего, и начальный остаток на проводе строго положителен (PLAN B2).
-        Package.create(
-            id = PACK,
-            medKitId = HOME_KIT,
-            quantity = Quantity.zero(TABLETS),
-            facts = facts,
-            addedAt = Instant.EPOCH
-        )
+    fun activePackIsNeverEmpty() {
+        // Инвариант, верный всегда: и при заведении, и при чтении сохранённого состояния.
+        pack(quantity = Quantity.zero(TABLETS), lifecycle = PackageLifecycle.ACTIVE)
     }
 
     @Test
-    fun archivedPackWithNothingLeftCanBeRestored() {
-        // Восстановление не решает, а возвращает решённое: такая пачка в базе законна.
-        val restored = pack(quantity = Quantity.zero(TABLETS), status = PackageStatus.ARCHIVED)
-        assertTrue(restored.quantity.isZero)
-        assertEquals(PackageStatus.ARCHIVED, restored.status)
-    }
-
-    @Test(expected = IllegalArgumentException::class)
-    fun restoringDoesNotBypassTheActiveStockInvariant() {
-        pack(quantity = Quantity.zero(TABLETS), status = PackageStatus.ACTIVE)
-    }
-
-    @Test
-    fun inaccessiblePackWithNothingLeftCanBeRestored() {
-        val restored = pack(quantity = Quantity.zero(TABLETS), status = PackageStatus.INACCESSIBLE)
-        assertTrue(restored.quantity.isZero)
-        assertEquals(PackageStatus.INACCESSIBLE, restored.status)
+    fun archivedPackWithNothingLeftIsLegitimate() {
+        val archived =
+            pack(quantity = Quantity.zero(TABLETS), lifecycle = PackageLifecycle.ARCHIVED)
+        assertTrue(archived.quantity.isZero)
+        assertEquals(PackageLifecycle.ARCHIVED, archived.lifecycle)
     }
 
     @Test
     fun renamedKitIsTheSameKit() {
-        val created = MedKit.create(HOME_KIT, "Домашняя", null, Instant.EPOCH)
-        val renamed = created.describe(name = "Дачная", location = "верхняя полка")
-        assertEquals(created, renamed)
-        assertEquals(created.hashCode(), renamed.hashCode())
-        assertEquals("Дачная", renamed.name)
-        assertEquals("верхняя полка", renamed.location)
+        val created = MedKit(HOME_KIT, "Домашняя", null, KitPublication.LOCAL, 1, Instant.EPOCH)
+        assertEquals(created, created.describe("Дачная", "верхняя полка"))
+        assertEquals(created.hashCode(), created.describe("Дачная", null).hashCode())
     }
 
     @Test
-    fun newKitIsLocalWithASingleParticipant() {
-        val created = MedKit.create(HOME_KIT, "Домашняя", null, Instant.EPOCH)
-        assertEquals(KitPublication.LOCAL, created.publication)
-        assertEquals(1L, created.participantCount)
-        assertNull(created.syncedAt)
+    fun descriptiveFactsCarryTheirOwnInvariantsOnce() {
+        // Границы длин объявлены в PackageFacts, и Package их не переобъявляет.
+        val tooLong = runCatching { PackageFacts(name = "я".repeat(PACKAGE_NAME_MAX_LENGTH + 1)) }
+        assertTrue(tooLong.isFailure)
     }
 }

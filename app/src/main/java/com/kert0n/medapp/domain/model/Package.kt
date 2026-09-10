@@ -11,101 +11,76 @@ const val PACKAGE_COUNTRY_MAX_LENGTH = 100
 const val PACKAGE_DESCRIPTION_MAX_LENGTH = 4000
 const val PACKAGE_NOTE_MAX_LENGTH = 200
 
-enum class PackageStatus {
+/**
+ * Жива ли пачка как вещь.
+ *
+ * Отдельно от [PackageAccess], потому что это разные вопросы: пачку можно выбросить, а потом выйти
+ * из общей аптечки — случится и то, и другое, и оба факта нужны истории. Пока они делили одно поле,
+ * приходилось запрещать переход «архивная теряет доступ», хотя физически он бывает.
+ */
+enum class PackageLifecycle {
     ACTIVE,
-    ARCHIVED,       // израсходована, утилизирована или удалена человеком
-    INACCESSIBLE    // была общей, доступ утрачен: вышли из аптечки, унесли, удалили
+    ARCHIVED    // израсходована, утилизирована или удалена человеком
+}
+
+/**
+ * Видим ли мы пачку на сервере.
+ *
+ * Это не состояние пачки, а состояние **нашего доступа** к ней: сама пачка цела и лежит в чужой
+ * аптечке, из которой мы вышли, которую унесли или удалили. Два устройства о ней законно
+ * расходятся, и потому это своя ось.
+ */
+enum class PackageAccess {
+    AVAILABLE,
+    LOST
 }
 
 /**
  * Упаковка — конкретная пачка или флакон, а не «лекарство вообще». Одинаковые названия не
  * объединяют пачки: покупка другой пачки не пополняет старую (PLAN C0).
  *
- * [quantity] — **подтверждённый** остаток, последний согласованный с сервером или записанный
- * локальной командой (PLAN E1). Это не «сколько сейчас видно на экране»: проекция незакрытых
- * намерений очереди считается отдельно и здесь не хранится, иначе она разъехалась бы с очередью.
+ * **Сущность:** пачка, из которой приняли таблетку, — та же самая пачка. Тождество — [id],
+ * равенство по нему, и `data class` здесь был бы неверен: он утверждает, что смена поля даёт
+ * другой объект. Состояние меняют только переходы ниже; конструктор публичный и проверяет всё,
+ * что верно про пачку всегда, а когда её позволено завести, решает сценарий добавления, а не
+ * модель.
  *
- * Часть полей знает сервер, часть — только устройство (PLAN C0). Граница проведена в
- * `PackagePostNetworkDTO`: локальные поля не уезжают физически, а не по договорённости.
+ * [quantity] — **подтверждённый** остаток (PLAN E1), не «сколько видно на экране»: проекция
+ * незакрытых намерений очереди считается отдельно и здесь не хранится.
  *
- * **Это сущность, а не величина.** Пачка, из которой приняли таблетку, — та же самая пачка;
- * содержимое уменьшается, её переносят, она кончается, и ни одно из этих событий не делает её
- * другой пачкой. Поэтому тождество — это [id], равенство идёт по нему, и `data class` здесь был
- * бы неверен: он утверждает, что смена поля даёт другой объект.
- *
- * Из этого же следует отсутствие `copy()`. Состояние меняют только переходы ниже, а собрать
- * пачку можно двумя названными путями: [create] заводит новую, [restore] восстанавливает
- * сохранённую. Иначе правило «пересчёт не оживляет архив» соблюдалось бы по дисциплине
- * вызывающего кода, а не сущностью.
+ * **Обвязки синхронизации здесь нет.** Версия предусловия, версия картины броней и момент
+ * последней сверки нужны только хранению и сети; домен их не толкует, и правила о них не
+ * формулируются. Они живут в `PackageSyncState` слоя данных (PLAN B3, E1).
  */
-class Package private constructor(
+class Package(
     val id: Uuid,                 // придуман клиентом; он же серверный
     val medKitId: Uuid,
-
-    // ——— знает сервер ———
-    val name: String,
+    val facts: PackageFacts,
     val quantity: Quantity,
-    val formId: Uuid?,
-    val category: String?,
-    val manufacturer: String?,
-    val country: String?,
-    val description: String?,
-
-    // ——— знает только устройство ———
-    val expiresOn: LocalDate?,
-    val defaultIntakeAmount: Quantity?, // личная подсказка для внепланового приёма, не доза курса
-    val note: String?,
-    val price: Money?,                  // цена всей пачки
-    val purchasedOn: LocalDate?,
-    val openedOn: LocalDate?,
-    val addedAt: Instant,               // для чужой пачки — момент ПЕРВОГО НАБЛЮДЕНИЯ
-    val templateId: Uuid?,              // из какой карточки справочника заполнено
-
-    val version: Long?,                 // null, пока на сервере не создана
-    val claims: Claims?,                // null у неопубликованной аптечки
-    val status: PackageStatus,
-    val syncedAt: Instant?
+    val addedAt: Instant,         // для чужой пачки — момент ПЕРВОГО НАБЛЮДЕНИЯ
+    val templateId: Uuid? = null, // из какой карточки справочника заполнено
+    val claims: Claims? = null,   // null у неопубликованной аптечки
+    val lifecycle: PackageLifecycle = PackageLifecycle.ACTIVE,
+    val access: PackageAccess = PackageAccess.AVAILABLE
 ) {
 
     init {
-        requireText(name, PACKAGE_NAME_MAX_LENGTH, "Package.name")
-        requireOptionalText(category, PACKAGE_CATEGORY_MAX_LENGTH, "Package.category")
-        requireOptionalText(manufacturer, PACKAGE_MANUFACTURER_MAX_LENGTH, "Package.manufacturer")
-        requireOptionalText(country, PACKAGE_COUNTRY_MAX_LENGTH, "Package.country")
-        requireOptionalText(description, PACKAGE_DESCRIPTION_MAX_LENGTH, "Package.description")
-        requireOptionalText(note, PACKAGE_NOTE_MAX_LENGTH, "Package.note")
-        require(version == null || version >= 0) { "версия пачки не бывает отрицательной" }
-        require(status != PackageStatus.ACTIVE || !quantity.isZero) {
+        require(lifecycle != PackageLifecycle.ACTIVE || !quantity.isZero) {
             "активная пачка не бывает пустой"
         }
         // Подсказка — это «сколько я обычно принимаю из ЭТОЙ пачки»: величина в чужой единице
         // не подставится в форму приёма и молча притворилась бы подходящей.
-        require(defaultIntakeAmount == null || defaultIntakeAmount.unitId == quantity.unitId) {
+        val hint = facts.defaultIntakeAmount
+        require(hint == null || hint.unitId == quantity.unitId) {
             "доза-подсказка измеряется той же единицей, что остаток пачки"
         }
     }
 
-    /**
-     * Дата передаётся, а не берётся из часов: иначе свойство непроверяемо тестом.
-     *
-     * Сравнение именно `isBefore`: дата включительная, пачка «годна до 31 марта» просрочена
-     * только 1 апреля. Правило записано здесь, чтобы знак не «поправили» при рефакторинге.
-     */
-    fun isExpiredOn(date: LocalDate): Boolean = expiresOn?.isBefore(date) == true
+    val name: String get() = facts.name
 
-    /**
-     * Истекает ли срок в ближайшие [days] дней, считая [date] включительно.
-     *
-     * Именно «не позже чем через N дней», а не «ровно за N дней»: пороги 3 и 1 день (PLAN D8)
-     * проверяются фоновой задачей, а она может задержаться и перепрыгнуть точную дату. Уже
-     * просроченная пачка не «истекает скоро» — у неё другое состояние и другое сообщение.
-     */
-    fun expiresWithin(date: LocalDate, days: Long): Boolean {
-        require(days >= 0) { "окно предупреждения не бывает отрицательным" }
-        val expires = expiresOn ?: return false
-        if (expires.isBefore(date)) return false
-        return !expires.isAfter(date.plusDays(days))
-    }
+    fun isExpiredOn(date: LocalDate): Boolean = facts.isExpiredOn(date)
+
+    fun expiresWithin(date: LocalDate, days: Long): Boolean = facts.expiresWithin(date, days)
 
     /**
      * Расход: приём, плановый или разовый.
@@ -115,7 +90,7 @@ class Package private constructor(
      * и приёмы с движениями продолжают читаться по ней (PLAN D3).
      */
     fun consume(amount: Quantity): Package {
-        requireActive("расход")
+        requireUsable("расход")
         require(!amount.isZero) { "расход нулевого количества не является приёмом" }
         return withQuantity(quantity - amount)
     }
@@ -128,93 +103,76 @@ class Package private constructor(
      * без автоматической конверсии (PLAN D3), а не побочный эффект исправления числа.
      */
     fun correctTo(actual: Quantity): Package {
-        requireActive("пересчёт")
+        requireUsable("пересчёт")
         require(actual.unitId == quantity.unitId) {
             "пересчёт не меняет единицу: это отдельный сценарий"
         }
         return withQuantity(actual)
     }
 
-    /** Принимает сведения целиком — и серверные поля, и локальные (PLAN D3). */
+    /** Заменяет описательные сведения целиком — и серверные поля, и локальные (PLAN D3). */
     fun describe(facts: PackageFacts): Package {
-        requireActive("правка описания")
-        return changed(
-            name = facts.name,
-            formId = facts.formId,
-            category = facts.category,
-            manufacturer = facts.manufacturer,
-            country = facts.country,
-            description = facts.description,
-            expiresOn = facts.expiresOn,
-            defaultIntakeAmount = facts.defaultIntakeAmount,
-            note = facts.note,
-            price = facts.price,
-            purchasedOn = facts.purchasedOn,
-            openedOn = facts.openedOn
-        )
+        requireUsable("правка описания")
+        return changed(facts = facts)
     }
 
     /**
      * Перенос в другую аптечку.
      *
-     * Меняется только принадлежность. Что делать с серверной версией и бронями при переносе
-     * через границу публикации, решает сценарий переноса (PLAN E6): домен не знает, опубликована
-     * ли целевая аптечка, и притворяться, что знает, здесь нельзя.
+     * Меняется только принадлежность. Что делать с предусловием и бронями при переносе через
+     * границу публикации, решает сценарий переноса (PLAN E6): домен не знает, опубликована ли
+     * целевая аптечка, и притворяться, что знает, здесь нельзя.
      */
     fun moveTo(medKitId: Uuid): Package {
-        requireActive("перенос")
+        requireUsable("перенос")
         require(medKitId != this.medKitId) { "пачка уже лежит в этой аптечке" }
         return changed(medKitId = medKitId)
     }
 
     /**
-     * Утилизация или удаление человеком.
+     * Утилизация или удаление человеком. Идемпотентно: повторное нажатие не ошибка.
      *
-     * Идемпотентно: повторное нажатие не должно превращаться в ошибку. Из [INACCESSIBLE]
-     * [PackageStatus.INACCESSIBLE] тоже разрешено — так человек убирает из списка пачку,
-     * доступ к которой потерян.
+     * Доступ при этом не трогается: человек вправе убрать из списка и ту пачку, до которой мы
+     * больше не достаём, и потерять доступ к уже выброшенной — оба факта остаются записанными.
      */
     fun archive(): Package =
-        if (status == PackageStatus.ARCHIVED) this else changed(status = PackageStatus.ARCHIVED)
+        if (lifecycle == PackageLifecycle.ARCHIVED) this
+        else changed(lifecycle = PackageLifecycle.ARCHIVED)
 
     /**
-     * Доступ утрачен: вышли из аптечки, унесли её или удалили.
+     * Доступ утрачен: вышли из аптечки, унесли её или удалили. Идемпотентно.
      *
      * Брони снимаются: сервер снимает их каскадом по участию (PLAN D5), и держать их снимок
-     * значило бы показывать чужие брони на пачке, которой у нас больше нет. [version]
-     * сохраняется как последнее наблюдённое, но предусловием больше не служит — связанные
-     * операции очереди снимает сценарий синхронизации.
-     *
-     * Из [ARCHIVED][PackageStatus.ARCHIVED] переход запрещён: он ничего не добавляет к истории,
-     * а пачку из неё спрятал бы.
+     * значило бы показывать чужие брони на пачке, которой у нас больше нет. Жизненный цикл не
+     * трогается — выбросить пачку и потерять к ней доступ можно в любом порядке.
      */
-    fun loseAccess(): Package {
-        if (status == PackageStatus.INACCESSIBLE) return this
-        check(status != PackageStatus.ARCHIVED) {
-            "архивная пачка доступ не теряет: её история уже закрыта"
-        }
-        return changed(status = PackageStatus.INACCESSIBLE, claims = null)
-    }
+    fun loseAccess(): Package =
+        if (access == PackageAccess.LOST) this
+        else changed(access = PackageAccess.LOST, claims = null)
 
     private fun withQuantity(left: Quantity): Package = changed(
         quantity = left,
-        status = if (left.isZero) PackageStatus.ARCHIVED else status
+        lifecycle = if (left.isZero) PackageLifecycle.ARCHIVED else lifecycle
     )
 
     /**
-     * Пересчёт не оживляет архив, а описание недоступной пачки не правится.
+     * Пересчёт не оживляет архив, а недоступную пачку не правят.
      *
-     * `ARCHIVED` означает «израсходована, утилизирована или удалена человеком»; отменять
-     * осознанное удаление новым числом нельзя. Возврат из архива, если он понадобится, будет
-     * отдельным явным действием со своим экраном подтверждения.
+     * `ARCHIVED` означает «израсходована, утилизирована или удалена человеком»: отменять
+     * осознанное удаление новым числом нельзя. Возврат из архива, если понадобится, будет
+     * отдельным явным действием со своим подтверждением, а не следствием пересчёта.
      */
-    private fun requireActive(action: String) {
-        check(status == PackageStatus.ACTIVE) { "$action недоступен для пачки в состоянии $status" }
+    private fun requireUsable(action: String) {
+        check(lifecycle == PackageLifecycle.ACTIVE) {
+            "$action недоступен для пачки в состоянии $lifecycle"
+        }
+        check(access == PackageAccess.AVAILABLE) {
+            "$action недоступен: доступ к пачке утрачен"
+        }
     }
 
     /**
-     * Единственный способ получить изменённый экземпляр, и он приватный: снаружи состояние меняют
-     * только переходы выше.
+     * Единственный способ получить изменённый экземпляр, и он приватный.
      *
      * [id] и [addedAt] в списке отсутствуют — тождество и момент появления пачки не меняются
      * никогда. Значения по умолчанию берутся из текущего состояния, поэтому явный `claims = null`
@@ -222,46 +180,22 @@ class Package private constructor(
      */
     private fun changed(
         medKitId: Uuid = this.medKitId,
-        name: String = this.name,
+        facts: PackageFacts = this.facts,
         quantity: Quantity = this.quantity,
-        formId: Uuid? = this.formId,
-        category: String? = this.category,
-        manufacturer: String? = this.manufacturer,
-        country: String? = this.country,
-        description: String? = this.description,
-        expiresOn: LocalDate? = this.expiresOn,
-        defaultIntakeAmount: Quantity? = this.defaultIntakeAmount,
-        note: String? = this.note,
-        price: Money? = this.price,
-        purchasedOn: LocalDate? = this.purchasedOn,
-        openedOn: LocalDate? = this.openedOn,
         templateId: Uuid? = this.templateId,
-        version: Long? = this.version,
         claims: Claims? = this.claims,
-        status: PackageStatus = this.status,
-        syncedAt: Instant? = this.syncedAt
+        lifecycle: PackageLifecycle = this.lifecycle,
+        access: PackageAccess = this.access
     ): Package = Package(
         id = id,
         medKitId = medKitId,
-        name = name,
+        facts = facts,
         quantity = quantity,
-        formId = formId,
-        category = category,
-        manufacturer = manufacturer,
-        country = country,
-        description = description,
-        expiresOn = expiresOn,
-        defaultIntakeAmount = defaultIntakeAmount,
-        note = note,
-        price = price,
-        purchasedOn = purchasedOn,
-        openedOn = openedOn,
         addedAt = addedAt,
         templateId = templateId,
-        version = version,
         claims = claims,
-        status = status,
-        syncedAt = syncedAt
+        lifecycle = lifecycle,
+        access = access
     )
 
     /** Тождество — [id]. Пачка, из которой приняли таблетку, та же самая пачка. */
@@ -270,103 +204,6 @@ class Package private constructor(
 
     override fun hashCode(): Int = id.hashCode()
 
-    override fun toString(): String = "Package(id=$id, name=$name, status=$status)"
-
-    companion object {
-
-        /**
-         * Заведение новой пачки: её ещё не было ни на сервере, ни в базе.
-         *
-         * Пустой она быть не может — заводить нечего, и начальный остаток на проводе строго
-         * положителен (PLAN B2). Версии и броней у неё нет по построению, а не по забывчивости
-         * вызывающего: пачка появится на сервере отдельной операцией.
-         */
-        fun create(
-            id: Uuid,
-            medKitId: Uuid,
-            quantity: Quantity,
-            facts: PackageFacts,
-            addedAt: Instant,
-            templateId: Uuid? = null
-        ): Package {
-            require(!quantity.isZero) { "новая пачка не бывает пустой" }
-            return Package(
-                id = id,
-                medKitId = medKitId,
-                name = facts.name,
-                quantity = quantity,
-                formId = facts.formId,
-                category = facts.category,
-                manufacturer = facts.manufacturer,
-                country = facts.country,
-                description = facts.description,
-                expiresOn = facts.expiresOn,
-                defaultIntakeAmount = facts.defaultIntakeAmount,
-                note = facts.note,
-                price = facts.price,
-                purchasedOn = facts.purchasedOn,
-                openedOn = facts.openedOn,
-                addedAt = addedAt,
-                templateId = templateId,
-                version = null,
-                claims = null,
-                status = PackageStatus.ACTIVE,
-                syncedAt = null
-            )
-        }
-
-        /**
-         * Восстановление сохранённого состояния: строка базы или снимок сервера.
-         *
-         * Принимает любое допустимое состояние, включая архивную пачку с нулевым остатком, —
-         * и именно поэтому назван отдельно от [create]. Это не бизнес-переход: он ничего не
-         * решает, а только возвращает то, что уже было решено раньше.
-         */
-        @Suppress("LongParameterList")
-        fun restore(
-            id: Uuid,
-            medKitId: Uuid,
-            name: String,
-            quantity: Quantity,
-            formId: Uuid?,
-            category: String?,
-            manufacturer: String?,
-            country: String?,
-            description: String?,
-            expiresOn: LocalDate?,
-            defaultIntakeAmount: Quantity?,
-            note: String?,
-            price: Money?,
-            purchasedOn: LocalDate?,
-            openedOn: LocalDate?,
-            addedAt: Instant,
-            templateId: Uuid?,
-            version: Long?,
-            claims: Claims?,
-            status: PackageStatus,
-            syncedAt: Instant?
-        ): Package = Package(
-            id = id,
-            medKitId = medKitId,
-            name = name,
-            quantity = quantity,
-            formId = formId,
-            category = category,
-            manufacturer = manufacturer,
-            country = country,
-            description = description,
-            expiresOn = expiresOn,
-            defaultIntakeAmount = defaultIntakeAmount,
-            note = note,
-            price = price,
-            purchasedOn = purchasedOn,
-            openedOn = openedOn,
-            addedAt = addedAt,
-            templateId = templateId,
-            version = version,
-            claims = claims,
-            status = status,
-            syncedAt = syncedAt
-        )
-    }
+    override fun toString(): String =
+        "Package(id=$id, name=${facts.name}, lifecycle=$lifecycle, access=$access)"
 }

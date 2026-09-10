@@ -18,14 +18,14 @@ class PackageTransitionsTest {
     fun consumingToZeroArchivesThePack() {
         val empty = pack(quantity = tablets("2")).consume(tablets("2"))
         assertTrue(empty.quantity.isZero)
-        assertEquals(PackageStatus.ARCHIVED, empty.status)
+        assertEquals(PackageLifecycle.ARCHIVED, empty.lifecycle)
     }
 
     @Test
     fun consumingPartOfThePackKeepsItActive() {
         val left = pack(quantity = tablets("20")).consume(tablets("0.5"))
         assertEquals(tablets("19.5"), left.quantity)
-        assertEquals(PackageStatus.ACTIVE, left.status)
+        assertEquals(PackageLifecycle.ACTIVE, left.lifecycle)
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -41,7 +41,7 @@ class PackageTransitionsTest {
     @Test
     fun recountToZeroArchivesThePack() {
         val empty = pack(quantity = tablets("20")).correctTo(Quantity.zero(TABLETS))
-        assertEquals(PackageStatus.ARCHIVED, empty.status)
+        assertEquals(PackageLifecycle.ARCHIVED, empty.lifecycle)
     }
 
     @Test
@@ -49,7 +49,7 @@ class PackageTransitionsTest {
         // Пересчёт — замена значения, а не дельта: пачку могли докупить или ошибиться в учёте.
         val more = pack(quantity = tablets("3")).correctTo(tablets("12"))
         assertEquals(tablets("12"), more.quantity)
-        assertEquals(PackageStatus.ACTIVE, more.status)
+        assertEquals(PackageLifecycle.ACTIVE, more.lifecycle)
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -60,22 +60,22 @@ class PackageTransitionsTest {
     @Test(expected = IllegalStateException::class)
     fun recountDoesNotReviveAnArchivedPack() {
         // «Удалена человеком» не отменяется числом.
-        pack(status = PackageStatus.ARCHIVED).correctTo(tablets("5"))
+        pack(lifecycle = PackageLifecycle.ARCHIVED).correctTo(tablets("5"))
     }
 
     @Test(expected = IllegalStateException::class)
     fun archivedPackIsNotConsumed() {
-        pack(status = PackageStatus.ARCHIVED).consume(tablets("1"))
+        pack(lifecycle = PackageLifecycle.ARCHIVED).consume(tablets("1"))
     }
 
     @Test(expected = IllegalStateException::class)
     fun inaccessiblePackIsNotEdited() {
-        pack(status = PackageStatus.INACCESSIBLE).describe(factsOf(pack()))
+        pack(access = PackageAccess.LOST).describe(factsOf(pack()))
     }
 
     @Test(expected = IllegalStateException::class)
     fun inaccessiblePackIsNotMoved() {
-        pack(status = PackageStatus.INACCESSIBLE).moveTo(SHARED_KIT)
+        pack(access = PackageAccess.LOST).moveTo(SHARED_KIT)
     }
 
     @Test
@@ -90,34 +90,33 @@ class PackageTransitionsTest {
             )
         )
         assertEquals("Парацетамол-Дарница", described.name)
-        assertEquals("жаропонижающие", described.category)
-        assertEquals(LocalDate.of(2027, 3, 31), described.expiresOn)
-        assertEquals("в машине", described.note)
-        assertEquals(Money(BigDecimal("120.00")), described.price)
+        assertEquals("жаропонижающие", described.facts.category)
+        assertEquals(LocalDate.of(2027, 3, 31), described.facts.expiresOn)
+        assertEquals("в машине", described.facts.note)
+        assertEquals(Money(BigDecimal("120.00")), described.facts.price)
     }
 
     @Test
     fun editClearsWhatWasCleared() {
         val filled = pack(category = "жаропонижающие", expiresOn = LocalDate.of(2027, 3, 31))
         val cleared = filled.describe(factsOf(filled).copy(category = null, expiresOn = null))
-        assertNull(cleared.category)
-        assertNull(cleared.expiresOn)
+        assertNull(cleared.facts.category)
+        assertNull(cleared.facts.expiresOn)
     }
 
     @Test
     fun editDoesNotTouchQuantityOrOwnership() {
-        val moved = pack(quantity = tablets("20"), version = 3)
+        val moved = pack(quantity = tablets("20"))
         val described = moved.describe(factsOf(moved).copy(name = "другое"))
         assertEquals(tablets("20"), described.quantity)
         assertEquals(HOME_KIT, described.medKitId)
-        assertEquals(3L, described.version)
     }
 
     @Test
     fun movingChangesOnlyTheKit() {
-        val moved = pack(version = 3, claims = Claims(BigDecimal("5"), null, 1)).moveTo(SHARED_KIT)
+        val moved = pack(claims = Claims(BigDecimal("5"))).moveTo(SHARED_KIT)
         assertEquals(SHARED_KIT, moved.medKitId)
-        assertEquals(3L, moved.version)
+        assertEquals(BigDecimal("5"), moved.claims?.total)
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -134,8 +133,8 @@ class PackageTransitionsTest {
     @Test
     fun archivingAnInaccessiblePackRemovesItFromTheList() {
         assertEquals(
-            PackageStatus.ARCHIVED,
-            pack(status = PackageStatus.INACCESSIBLE).archive().status
+            PackageLifecycle.ARCHIVED,
+            pack(access = PackageAccess.LOST).archive().lifecycle
         )
     }
 
@@ -143,11 +142,11 @@ class PackageTransitionsTest {
     fun losingAccessDropsTheClaimsSnapshot() {
         // Сервер снял брони каскадом по участию: держать их снимок значило бы показывать
         // чужие брони на пачке, которой у нас больше нет.
-        val shared = pack(claims = Claims(BigDecimal("5"), BigDecimal("2"), 4), version = 3)
+        val shared = pack(claims = Claims(BigDecimal("5"), BigDecimal("2")))
         val lost = shared.loseAccess()
-        assertEquals(PackageStatus.INACCESSIBLE, lost.status)
+        assertEquals(PackageAccess.LOST, lost.access)
+        assertEquals(PackageLifecycle.ACTIVE, lost.lifecycle)
         assertNull(lost.claims)
-        assertEquals(3L, lost.version)
     }
 
     @Test
@@ -156,8 +155,19 @@ class PackageTransitionsTest {
         assertSame(lost, lost.loseAccess())
     }
 
-    @Test(expected = IllegalStateException::class)
-    fun archivedPackDoesNotLoseAccess() {
-        pack(status = PackageStatus.ARCHIVED).loseAccess()
+    @Test
+    fun archivedPackCanAlsoLoseAccess() {
+        // Две оси, а не одна: выбросить свою часть общей пачки и потом выйти из аптечки — это
+        // два разных события, и оба остаются записанными.
+        val lost = pack(quantity = tablets("2")).consume(tablets("2")).loseAccess()
+        assertEquals(PackageLifecycle.ARCHIVED, lost.lifecycle)
+        assertEquals(PackageAccess.LOST, lost.access)
+    }
+
+    @Test
+    fun losingAccessKeepsWhatWasLeft() {
+        // Остаток недоступной пачки помним: он нужен движению ACCESS_LOST и отчёту.
+        val lost = pack(quantity = tablets("7")).loseAccess()
+        assertEquals(tablets("7"), lost.quantity)
     }
 }

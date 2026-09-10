@@ -11,11 +11,7 @@ class MedKitTest {
 
     @Test
     fun describingKeepsPublicationAndClearsLocation() {
-        val original = kit(
-            publication = KitPublication.PUBLISHED,
-            participants = 3,
-            syncedAt = Instant.ofEpochSecond(100)
-        )
+        val original = kit(publication = KitPublication.PUBLISHED, participants = 3)
         val edited = original.describe(name = "Дачная", location = null)
         assertEquals("Дачная", edited.name)
         assertNull(edited.location)
@@ -23,7 +19,6 @@ class MedKitTest {
         assertEquals(original.publication, edited.publication)
         assertEquals(original.participantCount, edited.participantCount)
         assertEquals(original.createdAt, edited.createdAt)
-        assertEquals(original.syncedAt, edited.syncedAt)
         assertEquals("Домашняя", original.name)
     }
 
@@ -64,11 +59,6 @@ class MedKitTest {
     }
 
     @Test(expected = IllegalArgumentException::class)
-    fun localKitCannotClaimItSynchronised() {
-        kit(publication = KitPublication.LOCAL, participants = 1, syncedAt = Instant.EPOCH)
-    }
-
-    @Test(expected = IllegalArgumentException::class)
     fun blankNameIsRejected() {
         kit(name = "   ")
     }
@@ -97,15 +87,13 @@ class MedKitTest {
         name: String = "Домашняя",
         location: String? = "верхняя полка",
         publication: KitPublication = KitPublication.LOCAL,
-        participants: Long = 1,
-        syncedAt: Instant? = null
-    ) = MedKit.restore(
+        participants: Long = 1
+    ) = MedKit(
         id = HOME_KIT,
         name = name,
         location = location,
         publication = publication,
         participantCount = participants,
-        createdAt = Instant.EPOCH,
-        syncedAt = syncedAt
+        createdAt = Instant.EPOCH
     )
 }

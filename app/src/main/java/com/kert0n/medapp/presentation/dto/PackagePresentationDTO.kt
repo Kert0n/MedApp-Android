@@ -1,6 +1,7 @@
 package com.kert0n.medapp.presentation.dto
 
-import com.kert0n.medapp.domain.model.PackageStatus
+import com.kert0n.medapp.domain.model.PackageAccess
+import com.kert0n.medapp.domain.model.PackageLifecycle
 import java.time.Instant
 import java.time.LocalDate
 import kotlin.uuid.Uuid
@@ -10,8 +11,11 @@ import kotlin.uuid.Uuid
  *
  * Сущность Package сравнивается по id, поэтому её нельзя вкладывать в состояние StateFlow:
  * расход и правка описания окажутся равными старому состоянию. Здесь сущности нет даже внутри
- * вложенных полей. Перечисление статусов — общий доменный словарь, а не изменяемая сущность.
+ * вложенных полей. Перечисления — общий доменный словарь, а не изменяемая сущность.
  * quantity — подтверждённый остаток; проекция ожидающих операций добавляется отдельно (PLAN D4).
+ *
+ * Версии предусловия здесь нет: человеку она ничего не говорит, а экрану состояния синхронизации
+ * нужен момент последней сверки, который маппер получает аргументом.
  */
 data class PackagePresentationDTO(
     val id: Uuid,
@@ -31,11 +35,11 @@ data class PackagePresentationDTO(
     val openedOn: LocalDate?,
     val addedAt: Instant,
     val templateId: Uuid?,
-    val version: Long?,
     val claims: ClaimsPresentationDTO?,
-    val status: PackageStatus,
+    val lifecycle: PackageLifecycle,
+    val access: PackageAccess,
     val syncedAt: Instant?
 )
 
 /** Строки чисел нормализованы маппером: 1 и 1.000000 дают одинаковое состояние. */
-data class ClaimsPresentationDTO(val total: String, val mine: String?, val version: Long)
+data class ClaimsPresentationDTO(val total: String, val mine: String?)

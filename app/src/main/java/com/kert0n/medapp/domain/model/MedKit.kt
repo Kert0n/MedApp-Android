@@ -22,17 +22,18 @@ enum class KitPublication {
  *
  * **Это сущность, а не величина.** Переименованная аптечка — та же аптечка, и в ней лежат те же
  * пачки. Тождество — [id], равенство идёт по нему; `data class` утверждал бы обратное, что смена
- * названия даёт другую аптечку. Собрать её можно двумя названными путями: [create] заводит
- * локальную, [restore] восстанавливает сохранённую.
+ * названия даёт другую аптечку.
+ *
+ * Конструктор публичный и проверяет то, что верно про аптечку всегда. Момент последней сверки с
+ * сервером сюда не входит: он нужен хранению и экрану состояния синхронизации, а не правилам.
  */
-class MedKit private constructor(
+class MedKit(
     val id: Uuid,                   // придуман клиентом; он же серверный
     val name: String,               // 1..200, только на устройстве
     val location: String?,          // ≤300, место хранения; только на устройстве
     val publication: KitPublication,
     val participantCount: Long,     // 1 у локальной, иначе userCount с сервера
-    val createdAt: Instant,
-    val syncedAt: Instant?
+    val createdAt: Instant
 ) {
 
     init {
@@ -41,7 +42,6 @@ class MedKit private constructor(
         require(participantCount >= 1) { "участник всегда есть хотя бы один — я сам" }
         if (publication == KitPublication.LOCAL) {
             require(participantCount == 1L) { "у локальной аптечки других участников нет" }
-            require(syncedAt == null) { "локальная аптечка с сервером не говорила" }
         }
     }
 
@@ -60,8 +60,7 @@ class MedKit private constructor(
         location = location,
         publication = publication,
         participantCount = participantCount,
-        createdAt = createdAt,
-        syncedAt = syncedAt
+        createdAt = createdAt
     )
 
     /** Тождество — [id]: переименованная аптечка остаётся той же аптечкой. */
@@ -72,35 +71,4 @@ class MedKit private constructor(
 
     override fun toString(): String = "MedKit(id=$id, name=$name, publication=$publication)"
 
-    companion object {
-
-        /**
-         * Заведение локальной аптечки. Публикация — отдельный сценарий (PLAN E5), поэтому новая
-         * аптечка всегда `LOCAL` с единственным участником, а не «пока непонятно какая».
-         */
-        fun create(id: Uuid, name: String, location: String?, createdAt: Instant): MedKit =
-            MedKit(
-                id = id,
-                name = name,
-                location = location,
-                publication = KitPublication.LOCAL,
-                participantCount = 1,
-                createdAt = createdAt,
-                syncedAt = null
-            )
-
-        /**
-         * Восстановление сохранённого состояния: строка базы вместе с числом участников из
-         * снимка. Не бизнес-переход — оно ничего не решает, а возвращает уже решённое.
-         */
-        fun restore(
-            id: Uuid,
-            name: String,
-            location: String?,
-            publication: KitPublication,
-            participantCount: Long,
-            createdAt: Instant,
-            syncedAt: Instant?
-        ): MedKit = MedKit(id, name, location, publication, participantCount, createdAt, syncedAt)
-    }
 }

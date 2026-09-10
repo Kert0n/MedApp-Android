@@ -2,12 +2,14 @@ package com.kert0n.medapp.data.mapper
 
 import com.kert0n.medapp.data.remote.dto.PackagePatchNetworkDTO
 import com.kert0n.medapp.data.remote.dto.PackagePostNetworkDTO
+import com.kert0n.medapp.data.sync.PackageSyncState
 import com.kert0n.medapp.domain.model.CAPSULE_FORM
 import com.kert0n.medapp.domain.model.Money
 import com.kert0n.medapp.domain.model.PACKAGE_DESCRIPTION_MAX_LENGTH
 import com.kert0n.medapp.domain.model.TABLET_FORM
 import com.kert0n.medapp.domain.model.factsOf
 import com.kert0n.medapp.domain.model.pack
+import com.kert0n.medapp.domain.model.PACK
 import com.kert0n.medapp.domain.model.TABLETS
 import com.kert0n.medapp.domain.model.Quantity
 import java.math.BigDecimal
@@ -44,21 +46,26 @@ class PackageNetworkMapperTest {
         onServer.correctTo(Quantity.zero(TABLETS)).toPostNetworkDTO()
     }
 
-    private fun onServer(version: Long? = 7, note: String? = null) = pack(
+    private fun onServer(note: String? = null) = pack(
         name = "Парацетамол",
         formId = TABLET_FORM,
         category = "жаропонижающие",
         description = "по одной при температуре",
-        note = note,
-        version = version
+        note = note
     )
 
     private val onServer = onServer()
 
+    /** Пачка уже создана на сервере: у неё есть предусловие. */
+    private val synced = PackageSyncState(packageId = PACK, version = 7)
+
+    /** Пачка ещё только заводится: предусловия нет. */
+    private val notSynced = PackageSyncState(packageId = PACK)
+
     @Test
     fun unchangedFormSendsNothing() {
         // PATCH теми же значениями перетёр бы чужую правку, которую мы даже не видели.
-        val patch = factsOf(onServer).toPatchNetworkMapping(onServer)
+        val patch = factsOf(onServer).toPatchNetworkMapping(onServer, synced)
         assertNull(patch.dto)
         assertFalse(patch.formIdClearUnsupported)
     }
@@ -66,7 +73,7 @@ class PackageNetworkMapperTest {
     @Test
     fun onlyTheChangedFieldTravels() {
         val renamed = factsOf(onServer).copy(name = "Парацетамол-Дарница")
-        val patch = renamed.toPatchNetworkMapping(onServer)
+        val patch = renamed.toPatchNetworkMapping(onServer, synced)
         val dto = requireNotNull(patch.dto)
         assertEquals("Парацетамол-Дарница", dto.name)
         assertNull(dto.category)
@@ -75,7 +82,7 @@ class PackageNetworkMapperTest {
 
     @Test
     fun clearedTextTravelsAsAnEmptyString() {
-        val patch = factsOf(onServer).copy(description = null).toPatchNetworkMapping(onServer)
+        val patch = factsOf(onServer).copy(description = null).toPatchNetworkMapping(onServer, synced)
         assertEquals("", requireNotNull(patch.dto).description)
     }
 
@@ -83,21 +90,23 @@ class PackageNetworkMapperTest {
     fun clearingTheFormOfAServerPackIsReportedInsteadOfSentAsNull() {
         // `null` на проводе значит «не менять», а `""` не является UUID: молча выдать
         // неудалённую серверную форму за очищенную нельзя.
-        val patch = factsOf(onServer).copy(formId = null).toPatchNetworkMapping(onServer)
+        val patch = factsOf(onServer).copy(formId = null).toPatchNetworkMapping(onServer, synced)
         assertTrue(patch.formIdClearUnsupported)
         assertNull(patch.dto?.formId)
     }
 
     @Test
     fun clearingTheFormOfAPackNotYetOnTheServerIsFine() {
-        val local = onServer(version = null)
-        val patch = factsOf(local).copy(formId = null).toPatchNetworkMapping(local)
+        // Ограничение — протокольное, поэтому зависит от предусловия, а не от самой пачки.
+        val patch = factsOf(onServer).copy(formId = null)
+            .toPatchNetworkMapping(onServer, notSynced)
         assertFalse(patch.formIdClearUnsupported)
     }
 
     @Test
     fun changingTheFormToAnotherOneTravels() {
-        val patch = factsOf(onServer).copy(formId = CAPSULE_FORM).toPatchNetworkMapping(onServer)
+        val patch = factsOf(onServer).copy(formId = CAPSULE_FORM)
+            .toPatchNetworkMapping(onServer, synced)
         assertEquals(CAPSULE_FORM, requireNotNull(patch.dto).formId)
         assertFalse(patch.formIdClearUnsupported)
     }
@@ -107,7 +116,7 @@ class PackageNetworkMapperTest {
         // Срок годности, заметка, цена и даты остаются только на устройстве (PLAN C0, E5).
         val patch = factsOf(onServer)
             .copy(note = "в машине", price = Money(BigDecimal("120.00")))
-            .toPatchNetworkMapping(onServer)
+            .toPatchNetworkMapping(onServer, synced)
         assertNull(patch.dto)
     }
 

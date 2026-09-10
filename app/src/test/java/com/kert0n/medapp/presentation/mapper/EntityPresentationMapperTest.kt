@@ -5,7 +5,8 @@ import com.kert0n.medapp.domain.model.HOME_KIT
 import com.kert0n.medapp.domain.model.MedKit
 import com.kert0n.medapp.domain.model.Money
 import com.kert0n.medapp.domain.model.Package
-import com.kert0n.medapp.domain.model.PackageStatus
+import com.kert0n.medapp.domain.model.KitPublication
+import com.kert0n.medapp.domain.model.PackageLifecycle
 import com.kert0n.medapp.domain.model.factsOf
 import com.kert0n.medapp.domain.model.pack
 import com.kert0n.medapp.domain.model.tablets
@@ -58,12 +59,12 @@ class EntityPresentationMapperTest {
         updates.emit(listOf(edited.consume(tablets("19"))))
         runCurrent()
         assertEquals("0", state.value.packages.single().quantity.amount)
-        assertEquals(PackageStatus.ARCHIVED, state.value.packages.single().status)
+        assertEquals(PackageLifecycle.ARCHIVED, state.value.packages.single().lifecycle)
     }
 
     @Test
     fun stateFlowReceivesRenamingAndLocationClearingOfTheSameKit() = runTest {
-        val original = MedKit.create(HOME_KIT, "Домашняя", "Шкаф", Instant.EPOCH)
+        val original = MedKit(HOME_KIT, "Домашняя", "Шкаф", KitPublication.LOCAL, 1, Instant.EPOCH)
         val updates = MutableSharedFlow<List<MedKit>>()
         val state = updates.map { kits ->
             MedKitListState(kits.map { it.toPresentationDTO() })
@@ -87,12 +88,12 @@ class EntityPresentationMapperTest {
         val first = pack(
             quantity = tablets("20"), defaultIntakeAmount = tablets("1"),
             price = Money(BigDecimal("150")),
-            claims = Claims(BigDecimal("5"), BigDecimal("2"), 1)
+            claims = Claims(BigDecimal("5"), BigDecimal("2"))
         )
         val same = pack(
             quantity = tablets("20.000000"), defaultIntakeAmount = tablets("1.000000"),
             price = Money(BigDecimal("150.00")),
-            claims = Claims(BigDecimal("5.000000"), BigDecimal("2.000000"), 1)
+            claims = Claims(BigDecimal("5.000000"), BigDecimal("2.000000"))
         )
         assertEquals(first.toPresentationDTO(), same.toPresentationDTO())
         assertEquals(first.toPresentationDTO().hashCode(), same.toPresentationDTO().hashCode())
@@ -100,8 +101,8 @@ class EntityPresentationMapperTest {
 
     @Test
     fun claimsChangeIsVisibleEvenWithTheSamePackageIdentityAndStock() {
-        val before = pack(claims = Claims(BigDecimal("5"), null, 1))
-        val after = pack(claims = Claims(BigDecimal("8"), null, 2))
+        val before = pack(claims = Claims(BigDecimal("5"), null))
+        val after = pack(claims = Claims(BigDecimal("8"), null))
         assertEquals(before, after)
         assertNotEquals(before.toPresentationDTO(), after.toPresentationDTO())
     }
