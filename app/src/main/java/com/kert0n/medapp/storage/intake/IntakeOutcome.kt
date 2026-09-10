@@ -58,19 +58,13 @@ class IntakeOutcome(
      */
     val spendsLocally: Boolean get() = sync.accounting == IntakeAccounting.LOCAL_APPLIED
 
+    /** Приём и учёт его расхода: правило об этой паре живёт на своём типе. */
+    val recorded = RecordedIntake(intake, sync)
+
     init {
-        require(sync.intakeId == intake.id) { "учёт расхода принадлежит своему приёму" }
         require(intake is UnplannedIntake || expected.isNotEmpty()) {
             "условный переход называет, из какого состояния идёт"
         }
         require(intake.status !in expected) { "переход в тот же статус не является переходом" }
-        require(
-            intake.status != IntakeStatus.TAKEN ||
-                sync.accounting != IntakeAccounting.NOT_APPLICABLE
-        ) { "у подтверждённого приёма расход учтён" }
-        require(
-            intake.status == IntakeStatus.TAKEN ||
-                sync.accounting == IntakeAccounting.NOT_APPLICABLE
-        ) { "у неподтверждённого приёма расхода нет" }
     }
 }

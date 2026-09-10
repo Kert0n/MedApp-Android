@@ -23,8 +23,12 @@ interface CourseStorageRepository {
 
     suspend fun findPlan(id: Uuid): Course?
 
-    /** Черновик целиком: назначение, времена и источники по порядку. */
-    suspend fun saveDraft(draft: CourseDraft)
+    /**
+     * Черновик целиком: назначение, времена и источники по порядку. Запись условна: лечение,
+     * начатое между открытием экрана и сохранением, черновиком поверх не затирается — активация
+     * уничтожает черновик, а не прячет его. `false` — черновика больше нет.
+     */
+    suspend fun saveDraft(draft: CourseDraft): Boolean
 
     /** Аналитика читает записи: идущее и законченное лечение для неё одной формы (PLAN H6). */
     fun observeRecords(): Flow<List<CourseRecord>>
@@ -33,7 +37,14 @@ interface CourseStorageRepository {
 
     suspend fun findRecord(id: Uuid): CourseRecord?
 
-    suspend fun saveRecord(record: CourseRecord)
+    /**
+     * Название и заметка эпизода — единственное, что человек правит в записи напрямую: назначение
+     * и исход задают активация и конец лечения (PLAN D5). `false` — записи нет.
+     *
+     * Общей записи здесь нет намеренно: экран, загрузивший открытый эпизод, сохранял бы его
+     * целиком уже после конца лечения и возвращал бы запись в открытое состояние.
+     */
+    suspend fun rename(id: Uuid, title: String, note: String?): Boolean
 
     /** Какому активному курсу отдана пачка; `null` — она свободна (PLAN F1, F2). */
     suspend fun courseHolding(packageId: Uuid): Uuid?

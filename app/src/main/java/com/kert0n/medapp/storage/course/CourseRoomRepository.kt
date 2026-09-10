@@ -36,11 +36,16 @@ class CourseRoomRepository @Inject constructor(
     override suspend fun findPlan(id: Uuid): Course? =
         courses.findPlan(id)?.takeUnless { it.isDraft }?.toPlan()
 
-    override suspend fun saveDraft(draft: CourseDraft) = courses.saveCourse(
-        course = draft.toStorageEntity(),
-        times = draft.schedule?.toTimeStorageEntities(draft.id).orEmpty(),
-        sources = draft.medicine.toSourceStorageEntities(draft.id)
-    )
+    override suspend fun saveDraft(draft: CourseDraft): Boolean = database.withTransaction {
+        val existing = courses.findPlan(draft.id)
+        if (existing != null && !existing.isDraft) return@withTransaction false
+        courses.saveCourse(
+            course = draft.toStorageEntity(),
+            times = draft.schedule?.toTimeStorageEntities(draft.id).orEmpty(),
+            sources = draft.medicine.toSourceStorageEntities(draft.id)
+        )
+        true
+    }
 
     override fun observeRecords(): Flow<List<CourseRecord>> =
         courses.observeRecords().map { rows -> rows.map { it.toDomain() } }
@@ -51,8 +56,8 @@ class CourseRoomRepository @Inject constructor(
     override suspend fun findRecord(id: Uuid): CourseRecord? =
         courses.findRecord(id)?.toDomain()
 
-    override suspend fun saveRecord(record: CourseRecord) =
-        courses.upsertRecord(record.toStorageEntity())
+    override suspend fun rename(id: Uuid, title: String, note: String?): Boolean =
+        courses.rename(id, title, note) > 0
 
     override suspend fun courseHolding(packageId: Uuid): Uuid? = courses.courseHolding(packageId)
 

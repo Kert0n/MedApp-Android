@@ -2,9 +2,9 @@ package com.kert0n.medapp.storage.intake
 
 import com.kert0n.medapp.domain.intake.CourseIntake
 import com.kert0n.medapp.domain.intake.Intake
+import com.kert0n.medapp.network.intake.IntakeSyncState
 import com.kert0n.medapp.domain.intake.UnplannedIntake
 import androidx.room.withTransaction
-import com.kert0n.medapp.network.intake.IntakeSyncState
 import com.kert0n.medapp.storage.course.CourseDao
 import com.kert0n.medapp.storage.course.toSourceStorageEntities
 import com.kert0n.medapp.storage.course.toStorageEntity as toCourseStorageEntity
@@ -35,8 +35,8 @@ class IntakeRoomRepository @Inject constructor(
 
     override suspend fun syncStateOf(id: Uuid): IntakeSyncState? = intakes.find(id)?.syncState()
 
-    override suspend fun save(intake: Intake, sync: IntakeSyncState) =
-        intakes.upsert(intake.toStorageEntity(sync))
+    override suspend fun save(recorded: RecordedIntake) =
+        intakes.upsert(recorded.intake.toStorageEntity(recorded.sync))
 
     override suspend fun materialise(planned: List<CourseIntake>): Int =
         intakes.insertPlannedIfMissing(planned.map { it.toStorageEntity() })

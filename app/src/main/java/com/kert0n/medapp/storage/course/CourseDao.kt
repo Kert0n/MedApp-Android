@@ -95,6 +95,10 @@ interface CourseDao {
     @Upsert
     suspend fun upsertRecord(record: CourseRecordStorageEntity)
 
+    /** Правится только то, что человек и назвал: назначение, начало и исход остаются на месте. */
+    @Query("UPDATE course_records SET title = :title, note = :note WHERE id = :id")
+    suspend fun rename(id: Uuid, title: String, note: String?): Int
+
     @Insert
     suspend fun insertTimes(times: List<CourseTimeStorageEntity>)
 

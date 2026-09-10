@@ -19,7 +19,11 @@ interface IntakeStorageRepository {
 
     suspend fun syncStateOf(id: Uuid): IntakeSyncState?
 
-    suspend fun save(intake: Intake, sync: IntakeSyncState = IntakeSyncState(intake.id))
+    /**
+     * Запись приёма как есть — например, при приведении к серверному снимку (PLAN E4). Ответ
+     * человека идёт через [record]: там условный переход статуса, а здесь его нет.
+     */
+    suspend fun save(recorded: RecordedIntake)
 
     /**
      * Материализация окна: повторный проход не заводит второй такой же пункт — тождество даёт

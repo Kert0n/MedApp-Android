@@ -14,6 +14,7 @@ import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.SHARED_KIT
 import com.kert0n.medapp.fixture.activeCourse
+import com.kert0n.medapp.fixture.course
 import com.kert0n.medapp.fixture.courseRecord
 import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.inMemoryDatabase
@@ -81,7 +82,7 @@ class TransactionBoundariesTest {
         intakes = database.intakeRepository()
         database.medKits().upsert(medKit().toMedKitStorageEntity())
         database.medKits().upsert(medKit(id = SHARED_KIT, name = "Дача").toMedKitStorageEntity())
-        packages.save(paracetamol)
+        packages.add(paracetamol)
     }
 
     @After
@@ -260,7 +261,7 @@ class TransactionBoundariesTest {
             claimsVersion = ResourceVersion(2),
             syncedAt = at
         )
-        packages.save(paracetamol, sync)
+        packages.add(paracetamol, sync)
         courses.activate(draft(), planned = listOf(plannedIntake()), at = at)
 
         assertTrue(intakes.record(confirmedOutcome()))
@@ -326,6 +327,39 @@ class TransactionBoundariesTest {
 
         assertNull(database.courses().findPlan(COURSE))
         assertEquals(tablets("17"), requireNotNull(packages.find(PACK)).quantity)
+    }
+
+    /**
+     * Активация уничтожает черновик, а не прячет его: экран, оставшийся открытым, не возвращает
+     * начатое лечение в состояние черновика.
+     */
+    @Test
+    fun aDraftIsNotWrittenOverAStartedTreatment() = runTest {
+        val activation = draft()
+        val stale = course(title = "Старый черновик")
+        courses.activate(activation, at = at)
+
+        assertFalse(courses.saveDraft(stale))
+        assertNull(courses.findDraft(COURSE))
+        assertNotNull(courses.findPlan(COURSE))
+    }
+
+    /**
+     * Правится название эпизода и только оно: экран, загрузивший открытую запись, не возвращает
+     * законченное лечение в открытое состояние (PLAN D5).
+     */
+    @Test
+    fun renamingDoesNotReopenAClosedRecord() = runTest {
+        val activation = draft()
+        courses.activate(activation, at = at)
+        courses.close(activation.record.close(CourseRecord.Outcome.COMPLETED, LATER), at = LATER)
+
+        assertTrue(courses.rename(COURSE, "Другое название", note = null))
+
+        val record = requireNotNull(courses.findRecord(COURSE))
+        assertEquals("Другое название", record.title)
+        assertEquals(CourseRecord.Outcome.COMPLETED, record.outcome)
+        assertEquals(activation.record.prescription, record.prescription)
     }
 
     private fun confirmedOutcome() = IntakeOutcome(

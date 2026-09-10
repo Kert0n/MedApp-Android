@@ -5,6 +5,7 @@ import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.pack.EffectiveAmount
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageAvailability
+import com.kert0n.medapp.domain.pack.PackageFacts
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.network.pack.PackageQueueState
 import com.kert0n.medapp.network.pack.PackageSyncCommand
@@ -47,8 +48,32 @@ class PackageRoomRepository @Inject constructor(
     override fun list(query: PackageQuery, today: LocalDate): Flow<List<Package>> =
         onChange { listing(query, today) }
 
-    override suspend fun save(pkg: Package, sync: PackageSyncState) =
+    override suspend fun add(pkg: Package, sync: PackageSyncState) =
         packages.save(pkg.toStorageEntity(sync), pkg.toDetailsStorageEntity())
+
+    override suspend fun describe(packageId: Uuid, facts: PackageFacts): Boolean =
+        change(packageId) { it.describe(facts) }
+
+    override suspend fun loseAccess(packageId: Uuid): Boolean = database.withTransaction {
+        val changed = change(packageId) { it.loseAccess() }
+        if (changed) packages.deleteClaims(packageId)
+        changed
+    }
+
+    /**
+     * Переход применяется к тому, что лежит в базе, и пишется вместе с сохранённой обвязкой:
+     * версии и время сверки принадлежат снимку сервера, а не действию человека (PLAN E4).
+     */
+    private suspend fun change(packageId: Uuid, transition: (Package) -> Package): Boolean =
+        database.withTransaction {
+            val stored = packages.find(packageId) ?: return@withTransaction false
+            val changed = transition(stored.toDomain())
+            packages.save(
+                changed.toStorageEntity(stored.pack.syncState()),
+                changed.toDetailsStorageEntity()
+            )
+            true
+        }
 
     override suspend fun applyServerSnapshot(
         pkg: Package,
