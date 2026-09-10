@@ -5,6 +5,7 @@ import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.tablets
 
 import java.time.LocalDate
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -60,6 +61,22 @@ class PackageExpiryTest {
     @Test(expected = IllegalArgumentException::class)
     fun negativeWindowIsRejected() {
         until31March.expiresWithin(LocalDate.of(2027, 3, 31), -1)
+    }
+
+    @Test
+    fun theRuleAnswersTheSameWithoutAPack() {
+        // Проекция доступного несёт одну дату и никакой пачки (PLAN D4), и ответ обязан совпадать:
+        // два `isBefore` в двух местах — это два знака, которые разойдутся.
+        val expires = LocalDate.of(2027, 3, 31)
+        listOf(
+            LocalDate.of(2027, 3, 27),
+            LocalDate.of(2027, 3, 31),
+            LocalDate.of(2027, 4, 1)
+        ).forEach { on ->
+            assertEquals(until31March.isExpiredOn(on), ExpiryDate.isExpired(expires, on))
+            assertEquals(until31March.expiresWithin(on, 3), ExpiryDate.expiresWithin(expires, on, 3))
+        }
+        assertFalse(ExpiryDate.isExpired(expiresOn = null, on = LocalDate.of(2999, 1, 1)))
     }
 
     @Test(expected = IllegalArgumentException::class)

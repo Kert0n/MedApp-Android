@@ -46,22 +46,13 @@ data class PackageFacts(
     /**
      * Дата передаётся, а не берётся из часов: иначе свойство непроверяемо тестом.
      *
-     * Сравнение именно `isBefore`: дата включительная, пачка «годна до 31 марта» просрочена
-     * только 1 апреля. Правило записано здесь, чтобы знак не «поправили» при рефакторинге.
+     * Само правило — в [ExpiryDate]: его спрашивает не только пачка, но и проекция доступного,
+     * у которой на руках лежит одна дата и никакой пачки (PLAN D4). Одно правило — одно место,
+     * иначе знак сравнения разойдётся при первом же рефакторинге.
      */
-    fun isExpiredOn(date: LocalDate): Boolean = expiresOn?.isBefore(date) == true
+    fun isExpiredOn(date: LocalDate): Boolean = ExpiryDate.isExpired(expiresOn, date)
 
-    /**
-     * Истекает ли срок в ближайшие [days] дней, считая [date] включительно.
-     *
-     * Именно «не позже чем через N дней», а не «ровно за N дней»: пороги 3 и 1 день (PLAN D8)
-     * проверяются фоновой задачей, а она может задержаться и перепрыгнуть точную дату. Уже
-     * просроченная пачка не «истекает скоро» — у неё другое состояние и другое сообщение.
-     */
-    fun expiresWithin(date: LocalDate, days: Long): Boolean {
-        require(days >= 0) { "окно предупреждения не бывает отрицательным" }
-        val expires = expiresOn ?: return false
-        if (expires.isBefore(date)) return false
-        return !expires.isAfter(date.plusDays(days))
-    }
+    /** Истекает ли срок не позже чем через [days] дней, считая [date] включительно (D8). */
+    fun expiresWithin(date: LocalDate, days: Long): Boolean =
+        ExpiryDate.expiresWithin(expiresOn, date, days)
 }
