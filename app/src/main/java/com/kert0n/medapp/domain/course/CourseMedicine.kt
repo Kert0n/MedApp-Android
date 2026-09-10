@@ -96,13 +96,6 @@ data class CourseMedicine(
         })
     }
 
-    /** Снимает все выделения и оставляет пачки: по ним читается история приёмов. */
-    fun released(): CourseMedicine = copy(
-        sources = sources.map {
-            if (it.allocatedDoses.isNone) it else CourseSource(it.packageId, Doses.none)
-        }
-    )
-
     /**
      * Обеспечение [remaining] пунктов, данных в календарном порядке. Пачка покрывает не больше
      * выделенного и не больше целых доз, что в ней есть; остаток меньше дозы виден в её строке и

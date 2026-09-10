@@ -27,7 +27,7 @@ class ClampTest {
 
     private val plenty = availability(PACK to tablets("20"), OTHER_PACK to tablets("12"))
 
-    private fun PlannedCourse.allocations() = medicine.sources.map { it.allocatedDoses }
+    private fun Course.allocations() = medicine.sources.map { it.allocatedDoses }
 
     @Test
     fun shortageLowersOnlyThePackThatLostStock() {

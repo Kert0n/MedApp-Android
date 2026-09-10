@@ -116,24 +116,6 @@ class CourseMedicineTest {
     }
 
     @Test
-    fun closedCourseKeepsItsSourcesAsHistory() {
-        val cancelled = activeCourse(sources = listOf(source(PACK, 5))).cancel(LATER)
-        val closed = cancelled.attach(dacha, doses(1), LATER).rejection()
-        assertEquals(CourseRejected.Reason.COURSE_CLOSED, closed)
-        assertThrows(IllegalStateException::class.java) { cancelled.detach(PACK, LATER) }
-        assertEquals(listOf(PACK), cancelled.sources.map { it.packageId })
-    }
-
-    @Test
-    fun completionAndCancellationReleaseWhatIsLeftAllocated() {
-        // Оставшегося выделения у закрытого курса нет: это то же событие, что снятие брони.
-        val active = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 4)))
-        assertEquals(doses(0), active.complete(LATER).allocatedDosesTotal)
-        assertEquals(doses(0), active.cancel(LATER).allocatedDosesTotal)
-        assertEquals(2, active.cancel(LATER).sources.size)
-    }
-
-    @Test
     fun activationRequiresScheduleDoseAndSource() {
         val bare = course()
         assertEquals(CourseRejected.Reason.SCHEDULE_MISSING, bare.activate(LATER).rejection())
@@ -143,16 +125,15 @@ class CourseMedicineTest {
         // Единицы всё ещё нет — её фиксирует первый источник, поэтому доза не собралась.
         assertEquals(CourseRejected.Reason.DOSE_MISSING, dosed.activate(LATER).rejection())
         val sourced = dosed.attach(home, doses = doses(5), at = LATER).getOrThrow()
-        val active = sourced.activate(LATER).getOrThrow()
-        assertEquals(CourseStatus.ACTIVE, active.status)
-        // Повторная активация невыразима: у назначенного курса этого перехода нет.
+        // Активация удалась — и повторить её нечем: у плана этого перехода нет.
+        assertTrue(sourced.activate(LATER).isSuccess)
     }
 
     @Test
     fun draftWithSourcesButNoScheduleIsRejectedForActivationNotForSaving() {
         // Черновик с выбранными пачками сохраняется: броней у него нет, упаковку он не занимает.
         val chosen = draftWithDose().attach(home, doses = doses(5), at = LATER).getOrThrow()
-        assertEquals(CourseStatus.DRAFT, chosen.status)
+        assertEquals(listOf(PACK), chosen.sources.map { it.packageId })
         assertEquals(CourseRejected.Reason.SCHEDULE_MISSING, chosen.activate(LATER).rejection())
     }
 
@@ -163,7 +144,7 @@ class CourseMedicineTest {
         val ready = draftWithDose()
             .setSchedule(schedule(), LATER)
             .attach(home, doses = doses(5), at = LATER).getOrThrow()
-        assertEquals(ready.revision, ready.activate(LATER).getOrThrow().revision)
+        assertEquals(ready.revision, ready.activate(LATER).getOrThrow().course.revision)
     }
 
     @Test
@@ -179,6 +160,6 @@ class CourseMedicineTest {
         assertTrue(duplicated.exceptionOrNull() is IllegalArgumentException)
     }
 
-    private fun Result<Course>.rejection(): CourseRejected.Reason? =
+    private fun <T> Result<T>.rejection(): CourseRejected.Reason? =
         (exceptionOrNull() as? CourseRejected)?.reason
 }

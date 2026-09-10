@@ -1,7 +1,6 @@
 package com.kert0n.medapp.domain.pack
 
-import com.kert0n.medapp.domain.course.CourseStatus
-import com.kert0n.medapp.domain.course.PlannedCourse
+import com.kert0n.medapp.domain.course.Course
 import com.kert0n.medapp.domain.intake.CourseIntake
 import com.kert0n.medapp.domain.intake.IntakeStatus
 import com.kert0n.medapp.domain.value.Doses
@@ -67,7 +66,7 @@ class RemainingOnTest {
         reportZone: ZoneId = MOSCOW,
         now: Instant = this.now,
         packages: List<PackageAvailability> = listOf(stockOf()),
-        courses: List<PlannedCourse> = listOf(course),
+        courses: List<Course> = listOf(course),
         resolved: List<CourseIntake> = emptyList()
     ): List<PackageForecast> {
         val until = date.plusDays(1).atStartOfDay(reportZone).toInstant()
@@ -79,7 +78,6 @@ class RemainingOnTest {
             .toSet()
         val spent = HashMap<Uuid, Quantity>()
         for (course in courses) {
-            if (course.status != CourseStatus.ACTIVE) continue
             val ahead = Doses(
                 course.schedule.occurrences(now, until)
                     .count { Triple(course.id, it.localDate, it.localTime) !in answered }
@@ -219,14 +217,10 @@ class RemainingOnTest {
     }
 
     @Test
-    fun onlyActiveCoursesSpendAnything() {
-        val cancelled = course.cancel(LATER)
-        val forecast = remainingOn(
-            date = today.plusDays(6),
-            packages = listOf(stockOf()),
-            courses = listOf(cancelled),
-            resolved = emptyList()
-        )
+    fun endedTreatmentSpendsNothingBecauseItsPlanIsGone() {
+        // Закончившееся лечение планом быть перестаёт: отдать его прогнозу нечем, и фильтр
+        // «только действующие» не нужен — отбирать не из чего.
+        val forecast = remainingOn(date = today.plusDays(6), courses = emptyList())
         assertEquals(tablets("20"), forecast.single().remaining)
         assertFalse(forecast.single().requiresRecount)
     }

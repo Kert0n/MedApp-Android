@@ -17,20 +17,20 @@ import kotlin.uuid.Uuid
  * активации. Броней у черновика нет: выбранные пачки — предварительный выбор.
  */
 class CourseDraft(
-    override val id: Uuid,
-    override val title: String,
-    override val note: String? = null,
+    val id: Uuid,
+    val title: String,
+    val note: String? = null,
     val doseAmount: BigDecimal? = null,
-    override val schedule: CourseSchedule? = null,
-    override val medicine: CourseMedicine = CourseMedicine(),
-    override val revision: Revision = Revision.initial,
-    override val createdAt: Instant,
-    override val updatedAt: Instant
-) : Course {
+    val schedule: CourseSchedule? = null,
+    val medicine: CourseMedicine = CourseMedicine(),
+    val revision: Revision = Revision.initial,
+    val createdAt: Instant,
+    val updatedAt: Instant
+) {
 
     init {
-        requireText(title, Course.TITLE_MAX_LENGTH, "Course.title")
-        requireOptionalText(note, Course.NOTE_MAX_LENGTH, "Course.note")
+        requireText(title, CourseRecord.TITLE_MAX_LENGTH, "CourseDraft.title")
+        requireOptionalText(note, CourseRecord.NOTE_MAX_LENGTH, "CourseDraft.note")
         doseAmount?.let { amount ->
             requireNonNegativeDecimal(
                 amount = amount,
@@ -43,10 +43,30 @@ class CourseDraft(
         }
     }
 
-    override val status: CourseStatus get() = CourseStatus.DRAFT
+    /**
+     * Доза как величина — только когда первая пачка принесла единицу. Число человек называет сам,
+     * единицу приносит препарат, и порядок бывает любым: «две штуки чего-то» и «пачка выбрана» —
+     * оба законные состояния черновика.
+     */
+    val dose: Quantity?
+        get() {
+            val unitId = medicine.unitId ?: return null
+            return doseAmount?.let { Quantity(it, unitId) }
+        }
 
-    override val dose: Quantity?
-        get() = if (doseAmount != null && unitId != null) Quantity(doseAmount, unitId!!) else null
+    val sources: List<CourseSource> get() = medicine.sources
+
+    val formId: Uuid? get() = medicine.formId
+
+    val unitId: Uuid? get() = medicine.unitId
+
+    val allocatedDosesTotal: Doses get() = medicine.allocatedTotal
+
+    /** Выделение пачки в единицах пачки; `null` — пачка не выбрана или доза ещё не задана. */
+    fun allocatedOf(packageId: Uuid): Quantity? {
+        val allocated = medicine.allocatedTo(packageId) ?: return null
+        return dose?.times(allocated)
+    }
 
     /**
      * Название и заметка правятся без роста редакции: редакция отмечает изменение будущих пунктов,
@@ -103,30 +123,40 @@ class CourseDraft(
     }
 
     /**
-     * Активация: нужны расписание, доза и хотя бы одна пачка; дальше их наличие обеспечивает тип
-     * [PlannedCourse], а выделения становятся бронями (PLAN D5, F1).
+     * Активация: нужны расписание, доза и хотя бы одна пачка. Дальше их наличие обеспечивает тип
+     * [Course], а выделения становятся бронями (PLAN D5, F1).
+     *
+     * Рождаются **двое**: план, которым пользуются, и запись, которая останется, когда план
+     * уничтожится. Возвращаются они вместе, поэтому завести эпизод без записи невозможно — а
+     * значит, аналитике не придётся собирать историю из идущих курсов и закрытых по отдельности.
      */
-    fun activate(at: Instant): Result<PlannedCourse> {
+    fun activate(at: Instant): Result<Activation> {
         val schedule = schedule ?: return rejected(CourseRejected.Reason.SCHEDULE_MISSING)
         val dose = dose ?: return rejected(CourseRejected.Reason.DOSE_MISSING)
         if (medicine.isEmpty) return rejected(CourseRejected.Reason.SOURCES_MISSING)
+        val prescription = Prescription(dose = dose, schedule = schedule)
         return Result.success(
-            PlannedCourse(
-                id = id,
-                title = title,
-                note = note,
-                dose = dose,
-                schedule = schedule,
-                medicine = medicine,
-                status = CourseStatus.ACTIVE,
-                revision = revision,
-                createdAt = createdAt,
-                updatedAt = at
+            Activation(
+                course = Course(
+                    id = id,
+                    prescription = prescription,
+                    medicine = medicine,
+                    revision = revision,
+                    createdAt = createdAt,
+                    updatedAt = at
+                ),
+                record = CourseRecord(
+                    id = id,
+                    title = title,
+                    note = note,
+                    prescription = prescription,
+                    startedAt = at
+                )
             )
         )
     }
 
-    private fun rejected(reason: CourseRejected.Reason): Result<PlannedCourse> =
+    private fun rejected(reason: CourseRejected.Reason): Result<Activation> =
         Result.failure(CourseRejected(reason))
 
     /** Изменённый экземпляр; [id] и [createdAt] не меняются. */
@@ -150,11 +180,17 @@ class CourseDraft(
         updatedAt = updatedAt
     )
 
-    /** Тождество — [id]: переименованный курс остаётся тем же курсом. */
+    /** Тождество — [id]: переименованный черновик остаётся тем же черновиком. */
     override fun equals(other: Any?): Boolean =
-        this === other || (other is Course && other.id == id)
+        this === other || (other is CourseDraft && other.id == id)
 
     override fun hashCode(): Int = id.hashCode()
 
     override fun toString(): String = "CourseDraft(id=$id, title=$title)"
+
+    /**
+     * Начатое лечение: план и запись одного эпизода, с общим [Course.id] и одним назначением.
+     * Один тип на двоих потому, что порознь они не рождаются.
+     */
+    class Activation(val course: Course, val record: CourseRecord)
 }

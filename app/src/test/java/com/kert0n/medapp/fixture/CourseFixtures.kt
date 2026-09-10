@@ -3,12 +3,12 @@ package com.kert0n.medapp.fixture
 import com.kert0n.medapp.domain.course.Course
 import com.kert0n.medapp.domain.course.CourseDraft
 import com.kert0n.medapp.domain.course.CourseMedicine
+import com.kert0n.medapp.domain.course.CourseRecord
 import com.kert0n.medapp.domain.course.CourseSchedule
 import com.kert0n.medapp.domain.course.CourseSource
-import com.kert0n.medapp.domain.value.Doses
-import com.kert0n.medapp.domain.course.CourseStatus
-import com.kert0n.medapp.domain.course.PlannedCourse
+import com.kert0n.medapp.domain.course.Prescription
 import com.kert0n.medapp.domain.course.Revision
+import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.Quantity
 import java.math.BigDecimal
 import java.time.DayOfWeek
@@ -79,9 +79,16 @@ fun course(
     updatedAt = updatedAt
 )
 
+/** Назначение: две таблетки раз в день неделю, если тест не сказал иначе. */
+fun prescription(
+    doseAmount: BigDecimal = BigDecimal("2"),
+    unitId: Uuid = TABLETS,
+    schedule: CourseSchedule = schedule()
+) = Prescription(dose = Quantity(doseAmount, unitId), schedule = schedule)
+
 /**
- * Назначенный курс: доза, единица, форма и расписание у него есть по типу, и называть их в
- * каждом тесте незачем. По умолчанию — две таблетки раз в день неделю.
+ * Действующий план: доза, единица, форма и расписание у него есть по типу, и называть их в каждом
+ * тесте незачем.
  */
 fun activeCourse(
     id: Uuid = COURSE,
@@ -90,20 +97,35 @@ fun activeCourse(
     formId: Uuid = TABLET_FORM,
     schedule: CourseSchedule = schedule(),
     sources: List<CourseSource> = emptyList(),
-    status: CourseStatus = CourseStatus.ACTIVE,
     revision: Long = 1,
     createdAt: Instant = EARLIER,
     updatedAt: Instant = EARLIER
-) = PlannedCourse(
+) = Course(
     id = id,
-    title = "Парацетамол, пять дней",
-    dose = Quantity(doseAmount, unitId),
-    schedule = schedule,
+    prescription = prescription(doseAmount, unitId, schedule),
     medicine = CourseMedicine(sources = sources, formId = formId, unitId = unitId),
-    status = status,
     revision = Revision(revision),
     createdAt = createdAt,
     updatedAt = updatedAt
+)
+
+/** Запись эпизода: по умолчанию открытая — лечение идёт, план для него ещё существует. */
+fun courseRecord(
+    id: Uuid = COURSE,
+    title: String = "Парацетамол, пять дней",
+    note: String? = null,
+    prescription: Prescription = prescription(),
+    startedAt: Instant = EARLIER,
+    outcome: CourseRecord.Outcome? = null,
+    closedAt: Instant? = null
+) = CourseRecord(
+    id = id,
+    title = title,
+    note = note,
+    prescription = prescription,
+    startedAt = startedAt,
+    outcome = outcome,
+    closedAt = closedAt
 )
 
 /** Источник: пачка и её выделение в целых дозах. */

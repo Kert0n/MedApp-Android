@@ -4,6 +4,7 @@ import com.kert0n.medapp.domain.course.Revision
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.activeCourse
+import com.kert0n.medapp.fixture.courseRecord
 import com.kert0n.medapp.fixture.LATER
 import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.TABLET_FORM
@@ -26,7 +27,6 @@ class CourseTest {
     @Test
     fun draftWithNothingButATitleIsALegitimateCourse() {
         val draft = course()
-        assertEquals(CourseStatus.DRAFT, draft.status)
         assertNull(draft.note)
         assertNull(draft.doseAmount)
         assertNull(draft.dose)
@@ -63,10 +63,11 @@ class CourseTest {
     }
 
     @Test
-    fun activeCourseStillGetsRenamed() {
-        // Название и заметка — не назначенное лечение (PLAN D5).
-        val active = activeCourse().rename("Курс", null, LATER)
-        assertEquals("Курс от врача", active.rename("Курс от врача", null, LATER).title)
+    fun startedTreatmentStillGetsRenamed() {
+        // Название и заметка — не назначенное лечение, и правятся они всегда (PLAN D5). Живёт имя
+        // в записи эпизода: так называют лечение, а не расписание, и второго места для него нет.
+        val record = courseRecord(title = "Курс")
+        assertEquals("Курс от врача", record.rename("Курс от врача", null).title)
     }
 
     @Test
@@ -92,9 +93,11 @@ class CourseTest {
         // курса нет вовсе. Изменившееся лечение — отмена прежнего курса и новый (PLAN D5).
         val draft = course(doseAmount = BigDecimal("2"), schedule = schedule())
             .attach(pack(formId = TABLET_FORM), doses(1), LATER).getOrThrow()
-        val planned = draft.activate(LATER).getOrThrow()
-        assertEquals(tablets("2"), planned.dose)
-        assertEquals(schedule(), planned.schedule)
+        val started = draft.activate(LATER).getOrThrow()
+        assertEquals(tablets("2"), started.course.dose)
+        assertEquals(schedule(), started.course.schedule)
+        // Запись эпизода несёт то же назначение: расходиться им нечем — менять его нельзя.
+        assertEquals(started.course.prescription, started.record.prescription)
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -115,14 +118,14 @@ class CourseTest {
     @Test
     fun titleAndNoteFillingTheirLimitsFit() {
         val long = course(
-            title = "я".repeat(Course.TITLE_MAX_LENGTH),
-            note = "я".repeat(Course.NOTE_MAX_LENGTH)
+            title = "я".repeat(CourseRecord.TITLE_MAX_LENGTH),
+            note = "я".repeat(CourseRecord.NOTE_MAX_LENGTH)
         )
         assertEquals(COURSE, long.id)
     }
 
     @Test(expected = IllegalArgumentException::class)
     fun noteOverTheLimitIsRejected() {
-        course(note = "я".repeat(Course.NOTE_MAX_LENGTH + 1))
+        course(note = "я".repeat(CourseRecord.NOTE_MAX_LENGTH + 1))
     }
 }

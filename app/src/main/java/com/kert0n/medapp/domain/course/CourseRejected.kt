@@ -24,9 +24,6 @@ class CourseRejected(val reason: Reason) : IllegalStateException(reason.name) {
         /** Единица пачки отличается от единицы препарата. */
         UNIT_MISMATCH,
 
-        /** Курс завершён или отменён: его пачки — история. */
-        COURSE_CLOSED,
-
         /** Активировать нельзя: нет расписания. */
         SCHEDULE_MISSING,
 

@@ -1,41 +1,48 @@
 package com.kert0n.medapp.domain.course
 
+import com.kert0n.medapp.domain.pack.Availability
+import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.Quantity
 import java.time.Instant
 import kotlin.uuid.Uuid
 
 /**
- * Курс — лечение, которое человек себе назначил: сколько принимать, по какому календарю и из
- * каких пачек. Сущность: переименованный курс — тот же курс, равенство по [id]. Типов два, потому
- * что ведут они себя по-разному: у [CourseDraft] дозы, расписания и пачек может ещё не быть, у
- * [PlannedCourse] они есть, а доза и расписание неизменны (PLAN D5). На сервер курс не уезжает
- * (C0) — уезжает только бронь, следствие выделения.
+ * Курс — лечение, которым пользуются прямо сейчас: назначение и пачки, из которых оно берётся.
+ *
+ * **Состояний у него нет.** Живой план всегда действующий: закончившееся лечение планом быть
+ * перестаёт — план уничтожается, а остаётся [CourseRecord], запись того же эпизода (PLAN D5).
+ * Поэтому здесь нет ни `status`, ни проверок «а действующий ли», ни переходов в завершённый и
+ * отменённый: закрывает лечение запись, и делает это одним `close`.
+ *
+ * **Имени у плана тоже нет** — так называют лечение, а не расписание, и название с заметкой живут
+ * в записи. Второго места, где то же имя могло бы разойтись, не существует.
+ *
+ * **Все вопросы о лечении задаются курсу**, потому что он один владеет и дозой, и препаратом:
+ * обеспечение, предел ползунка, зажим при нехватке, пересчёт после приёма, порядок расхода. Доза —
+ * его основная ценность, и просить её со стороны ему незачем.
+ *
+ * Сущность: тождество — [id], общее у плана и записи, потому что эпизод лечения один.
  */
-sealed interface Course {
-
-    val id: Uuid
-    val title: String
-
-    /** «Что купить», запись от врача. */
-    val note: String?
-
-    /** Препарат курса: пачки, порядок их расходования и выделение. */
-    val medicine: CourseMedicine
-
-    val status: CourseStatus
-
-    /** Редакция черновика и источников; у назначенного курса доза и расписание неизменны. */
-    val revision: Revision
-
-    val createdAt: Instant
+class Course(
+    val id: Uuid,
+    val prescription: Prescription,
+    val medicine: CourseMedicine,
+    val revision: Revision = Revision.initial,
+    val createdAt: Instant,
     val updatedAt: Instant
+) {
 
-    /** Разовая доза. `null` только у черновика, которому её ещё не задали. */
-    val dose: Quantity?
+    init {
+        require(prescription.dose.unitId == medicine.unitId) {
+            "доза измеряется единицей источников курса"
+        }
+    }
 
-    /** Расписание. `null` только у черновика. */
-    val schedule: CourseSchedule?
+    /** Разовая доза: назначение врача, а не подсказка упаковки (PLAN D5, C1). */
+    val dose: Quantity get() = prescription.dose
+
+    val schedule: CourseSchedule get() = prescription.schedule
 
     val sources: List<CourseSource> get() = medicine.sources
 
@@ -46,21 +53,116 @@ sealed interface Course {
     val allocatedDosesTotal: Doses get() = medicine.allocatedTotal
 
     /**
-     * Выделение источника **в единицах пачки** — та самая величина, которую видит серверная
-     * бронь: целевой объём брони равен `allocatedDoses × dose` (PLAN D5).
-     *
-     * `null`, когда пачка не источник этого курса или когда доза ещё не задана: выдумывать
-     * количество из неизвестной дозы нельзя.
+     * Выделение пачки **в единицах пачки** — та самая величина, которую видит серверная бронь:
+     * целевой объём равен `allocatedDoses × dose` (PLAN D5). `null` — пачка не в препарате курса.
      */
-    fun allocatedOf(packageId: Uuid): Quantity? {
-        val allocated = medicine.allocatedTo(packageId) ?: return null
-        return dose?.times(allocated)
+    fun allocatedOf(packageId: Uuid): Quantity? =
+        medicine.allocatedTo(packageId)?.let { dose * it }
+
+    /** Пачки действующего курса менять можно: это не изменение дозы или календаря (PLAN D5). */
+    fun attach(pkg: Package, doses: Doses, at: Instant): Result<Course> =
+        medicine.attach(pkg, doses)
+            .map { changed(medicine = it, revision = revision.next(), updatedAt = at) }
+
+    /**
+     * Отвязка последней пачки форму и единицу не забывает: в них записаны доза и прошлые приёмы.
+     * Курс просто становится необеспеченным (PLAN D5).
+     */
+    fun detach(packageId: Uuid, at: Instant): Course = changed(
+        medicine = medicine.detach(packageId, forgetFormWhenEmpty = false),
+        revision = revision.next(),
+        updatedAt = at
+    )
+
+    fun reorder(from: Int, to: Int, at: Instant): Course {
+        val moved = medicine.reorder(from, to)
+        if (moved == medicine) return this
+        return changed(medicine = moved, revision = revision.next(), updatedAt = at)
     }
 
-    companion object {
-        const val TITLE_MAX_LENGTH = 200
+    fun allocate(packageId: Uuid, doses: Doses, at: Instant): Course = changed(
+        medicine = medicine.allocate(packageId, doses),
+        revision = revision.next(),
+        updatedAt = at
+    )
 
-        /** Длиннее названия: сюда переписывают запись от врача и «что купить». */
-        const val NOTE_MAX_LENGTH = 500
+    /**
+     * Обеспечение курса: на сколько из оставшихся приёмов хватит пачек препарата и с какого приёма
+     * не хватает (PLAN D5).
+     */
+    fun coverage(
+        remaining: List<ScheduledOccurrence>,
+        availability: Availability
+    ): CourseCoverage = medicine.coverage(dose, remaining, availability)
+
+    /**
+     * Верхняя граница ползунка пачки в целых дозах: меньшее из того, что пачка даёт, и того, что
+     * потребность оставляет сверх выделенного остальным (PLAN D5).
+     */
+    fun maxDoses(packageId: Uuid, required: Doses, availability: Availability): Doses =
+        medicine.maxDoses(packageId, dose, required, availability)
+
+    /**
+     * Курс с выделениями, зажатыми под нехватку и оставшуюся потребность. Доза, расписание и даты
+     * не меняются — расписание это намерение человека, и чужое действие его не переписывает (C1).
+     *
+     * Зажимать нечего — возвращает себя: пересчёт идёт после каждого изменения входов (D5), и
+     * поднимать редакцию на каждом было бы шумом в истории пунктов.
+     */
+    fun clamped(required: Doses, availability: Availability, at: Instant): Course {
+        val clamped = medicine.clampedTo(dose, required, availability)
+        if (clamped == medicine) return this
+        return changed(medicine = clamped, revision = revision.next(), updatedAt = at)
     }
+
+    /**
+     * Сколько целых доз остаётся выделено пачке после подтверждённого приёма: не больше
+     * выделенного за вычетом расхода и не больше того, что в пачке осталось (PLAN D5).
+     */
+    fun dosesAfterIntake(packageId: Uuid, taken: Quantity, availableAfter: Quantity): Doses =
+        medicine.dosesAfterIntake(packageId, dose, taken, availableAfter)
+
+    /**
+     * Из каких пачек уйдут следующие [doses] доз — по одной пачке на дозу, в порядке расходования:
+     * сверху вниз, каждая пачка не больше выделенного и не больше целых доз, что в ней есть.
+     * `null` — доза не обеспечена: полная доза «неизвестно откуда» не записывается, и пачки вне
+     * препарата не подставляются (PLAN D5).
+     *
+     * Раскладку по конкретным приёмам делает сценарий: какие пункты ещё не отвечены и в каком они
+     * порядке — его знание, а курс отвечает, из чего они возьмутся. Спрашивать у курса список
+     * приёмов значило бы тянуть в него чужой агрегат ради двух проверок.
+     */
+    fun spendOrder(doses: Doses, availability: Availability): List<Uuid?> {
+        val fromPacks = medicine.spend(dose, doses, availability)
+            .flatMap { (packageId, taken) -> List(taken.count) { packageId } }
+        return List(doses.count) { fromPacks.getOrNull(it) }
+    }
+
+    /**
+     * Сколько уйдёт из каждой пачки на следующие [doses] доз. Пачек, из которых не уходит ничего,
+     * в ответе нет; это тот же расход, что и [spendOrder], только величинами.
+     */
+    fun spending(doses: Doses, availability: Availability): Map<Uuid, Quantity> =
+        medicine.spend(dose, doses, availability).mapValues { (_, taken) -> dose * taken }
+
+    private fun changed(
+        medicine: CourseMedicine = this.medicine,
+        revision: Revision = this.revision,
+        updatedAt: Instant = this.updatedAt
+    ): Course = Course(
+        id = id,
+        prescription = prescription,
+        medicine = medicine,
+        revision = revision,
+        createdAt = createdAt,
+        updatedAt = updatedAt
+    )
+
+    /** Тождество — [id]: курс с переставленными пачками остаётся тем же курсом. */
+    override fun equals(other: Any?): Boolean =
+        this === other || (other is Course && other.id == id)
+
+    override fun hashCode(): Int = id.hashCode()
+
+    override fun toString(): String = "Course(id=$id, dose=$dose)"
 }

@@ -86,7 +86,7 @@ class CourseSourceFormTest {
         assertEquals(TABLET_FORM, unsupplied.formId)
         assertEquals(TABLETS, unsupplied.unitId)
         assertEquals(tablets("2"), unsupplied.dose)
-        assertEquals(CourseStatus.ACTIVE, unsupplied.status)
+        assertEquals(listOf<CourseSource>(), unsupplied.sources)
     }
 
     @Test
@@ -133,6 +133,6 @@ class CourseSourceFormTest {
         )
     }
 
-    private fun Result<Course>.rejection(): CourseRejected.Reason? =
+    private fun <T> Result<T>.rejection(): CourseRejected.Reason? =
         (exceptionOrNull() as? CourseRejected)?.reason
 }

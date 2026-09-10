@@ -5,10 +5,10 @@ import com.kert0n.medapp.fixture.EARLIER
 import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.LATER
 import com.kert0n.medapp.fixture.PACK
-import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.course
+import com.kert0n.medapp.fixture.courseRecord
 import com.kert0n.medapp.fixture.doses
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.plannedIntake
@@ -21,21 +21,22 @@ import kotlin.uuid.Uuid
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Изменившееся лечение — это **отмена прежнего курса с сохранением истории и новый курс**, а не
- * правка действующего (PLAN C1, D5).
- *
- * Сценарий проверяется целиком, потому что по частям он выглядит безобидно: каждый отдельный
- * отказ понятен, а вместе они и есть то самое решение — прошлые приёмы не должны оказаться
- * записанными в дозе, которой у курса больше нет.
+ * Изменившееся лечение — это **конец прежнего эпизода и новый**, а не правка действующего
+ * (PLAN C1, D5). Сценарий проверяется целиком, потому что по частям он выглядит безобидно:
+ * каждый отдельный отказ понятен, а вместе они и есть то самое решение — прошлые приёмы не
+ * должны оказаться записанными в дозе, которой у лечения больше нет.
  */
 class CourseReplacementTest {
 
     private val newCourseId: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000053")
 
     private val old = activeCourse(sources = listOf(source(PACK, 5)))
+
+    private val oldRecord = courseRecord(startedAt = EARLIER)
 
     private val takenYesterday = plannedIntake(courseRevision = old.revision.number)
         .confirm(PACK, HOME_KIT, tablets("2"), EARLIER)
@@ -46,57 +47,70 @@ class CourseReplacementTest {
     )
 
     @Test
-    fun replacementIsAnotherCourseAndTheOldOneStaysAsHistory() {
-        val cancelled = old.cancel(LATER)
+    fun replacementIsAnotherEpisodeAndTheOldOneStaysAsARecord() {
+        val closed = oldRecord.close(CourseRecord.Outcome.CANCELLED, LATER)
         val replacement = course(
             id = newCourseId,
-            title = old.title,
+            title = oldRecord.title,
             doseAmount = BigDecimal("3"),
             createdAt = LATER,
             updatedAt = LATER
         )
             .setSchedule(schedule(times = listOf(LocalTime.of(9, 0), LocalTime.of(21, 0))), LATER)
-            .attach(pack(id = PACK, formId = TABLET_FORM, quantity = tablets("20")), doses = doses(5), at = LATER)
+            .attach(pack(id = PACK, formId = TABLET_FORM, quantity = tablets("20")), doses(5), LATER)
             .getOrThrow()
             .activate(LATER)
             .getOrThrow()
 
-        // Другой курс, а не тот же самый: тождество — id.
-        assertNotEquals(old, replacement)
-        assertEquals(CourseStatus.ACTIVE, replacement.status)
+        // Другой эпизод, а не тот же самый: тождество — id.
+        assertNotEquals(closed, replacement.record)
+        assertTrue(replacement.record.isOpen)
+        assertEquals(tablets("3"), replacement.course.dose)
 
-        // История прежнего курса на месте: расписание, доза и стек источников остались как были.
-        assertEquals(CourseStatus.CANCELLED, cancelled.status)
-        assertEquals(schedule(), cancelled.schedule)
-        assertEquals(tablets("2"), cancelled.dose)
-        assertEquals(TABLETS, cancelled.unitId)
-        assertEquals(listOf(PACK), cancelled.sources.map { it.packageId })
-        // Выделение освобождено — броней у отменённого курса нет.
-        assertEquals(doses(0), cancelled.allocatedDosesTotal)
-        assertEquals(EARLIER, cancelled.createdAt)
+        // Прежний эпизод остался записью — вместе с назначением, которое исчезло с планом.
+        assertEquals(CourseRecord.Outcome.CANCELLED, closed.outcome)
+        assertEquals(LATER, closed.closedAt)
+        assertEquals(EARLIER, closed.startedAt)
+        assertEquals(schedule(), closed.prescription.schedule)
+        assertEquals(tablets("2"), closed.prescription.dose)
     }
 
     @Test
-    fun cancellationDoesNotRewriteWhatAlreadyHappened() {
-        // Отмена не переписывает состоявшиеся приёмы, их времена и количества (PLAN D5).
+    fun closingDoesNotRewriteWhatAlreadyHappened() {
+        // Конец лечения не переписывает состоявшиеся приёмы, их времена и количества (PLAN D5).
         assertEquals(IntakeStatus.TAKEN, takenYesterday.status)
         assertEquals(tablets("2"), takenYesterday.taken?.amount)
         assertEquals(old.id, takenYesterday.courseId)
         assertEquals(old.revision, takenYesterday.courseRevision)
 
-        // А будущий неотвеченный пункт отменяется вместе с курсом.
+        // А будущий неотвеченный пункт отменяется вместе с лечением.
         val cancelledItem = plannedTomorrow.cancel(LATER)
         assertEquals(IntakeStatus.CANCELLED, cancelledItem.status)
         assertEquals(tablets("2"), cancelledItem.plannedAmount)
+        assertThrows(IllegalStateException::class.java) { takenYesterday.cancel(LATER) }
+    }
+
+    @Test
+    fun intakeStillFindsItsEpisodeWhenThePlanIsGone() {
+        // План уничтожается вместе с концом лечения, а ссылка приёма — тождество эпизода, и она
+        // не повисает: «что принималось по этому поводу» отвечается ею и после закрытия.
+        val closed = oldRecord.close(CourseRecord.Outcome.COMPLETED, LATER)
+        assertEquals(closed.id, takenYesterday.courseId)
+        assertEquals(closed.id, old.id)
+    }
+
+    @Test
+    fun closedEpisodeIsNotClosedTwice() {
+        val closed = oldRecord.close(CourseRecord.Outcome.CANCELLED, LATER)
         assertThrows(IllegalStateException::class.java) {
-            takenYesterday.cancel(LATER)
+            closed.close(CourseRecord.Outcome.COMPLETED, LATER)
         }
     }
 
     @Test
-    fun cancelledCourseIsNotReopened() {
-        val cancelled = old.cancel(LATER)
-        assertThrows(IllegalStateException::class.java) { cancelled.cancel(LATER) }
-        assertThrows(IllegalStateException::class.java) { cancelled.complete(LATER) }
+    fun treatmentDoesNotEndBeforeItStarts() {
+        assertThrows(IllegalArgumentException::class.java) {
+            courseRecord(startedAt = LATER).close(CourseRecord.Outcome.COMPLETED, EARLIER)
+        }
     }
 }

@@ -22,7 +22,7 @@ class MaxDosesTest {
     private fun twoPacks(first: Int, second: Int) =
         activeCourse(sources = listOf(source(PACK, first), source(OTHER_PACK, second)))
 
-    private fun PlannedCourse.limit(
+    private fun Course.limit(
         packageId: kotlin.uuid.Uuid,
         required: Int,
         availability: Availability = this@MaxDosesTest.availability
