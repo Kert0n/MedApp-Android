@@ -1,6 +1,7 @@
 package com.kert0n.medapp.domain.calc.coverage
 
 import com.kert0n.medapp.domain.model.course.Course
+import com.kert0n.medapp.domain.model.value.Doses
 import com.kert0n.medapp.domain.model.value.Quantity
 import kotlin.uuid.Uuid
 
@@ -18,8 +19,8 @@ internal fun sourceCapacity(
     course: Course,
     dose: Quantity,
     availability: Map<Uuid, Quantity>
-): List<Pair<Uuid, Int>> = course.sources.map { source ->
-    val wholeDoses = availability[source.packageId]?.dosesIn(dose) ?: 0
+): List<Pair<Uuid, Doses>> = course.sources.map { source ->
+    val wholeDoses = availability[source.packageId]?.dosesIn(dose) ?: Doses.none
     source.packageId to minOf(source.allocatedDoses, wholeDoses)
 }
 
@@ -29,15 +30,14 @@ internal fun sourceCapacity(
  * Пачки, из которых не уходит ничего, в ответе не появляются: «ноль доз из этой пачки» и
  * «эта пачка не участвует» — одно и то же утверждение, и второе короче.
  */
-internal fun spendTopDown(capacity: List<Pair<Uuid, Int>>, doses: Int): Map<Uuid, Int> {
-    require(doses >= 0) { "число приёмов не бывает отрицательным: $doses" }
+internal fun spendTopDown(capacity: List<Pair<Uuid, Doses>>, doses: Doses): Map<Uuid, Doses> {
     var left = doses
-    val spent = LinkedHashMap<Uuid, Int>()
+    val spent = LinkedHashMap<Uuid, Doses>()
     for ((packageId, fits) in capacity) {
-        if (left == 0) break
+        if (left.isNone) break
         val taken = minOf(fits, left)
-        if (taken == 0) continue
-        spent[packageId] = (spent[packageId] ?: 0) + taken
+        if (taken.isNone) continue
+        spent[packageId] = (spent[packageId] ?: Doses.none) + taken
         left -= taken
     }
     return spent

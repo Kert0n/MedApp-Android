@@ -1,5 +1,6 @@
 package com.kert0n.medapp.domain.calc.coverage
 
+import com.kert0n.medapp.domain.model.value.Doses
 import com.kert0n.medapp.domain.model.value.Quantity
 import kotlin.uuid.Uuid
 
@@ -18,13 +19,12 @@ import kotlin.uuid.Uuid
  */
 data class SourceCoverage(
     val packageId: Uuid,
-    val allocatedDoses: Int,
-    val coveredDoses: Int,
+    val allocatedDoses: Doses,
+    val coveredDoses: Doses,
     val leftover: Quantity?
 ) {
     init {
-        require(allocatedDoses >= 0) { "выделение не бывает отрицательным" }
-        require(coveredDoses in 0..allocatedDoses) {
+        require(coveredDoses <= allocatedDoses) {
             "покрыто больше, чем выделено: $coveredDoses из $allocatedDoses"
         }
     }

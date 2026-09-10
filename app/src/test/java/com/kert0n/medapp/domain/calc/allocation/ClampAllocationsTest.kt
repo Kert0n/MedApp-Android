@@ -7,6 +7,7 @@ import com.kert0n.medapp.fixture.MOSCOW
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.activeCourse
+import com.kert0n.medapp.fixture.doses
 import com.kert0n.medapp.fixture.factsOf
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.schedule
@@ -30,8 +31,8 @@ class ClampAllocationsTest {
         // источник не тронут.
         val shrunk = mapOf(PACK to tablets("4"), OTHER_PACK to tablets("12"))
         assertEquals(
-            listOf(2, 4),
-            clampAllocations(course, requiredDoses = 28, availability = shrunk)
+            listOf(doses(2), doses(4)),
+            clampAllocations(course, requiredDoses = doses(28), availability = shrunk)
                 .map { it.allocatedDoses }
         )
     }
@@ -41,9 +42,9 @@ class ClampAllocationsTest {
         // Единственное, что функция умеет вернуть, — источники. Расписание чужим действием не
         // переписывается: «сокращаем курс до максимально возможного срока» здесь невыразимо.
         val shrunk = mapOf(PACK to tablets("0"), OTHER_PACK to tablets("0"))
-        val clamped = clampAllocations(course, requiredDoses = 28, availability = shrunk)
+        val clamped = clampAllocations(course, requiredDoses = doses(28), availability = shrunk)
         val after = clamped.fold(course) { acc, s -> acc.allocate(s.packageId, s.allocatedDoses, LATER) }
-        assertEquals(listOf(0, 0), after.sources.map { it.allocatedDoses })
+        assertEquals(listOf(doses(0), doses(0)), after.sources.map { it.allocatedDoses })
         assertEquals(course.schedule, after.schedule)
         assertEquals(course.doseAmount, after.doseAmount)
         assertEquals(course.unitId, after.unitId)
@@ -64,11 +65,11 @@ class ClampAllocationsTest {
             until = week.endInclusive.plusDays(1).atStartOfDay(MOSCOW).toInstant()
         )
         val shrunk = mapOf(PACK to tablets("4"), OTHER_PACK to tablets("0"))
-        val clamped = clampAllocations(course, requiredDoses = plan.size, availability = shrunk)
+        val clamped = clampAllocations(course, requiredDoses = doses(plan.size), availability = shrunk)
         val after = clamped.fold(course) { acc, s -> acc.allocate(s.packageId, s.allocatedDoses, LATER) }
         val found = coverage(after, plan, shrunk)
-        assertEquals(7, found.requiredDoses)
-        assertEquals(2, found.coveredDoses)
+        assertEquals(doses(7), found.requiredDoses)
+        assertEquals(doses(2), found.coveredDoses)
         assertEquals(plan[2].at, found.firstUncoveredAt)
         assertEquals(week, after.schedule)
     }
@@ -76,8 +77,8 @@ class ClampAllocationsTest {
     @Test
     fun excessOverTheRemainingNeedIsTakenFromTheEndOfTheStack() {
         assertEquals(
-            listOf(5, 1),
-            clampAllocations(course, requiredDoses = 6, availability = plenty)
+            listOf(doses(5), doses(1)),
+            clampAllocations(course, requiredDoses = doses(6), availability = plenty)
                 .map { it.allocatedDoses }
         )
     }
@@ -87,8 +88,8 @@ class ClampAllocationsTest {
         // При требуемой сверке предел неизвестен: выделение сохраняется, а обеспечение помечено
         // требующим проверки — и автоматическая замена брони до сверки не отправляется.
         val partial = mapOf(OTHER_PACK to tablets("12"))
-        val clamped = clampAllocations(course, requiredDoses = 28, availability = partial)
-        assertEquals(listOf(5, 4), clamped.map { it.allocatedDoses })
+        val clamped = clampAllocations(course, requiredDoses = doses(28), availability = partial)
+        assertEquals(listOf(doses(5), doses(4)), clamped.map { it.allocatedDoses })
         assertTrue(coverage(course, emptyList(), partial).requiresRecount)
     }
 
@@ -97,8 +98,8 @@ class ClampAllocationsTest {
         // Автоматического увеличения нет: выделение — решение человека, а не следствие поставки.
         val grown = mapOf(PACK to tablets("100"), OTHER_PACK to tablets("100"))
         assertEquals(
-            listOf(5, 4),
-            clampAllocations(course, requiredDoses = 28, availability = grown)
+            listOf(doses(5), doses(4)),
+            clampAllocations(course, requiredDoses = doses(28), availability = grown)
                 .map { it.allocatedDoses }
         )
     }
@@ -111,8 +112,8 @@ class ClampAllocationsTest {
             .describe(factsOf(pack()).copy(defaultIntakeAmount = tablets("1")))
         val available = mapOf(PACK to hinted.quantity, OTHER_PACK to tablets("12"))
         assertEquals(
-            listOf(5, 4),
-            clampAllocations(course, requiredDoses = 28, availability = available)
+            listOf(doses(5), doses(4)),
+            clampAllocations(course, requiredDoses = doses(28), availability = available)
                 .map { it.allocatedDoses }
         )
         assertEquals(BigDecimal("2"), course.doseAmount)

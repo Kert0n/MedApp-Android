@@ -1,5 +1,6 @@
 package com.kert0n.medapp.fixture
 
+import com.kert0n.medapp.domain.model.value.Doses
 import com.kert0n.medapp.domain.model.value.Quantity
 import java.math.BigDecimal
 import kotlin.uuid.Uuid
@@ -17,3 +18,5 @@ val CAPSULE_FORM: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000042")
 fun tablets(amount: String): Quantity = Quantity(BigDecimal(amount), TABLETS)
 
 fun millilitres(amount: String): Quantity = Quantity(BigDecimal(amount), MILLILITRES)
+
+fun doses(count: Int): Doses = Doses(count)

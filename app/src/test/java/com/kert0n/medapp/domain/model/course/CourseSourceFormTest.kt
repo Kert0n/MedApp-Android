@@ -9,6 +9,7 @@ import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.course
+import com.kert0n.medapp.fixture.doses
 import com.kert0n.medapp.fixture.millilitres
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.source
@@ -32,7 +33,7 @@ class CourseSourceFormTest {
 
     @Test
     fun firstSourceFixesFormAndUnit() {
-        val fixed = draft().attach(tabletPack, doses = 5, at = LATER).getOrThrow()
+        val fixed = draft().attach(tabletPack, doses = doses(5), at = LATER).getOrThrow()
         assertEquals(TABLET_FORM, fixed.formId)
         assertEquals(TABLETS, fixed.unitId)
         // Доза собралась только теперь: единицу принесла пачка, число задал человек.
@@ -46,7 +47,7 @@ class CourseSourceFormTest {
         val unknownForm = pack(id = OTHER_PACK, formId = null)
         assertEquals(
             CourseRejection.FORM_UNKNOWN,
-            draft().attach(unknownForm, doses = 1, at = LATER).rejection()
+            draft().attach(unknownForm, doses = doses(1), at = LATER).rejection()
         )
         // И для первого источника тоже: фиксировать «неизвестно» нечем.
         assertNull(draft().formId)
@@ -55,10 +56,10 @@ class CourseSourceFormTest {
     @Test
     fun incompatibleFormIsRejected() {
         val capsules = pack(id = OTHER_PACK, formId = CAPSULE_FORM, quantity = tablets("10"))
-        val fixed = draft().attach(tabletPack, doses = 5, at = LATER).getOrThrow()
+        val fixed = draft().attach(tabletPack, doses = doses(5), at = LATER).getOrThrow()
         assertEquals(
             CourseRejection.FORM_MISMATCH,
-            fixed.attach(capsules, doses = 1, at = LATER).rejection()
+            fixed.attach(capsules, doses = doses(1), at = LATER).rejection()
         )
     }
 
@@ -67,10 +68,10 @@ class CourseSourceFormTest {
         // Форма та же, единица другая: доза курса измеряется единицей курса, и миллилитры в
         // «две таблетки» не подставятся.
         val syrup = pack(id = OTHER_PACK, formId = TABLET_FORM, quantity = millilitres("100"))
-        val fixed = draft().attach(tabletPack, doses = 5, at = LATER).getOrThrow()
+        val fixed = draft().attach(tabletPack, doses = doses(5), at = LATER).getOrThrow()
         assertEquals(
             CourseRejection.UNIT_MISMATCH,
-            fixed.attach(syrup, doses = 1, at = LATER).rejection()
+            fixed.attach(syrup, doses = doses(1), at = LATER).rejection()
         )
         assertEquals(TABLETS, fixed.unitId)
     }
@@ -90,7 +91,7 @@ class CourseSourceFormTest {
 
     @Test
     fun detachingTheLastSourceOfADraftForgetsFormAndUnit() {
-        val chosen = draft().attach(tabletPack, doses = 5, at = LATER).getOrThrow()
+        val chosen = draft().attach(tabletPack, doses = doses(5), at = LATER).getOrThrow()
         val emptied = chosen.detach(PACK, LATER)
         assertNull(emptied.formId)
         assertNull(emptied.unitId)
@@ -103,8 +104,8 @@ class CourseSourceFormTest {
     fun draftForgetsFormOnlyWhenTheStackEmpties() {
         val second = pack(id = OTHER_PACK, formId = TABLET_FORM, quantity = tablets("12"))
         val two = draft()
-            .attach(tabletPack, doses = 5, at = LATER).getOrThrow()
-            .attach(second, doses = 4, at = LATER).getOrThrow()
+            .attach(tabletPack, doses = doses(5), at = LATER).getOrThrow()
+            .attach(second, doses = doses(4), at = LATER).getOrThrow()
         val one = two.detach(PACK, LATER)
         assertEquals(TABLET_FORM, one.formId)
         assertEquals(TABLETS, one.unitId)
@@ -114,9 +115,9 @@ class CourseSourceFormTest {
     fun forgottenFormLetsTheDraftStartOverWithAnotherForm() {
         val capsules = pack(id = OTHER_PACK, formId = CAPSULE_FORM, quantity = millilitres("10"))
         val restarted = draft()
-            .attach(tabletPack, doses = 5, at = LATER).getOrThrow()
+            .attach(tabletPack, doses = doses(5), at = LATER).getOrThrow()
             .detach(PACK, LATER)
-            .attach(capsules, doses = 1, at = LATER).getOrThrow()
+            .attach(capsules, doses = doses(1), at = LATER).getOrThrow()
         assertEquals(CAPSULE_FORM, restarted.formId)
         assertEquals(MILLILITRES, restarted.unitId)
     }
@@ -128,7 +129,7 @@ class CourseSourceFormTest {
         val unsupplied = activeCourse(sources = listOf(source(PACK, 5))).detach(PACK, LATER)
         assertEquals(
             CourseRejection.FORM_MISMATCH,
-            unsupplied.attach(capsules, doses = 1, at = LATER).rejection()
+            unsupplied.attach(capsules, doses = doses(1), at = LATER).rejection()
         )
     }
 

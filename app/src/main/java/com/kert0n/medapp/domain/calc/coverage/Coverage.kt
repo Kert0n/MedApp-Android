@@ -2,6 +2,7 @@ package com.kert0n.medapp.domain.calc.coverage
 
 import com.kert0n.medapp.domain.calc.schedule.ScheduledOccurrence
 import com.kert0n.medapp.domain.model.course.Course
+import com.kert0n.medapp.domain.model.value.Doses
 import com.kert0n.medapp.domain.model.value.Quantity
 import kotlin.uuid.Uuid
 
@@ -28,15 +29,15 @@ fun coverage(
     availability: Map<Uuid, Quantity>
 ): CourseCoverage {
     val dose = requireNotNull(course.dose) { "обеспечение без дозы курса не определено" }
-    val requiredDoses = remaining.size
+    val requiredDoses = Doses(remaining.size)
 
     var unknown = false
-    var supplied = 0
+    var supplied = Doses.none
     val perSource = course.sources.map { source ->
         val available = availability[source.packageId]
         if (available == null) {
             unknown = true
-            return@map SourceCoverage(source.packageId, source.allocatedDoses, 0, null)
+            return@map SourceCoverage(source.packageId, source.allocatedDoses, Doses.none, null)
         }
         val wholeDoses = available.dosesIn(dose)
         // Покрытие ограничено и намерением, и физикой: выделение могло остаться больше того,
@@ -57,8 +58,8 @@ fun coverage(
     return CourseCoverage(
         requiredDoses = requiredDoses,
         coveredDoses = coveredDoses,
-        coveredUntil = remaining.getOrNull(coveredDoses - 1)?.at,
-        firstUncoveredAt = remaining.getOrNull(coveredDoses)?.at,
+        coveredUntil = remaining.getOrNull(coveredDoses.count - 1)?.at,
+        firstUncoveredAt = remaining.getOrNull(coveredDoses.count)?.at,
         perSource = perSource,
         requiresRecount = unknown
     )

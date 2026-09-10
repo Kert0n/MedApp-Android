@@ -54,13 +54,12 @@ data class Quantity(val amount: BigDecimal, val unitId: Uuid) {
     }
 
     /**
-     * Умножение только на целое число доз: количество умножается на счётчик приёмов, а не на
-     * другую величину — произведение таблеток на таблетки смысла не имеет.
+     * Умножение только на счётчик приёмов: количество умножается на [Doses], а не на другую
+     * величину — произведение таблеток на таблетки смысла не имеет. Неотрицательность проверять
+     * не нужно: её обеспечивает сам счётчик.
      */
-    operator fun times(count: Int): Quantity {
-        require(count >= 0) { "число доз не бывает отрицательным" }
-        return Quantity(amount * count.toBigDecimal(), unitId)
-    }
+    operator fun times(doses: Doses): Quantity =
+        Quantity(amount * doses.count.toBigDecimal(), unitId)
 
     fun covers(dose: Quantity): Boolean {
         requireSameUnit(dose)
@@ -72,11 +71,11 @@ data class Quantity(val amount: BigDecimal, val unitId: Uuid) {
      * не делится, поэтому по одной таблетке в двух пачках при дозе в две таблетки дают ноль доз,
      * а не одну (PLAN D5). Нулевая доза — ошибка, делить на неё нечего.
      */
-    fun dosesIn(dose: Quantity): Int {
+    fun dosesIn(dose: Quantity): Doses {
         requireSameUnit(dose)
         require(!dose.isZero) { "нулевая доза не делит остаток" }
         val whole = amount.divideToIntegralValue(dose.amount)
-        return if (whole > MAX_DOSES) Int.MAX_VALUE else whole.toInt()
+        return Doses(if (whole > MAX_DOSES) Int.MAX_VALUE else whole.toInt())
     }
 
     private fun requireSameUnit(other: Quantity) {

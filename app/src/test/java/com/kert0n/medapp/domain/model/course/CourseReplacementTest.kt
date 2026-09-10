@@ -9,6 +9,7 @@ import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.course
+import com.kert0n.medapp.fixture.doses
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.plannedIntake
 import com.kert0n.medapp.fixture.schedule
@@ -63,7 +64,7 @@ class CourseReplacementTest {
             updatedAt = LATER
         )
             .setDraftSchedule(schedule(times = listOf(LocalTime.of(9, 0), LocalTime.of(21, 0))), LATER)
-            .attach(pack(id = PACK, formId = TABLET_FORM, quantity = tablets("20")), doses = 5, at = LATER)
+            .attach(pack(id = PACK, formId = TABLET_FORM, quantity = tablets("20")), doses = doses(5), at = LATER)
             .getOrThrow()
             .activate(LATER)
             .getOrThrow()
@@ -79,7 +80,7 @@ class CourseReplacementTest {
         assertEquals(TABLETS, cancelled.unitId)
         assertEquals(listOf(PACK), cancelled.sources.map { it.packageId })
         // Выделение освобождено — броней у отменённого курса нет.
-        assertEquals(0, cancelled.allocatedDosesTotal)
+        assertEquals(doses(0), cancelled.allocatedDosesTotal)
         assertEquals(EARLIER, cancelled.createdAt)
     }
 

@@ -1,5 +1,6 @@
 package com.kert0n.medapp.domain.calc.allocation
 
+import com.kert0n.medapp.domain.model.value.Doses
 import com.kert0n.medapp.domain.model.value.Quantity
 
 /**
@@ -23,19 +24,18 @@ import com.kert0n.medapp.domain.model.value.Quantity
  * приложение не станет.
  */
 fun dosesAfterIntake(
-    allocatedDoses: Int,
+    allocatedDoses: Doses,
     dose: Quantity,
     taken: Quantity,
     availableAfter: Quantity
-): Int {
-    require(allocatedDoses >= 0) { "выделение не бывает отрицательным: $allocatedDoses" }
+): Doses {
     require(!dose.isZero) { "нулевая доза не делит остаток" }
     // Единица одна на все три величины: сравнивать выделенное с доступным в разных единицах
     // нельзя, а `minusOrZero` проверит только два из трёх аргументов.
     require(availableAfter.unitId == dose.unitId) {
         "доступный остаток измеряется единицей дозы: ${availableAfter.unitId} и ${dose.unitId}"
     }
-    if (allocatedDoses == 0) return 0
+    if (allocatedDoses.isNone) return Doses.none
     val allocatedAmount = dose * allocatedDoses
     val leftAllocated = allocatedAmount.minusOrZero(taken)
     val limited = if (leftAllocated.amount <= availableAfter.amount) leftAllocated else availableAfter

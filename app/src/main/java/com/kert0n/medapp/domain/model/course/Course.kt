@@ -3,6 +3,7 @@ package com.kert0n.medapp.domain.model.course
 import com.kert0n.medapp.domain.model.pack.Package
 import com.kert0n.medapp.domain.model.pack.PackageAccess
 import com.kert0n.medapp.domain.model.pack.PackageLifecycle
+import com.kert0n.medapp.domain.model.value.Doses
 import com.kert0n.medapp.domain.model.value.QUANTITY_MAX_INTEGER_DIGITS
 import com.kert0n.medapp.domain.model.value.QUANTITY_SCALE
 import com.kert0n.medapp.domain.model.value.Quantity
@@ -88,7 +89,8 @@ class Course(
         get() = if (doseAmount != null && unitId != null) Quantity(doseAmount, unitId) else null
 
     /** Сколько доз выделено по всему стеку: с этой суммой сравнивается оставшаяся потребность. */
-    val allocatedDosesTotal: Int get() = sources.sumOf { it.allocatedDoses }
+    val allocatedDosesTotal: Doses
+        get() = sources.fold(Doses.none) { total, source -> total + source.allocatedDoses }
 
     /**
      * Выделение источника **в единицах пачки** — та самая величина, которую видит серверная
@@ -149,8 +151,7 @@ class Course(
      * Источники действующего курса менять можно — это не изменение назначенной дозы или
      * календаря; завершённый и отменённый курс остаются историей.
      */
-    fun attach(pkg: Package, doses: Int, at: Instant): Result<Course> {
-        require(doses >= 0) { "выделение не бывает отрицательным: $doses" }
+    fun attach(pkg: Package, doses: Doses, at: Instant): Result<Course> {
         val rejection = attachRejection(pkg)
         if (rejection != null) return Result.failure(CourseRejected(rejection))
         return Result.success(
@@ -221,9 +222,9 @@ class Course(
      *
      * Верхнюю границу здесь не считают: она зависит от свежих остатка, чужих броней и
      * оставшейся потребности, то есть от состояния вне курса. Её вычисляет сценарий через
-     * `maxDoses` (PLAN D5, H1), а модель отвечает за то, что выделение целое и неотрицательное.
+     * `maxDoses` (PLAN D5, H1), а что выделение целое и неотрицательное, отвечает сам тип.
      */
-    fun allocate(packageId: Uuid, doses: Int, at: Instant): Course {
+    fun allocate(packageId: Uuid, doses: Doses, at: Instant): Course {
         requireOpen("выделение")
         require(sources.any { it.packageId == packageId }) {
             "пачка $packageId не источник этого курса"
@@ -281,7 +282,7 @@ class Course(
     }
 
     private fun releasedSources(): List<CourseSource> =
-        sources.map { if (it.allocatedDoses == 0) it else CourseSource(it.packageId, 0) }
+        sources.map { if (it.allocatedDoses.isNone) it else CourseSource(it.packageId, Doses.none) }
 
     /** Черновик или действующий курс: то, что ещё можно менять. */
     private val isOpen: Boolean

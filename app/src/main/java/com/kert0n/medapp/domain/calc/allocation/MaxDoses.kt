@@ -1,6 +1,7 @@
 package com.kert0n.medapp.domain.calc.allocation
 
 import com.kert0n.medapp.domain.model.course.Course
+import com.kert0n.medapp.domain.model.value.Doses
 import com.kert0n.medapp.domain.model.value.Quantity
 import kotlin.uuid.Uuid
 
@@ -32,14 +33,14 @@ import kotlin.uuid.Uuid
 fun maxDoses(
     packageId: Uuid,
     course: Course,
-    requiredDoses: Int,
+    requiredDoses: Doses,
     availability: Map<Uuid, Quantity>
-): Int {
-    require(requiredDoses >= 0) { "потребность не бывает отрицательной: $requiredDoses" }
+): Doses {
     val dose = requireNotNull(course.dose) { "предел выделения без дозы курса не определён" }
-    val allocatedHere = course.sources.firstOrNull { it.packageId == packageId }?.allocatedDoses ?: 0
+    val allocatedHere =
+        course.sources.firstOrNull { it.packageId == packageId }?.allocatedDoses ?: Doses.none
     val available = availability[packageId] ?: return allocatedHere
     val allocatedElsewhere = course.allocatedDosesTotal - allocatedHere
-    val stillNeeded = requiredDoses - allocatedElsewhere
-    return maxOf(0, minOf(available.dosesIn(dose), stillNeeded))
+    val stillNeeded = requiredDoses.minusOrNone(allocatedElsewhere)
+    return minOf(available.dosesIn(dose), stillNeeded)
 }

@@ -1,5 +1,6 @@
 package com.kert0n.medapp.domain.model.course
 
+import com.kert0n.medapp.domain.model.value.Doses
 import kotlin.uuid.Uuid
 
 /**
@@ -21,9 +22,5 @@ import kotlin.uuid.Uuid
  */
 data class CourseSource(
     val packageId: Uuid,
-    val allocatedDoses: Int
-) {
-    init {
-        require(allocatedDoses >= 0) { "выделение не бывает отрицательным: $allocatedDoses" }
-    }
-}
+    val allocatedDoses: Doses
+)

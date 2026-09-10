@@ -1,6 +1,7 @@
 package com.kert0n.medapp.domain.calc.allocation
 
 import com.kert0n.medapp.domain.model.course.CourseSource
+import com.kert0n.medapp.domain.model.value.Doses
 
 /**
  * Ограничивает суммарное выделение оставшейся потребностью, снимая избыток **с конца стека**.
@@ -16,16 +17,16 @@ import com.kert0n.medapp.domain.model.course.CourseSource
  * Автоматического увеличения нет ни здесь, ни где-либо ещё: выделение — решение человека, и
  * поднять его может только он.
  */
-fun trimToRequired(sources: List<CourseSource>, requiredDoses: Int): List<CourseSource> {
-    require(requiredDoses >= 0) { "потребность не бывает отрицательной: $requiredDoses" }
-    var excess = sources.sumOf { it.allocatedDoses } - requiredDoses
-    if (excess <= 0) return sources
+fun trimToRequired(sources: List<CourseSource>, requiredDoses: Doses): List<CourseSource> {
+    val allocated = sources.fold(Doses.none) { total, source -> total + source.allocatedDoses }
+    var excess = allocated.minusOrNone(requiredDoses)
+    if (excess.isNone) return sources
     val trimmed = sources.toMutableList()
     for (index in trimmed.indices.reversed()) {
-        if (excess == 0) break
+        if (excess.isNone) break
         val source = trimmed[index]
         val taken = minOf(source.allocatedDoses, excess)
-        if (taken == 0) continue
+        if (taken.isNone) continue
         trimmed[index] = CourseSource(source.packageId, source.allocatedDoses - taken)
         excess -= taken
     }

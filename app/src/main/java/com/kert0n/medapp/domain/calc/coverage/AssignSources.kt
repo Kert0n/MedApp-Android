@@ -3,6 +3,7 @@ package com.kert0n.medapp.domain.calc.coverage
 import com.kert0n.medapp.domain.model.course.Course
 import com.kert0n.medapp.domain.model.intake.Intake
 import com.kert0n.medapp.domain.model.intake.IntakeStatus
+import com.kert0n.medapp.domain.model.value.Doses
 import com.kert0n.medapp.domain.model.value.Quantity
 import kotlin.uuid.Uuid
 
@@ -48,12 +49,12 @@ fun assignSources(
 
     var current = 0
     return upcoming.associate { intake ->
-        while (current < capacity.size && capacity[current].second == 0) current++
+        while (current < capacity.size && capacity[current].second.isNone) current++
         if (current >= capacity.size) {
             intake.id to null
         } else {
             val (packageId, left) = capacity[current]
-            capacity[current] = packageId to left - 1
+            capacity[current] = packageId to left - Doses.one
             intake.id to packageId
         }
     }

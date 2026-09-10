@@ -1,6 +1,7 @@
 package com.kert0n.medapp.domain.model.value
 
 import com.kert0n.medapp.fixture.TABLETS
+import com.kert0n.medapp.fixture.doses
 import com.kert0n.medapp.fixture.millilitres
 import com.kert0n.medapp.fixture.tablets
 
@@ -54,31 +55,26 @@ class QuantityArithmeticTest {
 
     @Test
     fun timesCountsDoses() {
-        assertEquals(tablets("7.5"), tablets("2.5") * 3)
-        assertTrue((tablets("2.5") * 0).isZero)
-    }
-
-    @Test(expected = IllegalArgumentException::class)
-    fun timesRejectsNegativeCount() {
-        tablets("1") * -1
+        assertEquals(tablets("7.5"), tablets("2.5") * doses(3))
+        assertTrue((tablets("2.5") * Doses.none).isZero)
     }
 
     @Test(expected = IllegalArgumentException::class)
     fun timesOverflowingThirteenDigitsThrowsInsteadOfRounding() {
-        tablets("1000000000000") * 100
+        tablets("1000000000000") * doses(100)
     }
 
     @Test
     fun wholeDosesOnly() {
-        assertEquals(2, tablets("5").dosesIn(tablets("2")))
-        assertEquals(2, tablets("5.999999").dosesIn(tablets("2")))
+        assertEquals(doses(2), tablets("5").dosesIn(tablets("2")))
+        assertEquals(doses(2), tablets("5.999999").dosesIn(tablets("2")))
     }
 
     @Test
     fun halfADoseIsNoDoseAtAll() {
         // Именно это снимает тупик из D5: по одной таблетке в двух пачках при дозе в две
         // не дают ни одной дозы, и выделять их не во что.
-        assertEquals(0, tablets("1").dosesIn(tablets("2")))
+        assertEquals(doses(0), tablets("1").dosesIn(tablets("2")))
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -88,6 +84,6 @@ class QuantityArithmeticTest {
 
     @Test
     fun dosesAreClampedToIntRange() {
-        assertEquals(Int.MAX_VALUE, tablets("1000000000000").dosesIn(tablets("0.000001")))
+        assertEquals(doses(Int.MAX_VALUE), tablets("1000000000000").dosesIn(tablets("0.000001")))
     }
 }

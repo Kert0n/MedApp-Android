@@ -6,6 +6,7 @@ import com.kert0n.medapp.fixture.MOSCOW
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.activeCourse
+import com.kert0n.medapp.fixture.doses
 import com.kert0n.medapp.fixture.schedule
 import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
@@ -51,9 +52,9 @@ class CoverageTest {
     fun twentyEightNeededWithFiveAndFourAllocatedCoversNineAndNamesTheFirstGap() {
         assertEquals(28, remaining.size)
         val found = coverage(course(first = 5, second = 4), remaining, availability)
-        assertEquals(28, found.requiredDoses)
-        assertEquals(9, found.coveredDoses)
-        assertEquals(19, found.missingDoses)
+        assertEquals(doses(28), found.requiredDoses)
+        assertEquals(doses(9), found.coveredDoses)
+        assertEquals(doses(19), found.missingDoses)
         assertFalse(found.isFullyCovered)
         assertEquals(remaining[8].at, found.coveredUntil)
         assertEquals(remaining[9].at, found.firstUncoveredAt)
@@ -78,7 +79,7 @@ class CoverageTest {
     fun unsuppliedCourseIsCoveredFromTheVeryFirstIntake() {
         val unsupplied = activeCourse(schedule = fourTimesADay)
         val found = coverage(unsupplied, remaining, availability)
-        assertEquals(0, found.coveredDoses)
+        assertEquals(doses(0), found.coveredDoses)
         assertNull(found.coveredUntil)
         assertEquals(remaining.first().at, found.firstUncoveredAt)
     }
@@ -89,9 +90,9 @@ class CoverageTest {
         // выделенного, и человек видит, почему.
         val shrunk = mapOf(PACK to tablets("6"), OTHER_PACK to tablets("12"))
         val found = coverage(course(first = 9, second = 0), remaining, shrunk)
-        assertEquals(3, found.coveredDoses)
-        assertEquals(9, found.perSource.first().allocatedDoses)
-        assertEquals(3, found.perSource.first().coveredDoses)
+        assertEquals(doses(3), found.coveredDoses)
+        assertEquals(doses(9), found.perSource.first().allocatedDoses)
+        assertEquals(doses(3), found.perSource.first().coveredDoses)
     }
 
     @Test
@@ -100,7 +101,7 @@ class CoverageTest {
         // видны каждый в своей строке, а не сложились в одну дозу.
         val singles = mapOf(PACK to tablets("1"), OTHER_PACK to tablets("1"))
         val found = coverage(course(first = 5, second = 4), remaining, singles)
-        assertEquals(0, found.coveredDoses)
+        assertEquals(doses(0), found.coveredDoses)
         assertEquals(listOf(tablets("1"), tablets("1")), found.perSource.map { it.leftover })
     }
 
@@ -118,9 +119,9 @@ class CoverageTest {
         // не считается, и обеспечение помечено требующим проверки.
         val found = coverage(course(first = 5, second = 4), remaining, mapOf(OTHER_PACK to tablets("12")))
         assertTrue(found.requiresRecount)
-        assertEquals(4, found.coveredDoses)
-        assertEquals(5, found.perSource.first().allocatedDoses)
-        assertEquals(0, found.perSource.first().coveredDoses)
+        assertEquals(doses(4), found.coveredDoses)
+        assertEquals(doses(5), found.perSource.first().allocatedDoses)
+        assertEquals(doses(0), found.perSource.first().coveredDoses)
         assertNull(found.perSource.first().leftover)
     }
 
@@ -134,15 +135,15 @@ class CoverageTest {
             until = week.endInclusive.plusDays(1).atStartOfDay(MOSCOW).toInstant()
         )
         val found = coverage(activeCourse(sources = listOf(source(PACK, 10))), plan, availability)
-        assertEquals(7, found.requiredDoses)
-        assertEquals(7, found.coveredDoses)
+        assertEquals(doses(7), found.requiredDoses)
+        assertEquals(doses(7), found.coveredDoses)
         assertNull(found.firstUncoveredAt)
     }
 
     @Test
     fun finishedCalendarNeedsNothing() {
         val found = coverage(course(first = 5, second = 4), emptyList(), availability)
-        assertEquals(0, found.requiredDoses)
+        assertEquals(doses(0), found.requiredDoses)
         assertTrue(found.isFullyCovered)
         assertNull(found.coveredUntil)
         assertNull(found.firstUncoveredAt)

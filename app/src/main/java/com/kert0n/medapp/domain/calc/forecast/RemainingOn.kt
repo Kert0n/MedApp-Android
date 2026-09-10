@@ -8,6 +8,7 @@ import com.kert0n.medapp.domain.model.course.CourseStatus
 import com.kert0n.medapp.domain.model.intake.Intake
 import com.kert0n.medapp.domain.model.intake.IntakeStatus
 import com.kert0n.medapp.domain.calc.availability.PackageAvailability
+import com.kert0n.medapp.domain.model.value.Doses
 import com.kert0n.medapp.domain.model.value.Quantity
 import java.time.Instant
 import java.time.LocalDate
@@ -68,17 +69,19 @@ fun remainingOn(
         }
         .toSet()
 
-    val spentDoses = HashMap<Uuid, Int>()
+    val spentDoses = HashMap<Uuid, Doses>()
     val doseOf = HashMap<Uuid, Quantity>()
     for (course in courses) {
         if (course.status != CourseStatus.ACTIVE) continue
         val schedule = course.schedule ?: continue
         val dose = course.dose ?: continue
-        val ahead = occurrences(schedule, now, until)
-            .count { Triple(course.id, it.localDate, it.localTime) !in answered }
+        val ahead = Doses(
+            occurrences(schedule, now, until)
+                .count { Triple(course.id, it.localDate, it.localTime) !in answered }
+        )
         val spent = spendTopDown(sourceCapacity(course, dose, availability), ahead)
         for ((packageId, doses) in spent) {
-            spentDoses[packageId] = (spentDoses[packageId] ?: 0) + doses
+            spentDoses[packageId] = (spentDoses[packageId] ?: Doses.none) + doses
             doseOf[packageId] = dose
         }
     }
@@ -87,7 +90,7 @@ fun remainingOn(
         // База прогноза — физический остаток, а не «сколько моего»: чужие брони показываются
         // отдельным числом. Смешав их, мы обещали бы, что таблеток в пачке нет, хотя они лежат.
         val effective = stock.effective
-        val doses = spentDoses[stock.packageId] ?: 0
+        val doses = spentDoses[stock.packageId] ?: Doses.none
         val dose = doseOf[stock.packageId]
         PackageForecast(
             packageId = stock.packageId,

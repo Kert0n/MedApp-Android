@@ -1,5 +1,6 @@
 package com.kert0n.medapp.domain.calc.coverage
 
+import com.kert0n.medapp.domain.model.value.Doses
 import java.time.Instant
 
 /**
@@ -18,21 +19,20 @@ import java.time.Instant
  * выдуманный предел здесь был бы обещанием лекарства, которого может не быть (PLAN D5, H1).
  */
 data class CourseCoverage(
-    val requiredDoses: Int,          // сколько приёмов ещё впереди
-    val coveredDoses: Int,           // сколько из них обеспечено
+    val requiredDoses: Doses,        // сколько приёмов ещё впереди
+    val coveredDoses: Doses,         // сколько из них обеспечено
     val coveredUntil: Instant?,      // «доступный курс» — до какого момента хватит
     val firstUncoveredAt: Instant?,  // с какого приёма не хватает
     val perSource: List<SourceCoverage>,
     val requiresRecount: Boolean = false
 ) {
     init {
-        require(requiredDoses >= 0) { "потребность не бывает отрицательной" }
-        require(coveredDoses in 0..requiredDoses) {
+        require(coveredDoses <= requiredDoses) {
             "обеспечено больше, чем нужно: $coveredDoses из $requiredDoses"
         }
     }
 
-    val missingDoses: Int get() = requiredDoses - coveredDoses
+    val missingDoses: Doses get() = requiredDoses - coveredDoses
 
-    val isFullyCovered: Boolean get() = missingDoses == 0
+    val isFullyCovered: Boolean get() = missingDoses.isNone
 }

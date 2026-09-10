@@ -3,6 +3,7 @@ package com.kert0n.medapp.fixture
 import com.kert0n.medapp.domain.model.course.Course
 import com.kert0n.medapp.domain.model.course.CourseSchedule
 import com.kert0n.medapp.domain.model.course.CourseSource
+import com.kert0n.medapp.domain.model.value.Doses
 import com.kert0n.medapp.domain.model.course.CourseStatus
 import java.math.BigDecimal
 import java.time.DayOfWeek
@@ -103,4 +104,4 @@ fun activeCourse(
 )
 
 /** Источник: пачка и её выделение в целых дозах. */
-fun source(packageId: Uuid, doses: Int) = CourseSource(packageId, doses)
+fun source(packageId: Uuid, doses: Int) = CourseSource(packageId, Doses(doses))

@@ -2,6 +2,7 @@ package com.kert0n.medapp.domain.calc.allocation
 
 import com.kert0n.medapp.domain.model.course.Course
 import com.kert0n.medapp.domain.model.course.CourseSource
+import com.kert0n.medapp.domain.model.value.Doses
 import com.kert0n.medapp.domain.model.value.Quantity
 import kotlin.uuid.Uuid
 
@@ -30,7 +31,7 @@ import kotlin.uuid.Uuid
  */
 fun clampAllocations(
     course: Course,
-    requiredDoses: Int,
+    requiredDoses: Doses,
     availability: Map<Uuid, Quantity>
 ): List<CourseSource> {
     val dose = requireNotNull(course.dose) { "пересчёт выделения без дозы курса не определён" }
