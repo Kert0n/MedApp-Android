@@ -69,6 +69,27 @@ android {
 
         testInstrumentationRunner = "com.kert0n.medapp.HiltTestRunner"
 
+        // Проба контракта ходит в боевой сервер только по явному -Pprobe (AGENTS «Связь с
+        // сервером»). Адрес и пробные учётки приходят аргументами инструментации из
+        // local.properties: в APK и в git их нет, а без -Pprobe проба пропускается.
+        // Проверка регистрации — отдельно, по -PprobeRegistration: каждый её прогон заводит
+        // на сервере новую учётку.
+        if (project.hasProperty("probe") || project.hasProperty("probeRegistration")) {
+            testInstrumentationRunnerArguments["probeBaseUrl"] =
+                secretOrNull("MEDAPP_BASE_URL") ?: "https://medapp.ru.net"
+        }
+        if (project.hasProperty("probeRegistration")) {
+            testInstrumentationRunnerArguments["probeRegistration"] = "true"
+        }
+        if (project.hasProperty("probe")) {
+            for (user in listOf("A", "B")) {
+                testInstrumentationRunnerArguments["probeLogin$user"] =
+                    secretOrNull("MEDAPP_PROBE_${user}_LOGIN").orEmpty()
+                testInstrumentationRunnerArguments["probeKey$user"] =
+                    secretOrNull("MEDAPP_PROBE_${user}_KEY").orEmpty()
+            }
+        }
+
         // Адреса секретами не являются: у них есть законное значение по умолчанию.
         buildConfigField(
             "String",

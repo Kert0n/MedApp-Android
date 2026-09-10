@@ -1,0 +1,70 @@
+package com.kert0n.medapp.network.account
+
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.test.platform.app.InstrumentationRegistry
+import com.kert0n.medapp.BuildConfig
+import com.kert0n.medapp.network.server.ApiResult
+import com.kert0n.medapp.network.server.MedAppApi
+import com.kert0n.medapp.network.server.medAppHttpClient
+import com.kert0n.medapp.platform.credentials.KeystoreCredentialSource
+import com.kert0n.medapp.platform.credentials.KeystoreKey
+import io.ktor.client.engine.okhttp.OkHttp
+import java.io.File
+import java.security.KeyStore
+import kotlin.uuid.Uuid
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
+import org.junit.Test
+
+/**
+ * Регистрация против боевого сервера целиком, как её пройдёт устройство (PLAN B1, G2): токен
+ * сборки → выданная учётка → ключ в AndroidKeyStore → пропуск по сохранённому → авторизованный
+ * запрос.
+ *
+ * Каждый прогон заводит на сервере новую учётку, поэтому проверка включается только
+ * `-PprobeRegistration` и в обычную пробу контракта не входит. Прогоняется один раз, когда
+ * меняется код регистрации или хранения ключа.
+ */
+class RegistrationProbe {
+
+    @Test
+    fun deviceRegistersKeepsItsKeyAndIsAccepted() = runBlocking {
+        val arguments = InstrumentationRegistry.getArguments()
+        val baseUrl = arguments.getString("probeBaseUrl")
+        assumeTrue(
+            "проверка регистрации включается только -PprobeRegistration: каждый прогон заводит учётку",
+            arguments.getString("probeRegistration") == "true" && !baseUrl.isNullOrBlank()
+        )
+
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val alias = "medapp.registration-probe.${Uuid.random()}"
+        val file = File(context.cacheDir, "$alias.preferences_pb")
+        val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        try {
+            val credentials = KeystoreCredentialSource(
+                PreferenceDataStoreFactory.create(scope = scope) { file },
+                KeystoreKey(alias),
+                Dispatchers.IO
+            )
+            val api = MedAppApi(medAppHttpClient(OkHttp.create(), baseUrl!!, tokens = AccessTokens(credentials)))
+            val registration = AccountRegistration(api, credentials, BuildConfig.REGISTRATION_TOKEN)
+
+            assertEquals(AccountRegistration.Outcome.Ready, registration.ensure())
+            assertTrue("выданный ключ сохранён", credentials.read() is StoredAccount.Present)
+            assertEquals(AccountRegistration.Outcome.Ready, registration.ensure())
+
+            val snapshot = api.snapshot()
+            assertTrue("сохранённая учётка принята сервером: $snapshot", snapshot is ApiResult.Success)
+        } finally {
+            scope.cancel()
+            file.delete()
+            KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(alias)
+        }
+    }
+}

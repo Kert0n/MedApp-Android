@@ -231,9 +231,21 @@ adb devices   # проверить, что устройство на месте,
 Учётки лежат в `local.properties`, который в git не попадает: `MEDAPP_BASE_URL`,
 `MEDAPP_REGISTRATION_TOKEN` и два пробных пользователя `MEDAPP_PROBE_A_LOGIN/KEY`,
 `MEDAPP_PROBE_B_LOGIN/KEY`. **Пробные пользователи заводятся один раз** —
-`scripts/register-probe-users.sh`, который запускает человек, — и дальше переиспользуются; новых
-не заводить. Синтетические аптечки проба удаляет за собой. Сервер считает каждую выдачу токена
+`scripts/register-probe-users.sh` — и дальше переиспользуются. Лишняя учётка на PR не беда, даже
+десяток за всё время; плохо заводить их пачками вместе с синтетическими данными. Синтетические
+аптечки проба удаляет за собой. Сервер считает каждую выдачу токена
 с адреса, поэтому пробу не гоняют в цикле.
+
+Регистрацию целиком — токен сборки, выданная учётка, ключ в Keystore, пропуск по сохранённому —
+проверяет `RegistrationProbe`. Каждый его прогон заводит на сервере новую учётку, поэтому он
+включается отдельным `-PprobeRegistration` и гоняется по разу на PR, который трогает регистрацию
+или хранение ключа, — и только на одном устройстве (`ANDROID_SERIAL` из `adb devices`):
+иначе `connectedDebugAndroidTest` заведёт по учётке на каждый подключённый эмулятор.
+
+```bash
+./gradlew :app:connectedDebugAndroidTest -PprobeRegistration \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.kert0n.medapp.network.account.RegistrationProbe
+```
 
 Локальный сервер — только для отладки, когда прод показал проблему. Из `../MedAppServer`, с
 JDK 25 и работающим Docker:
