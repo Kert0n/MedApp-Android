@@ -2,7 +2,6 @@ package com.kert0n.medapp.storage.pack
 
 import java.time.LocalDate
 import kotlin.uuid.Uuid
-import kotlinx.coroutines.flow.Flow
 
 /**
  * Что показать в списке упаковок. Три независимых поля, а не история нажатий: конвейер один —
@@ -51,10 +50,10 @@ data class PackageQuery(
  *
  * `today` приходит аргументом: «просрочено» зависит от дня, а база системных часов не читает.
  */
-fun PackageDao.matching(
+suspend fun PackageDao.matching(
     query: PackageQuery,
     today: LocalDate
-): Flow<List<PackageStorageRow>> = query(
+): List<PackageStorageRow> = query(
     medKitId = query.medKitId,
     text = query.searchText,
     filter = when (query.filter) {

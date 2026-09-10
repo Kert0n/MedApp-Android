@@ -24,9 +24,6 @@ import java.time.LocalDate
 import javax.inject.Inject
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 
 class PackageRoomRepository @Inject constructor(
@@ -42,19 +39,11 @@ class PackageRoomRepository @Inject constructor(
 
     override suspend fun find(id: Uuid): Package? = packages.find(id)?.toDomain()
 
-    override fun observeAvailability(id: Uuid): Flow<PackageAvailability?> = combine(
-        packages.observe(id),
-        queue.observeUnclosedOfPackage(id),
-        packages.observeAllocations(listOf(id))
-    ) { row, unclosed, allocations ->
-        row?.let { availabilityOf(it.toDomain(), unclosed, allocations.firstOrNull()) }
-    }
+    override fun observeAvailability(id: Uuid): Flow<PackageAvailability?> =
+        onChange { availabilityOf(id) }
 
-    override fun list(query: PackageQuery, today: LocalDate): Flow<List<Package>> {
-        val found = packages.matching(query, today).map { rows -> rows.map { it.toDomain() } }
-        if (query.filter != PackageQuery.Filter.HasFree) return found
-        return found.flatMapLatest { list -> withFreeOnly(list) }
-    }
+    override fun list(query: PackageQuery, today: LocalDate): Flow<List<Package>> =
+        onChange { listing(query, today) }
 
     override suspend fun save(pkg: Package, sync: PackageSyncState) =
         packages.save(pkg.toStorageEntity(sync), pkg.toDetailsStorageEntity())
@@ -94,27 +83,41 @@ class PackageRoomRepository @Inject constructor(
         }
 
     /**
+     * Проекция читается одним снимком: поток лишь уведомляет, что база изменилась, а
+     * согласованный набор входных данных берётся транзакцией. `combine` независимых потоков
+     * этого не даёт — его значения относятся к разным состояниям базы, и экран получал бы
+     * комбинацию, которой в базе никогда не было: свежий остаток со старой очередью.
+     */
+    private fun <T> onChange(read: suspend () -> T): Flow<T> =
+        database.invalidationTracker.createFlow(*AVAILABILITY_TABLES).map { read() }
+
+    private suspend fun availabilityOf(id: Uuid): PackageAvailability? = database.withTransaction {
+        val pkg = packages.find(id)?.toDomain() ?: return@withTransaction null
+        availabilityOf(
+            pkg,
+            queue.unclosedOfPackage(id),
+            packages.allocationsOf(listOf(id)).firstOrNull()
+        )
+    }
+
+    /**
      * «Есть свободное» запросом не выражается: это вычитание чужих броней и выделения из оценки
      * количества, а оценка зависит от очереди (PLAN H4). Пачка, требующая сверки, свободной не
      * считается — «неизвестно» это не «есть».
      */
-    private fun withFreeOnly(found: List<Package>): Flow<List<Package>> {
-        if (found.isEmpty()) return flowOf(emptyList())
-        val ids = found.map { it.id }
-        return combine(
-            combine(ids.map { queue.observeUnclosedOfPackage(it) }) { it.toList() },
-            packages.observeAllocations(ids)
-        ) { unclosedPerPackage, allocations ->
-            found.filterIndexed { index, pkg ->
-                val availability = availabilityOf(
+    private suspend fun listing(query: PackageQuery, today: LocalDate): List<Package> =
+        database.withTransaction {
+            val found = packages.matching(query, today).map { it.toDomain() }
+            if (query.filter != PackageQuery.Filter.HasFree) return@withTransaction found
+            val allocations = packages.allocationsOf(found.map { it.id })
+            found.filter { pkg ->
+                availabilityOf(
                     pkg,
-                    unclosedPerPackage[index],
+                    queue.unclosedOfPackage(pkg.id),
                     allocations.firstOrNull { it.packageId == pkg.id }
-                )
-                availability.freeForAnyone?.isZero == false
+                ).freeForAnyone?.isZero == false
             }
         }
-    }
 
     private fun availabilityOf(
         pkg: Package,
@@ -155,4 +158,18 @@ class PackageRoomRepository @Inject constructor(
     }
 
     private fun StoredSyncOperation.readable() = (this as? StoredSyncOperation.Readable)?.operation
+
+    private companion object {
+
+        /** Из чего складывается доступность: пачка с её сведениями и бронями, очередь, выделения. */
+        val AVAILABILITY_TABLES = arrayOf(
+            "packages",
+            "package_details",
+            "claims",
+            "sync_operations",
+            "courses",
+            "course_sources",
+            "active_package_assignments"
+        )
+    }
 }

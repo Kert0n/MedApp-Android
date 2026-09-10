@@ -198,7 +198,7 @@ class SyncOperationDaoTest {
         queue.enqueue(second, PackageSyncCommand.Consume(PACK, dose("1"), INTAKE), createdAt)
         queue.settle(first, SyncOperationStatus.DONE)
 
-        val unclosed = queue.observeUnclosedOfPackage(PACK).first()
+        val unclosed = queue.unclosedOfPackage(PACK)
         assertEquals(listOf(second), unclosed.map { it.operation.id })
     }
 

@@ -55,6 +55,9 @@ interface PackageDao {
      *
      * `HasFree` сюда не приходит — он не выражается запросом (см. `PackageQuery.Filter`), и
      * репозиторий накладывает его поверх выборки.
+     *
+     * Чтение, а не поток: свободное складывается ещё и из очереди с выделениями, и брать их
+     * порознь нельзя. Поток строит репозиторий — из уведомлений об изменении таблиц.
      */
     @Transaction
     @Query(
@@ -88,7 +91,7 @@ interface PackageDao {
           p.name_search
         """
     )
-    fun query(
+    suspend fun query(
         medKitId: Uuid?,
         text: String,
         filter: String,
@@ -98,7 +101,7 @@ interface PackageDao {
         formId: Uuid?,
         sort: String,
         includeArchived: Boolean
-    ): Flow<List<PackageStorageRow>>
+    ): List<PackageStorageRow>
 
     @Upsert
     suspend fun upsertServerPart(pack: PackageStorageEntity)
@@ -132,7 +135,7 @@ interface PackageDao {
           AND c.dose_amount IS NOT NULL AND c.unit_id IS NOT NULL
         """
     )
-    fun observeAllocations(packageIds: List<Uuid>): Flow<List<PackageAllocationRow>>
+    suspend fun allocationsOf(packageIds: List<Uuid>): List<PackageAllocationRow>
 
     @Query("DELETE FROM packages WHERE id = :id")
     suspend fun delete(id: Uuid)

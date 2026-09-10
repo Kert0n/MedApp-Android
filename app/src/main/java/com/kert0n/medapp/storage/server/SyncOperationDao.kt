@@ -10,7 +10,6 @@ import com.kert0n.medapp.network.server.SyncOperation
 import com.kert0n.medapp.network.server.SyncOperationStatus
 import java.time.Instant
 import kotlin.uuid.Uuid
-import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface SyncOperationDao {
@@ -69,13 +68,14 @@ interface SyncOperationDao {
     @Query("SELECT * FROM sync_operations WHERE package_id = :packageId ORDER BY sequence")
     suspend fun ofPackage(packageId: Uuid): List<SyncOperationStorageRow>
 
+    /** Незакрытые операции пачки. Чтение, а не поток: оценка количества складывается не из них одних. */
     @Transaction
     @Query(
         "SELECT * FROM sync_operations WHERE package_id = :packageId " +
             "AND status NOT IN ('DONE', 'RECONCILED', 'SUPERSEDED', 'CONFLICT', 'ACCESS_LOST') " +
             "ORDER BY sequence"
     )
-    fun observeUnclosedOfPackage(packageId: Uuid): Flow<List<SyncOperationStorageRow>>
+    suspend fun unclosedOfPackage(packageId: Uuid): List<SyncOperationStorageRow>
 
     @Transaction
     @Query("SELECT * FROM sync_operations WHERE status = :status ORDER BY sequence")
