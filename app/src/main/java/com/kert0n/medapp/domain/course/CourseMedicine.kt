@@ -109,40 +109,24 @@ data class CourseMedicine(
      * в следующую не переливается. Пачка без известного числа ничего не покрывает и поднимает
      * [CourseCoverage.requiresRecount].
      */
-    fun coverage(
+    internal fun coverage(
         dose: Quantity,
         remaining: List<ScheduledOccurrence>,
         availability: Availability
     ): CourseCoverage {
+        val capacities = capacities(dose, availability)
         val required = Doses(remaining.size)
-        var unknown = false
-        var supplied = Doses.none
-        val perSource = sources.map { source ->
-            val available = availability.known(source.packageId)
-            if (available == null) {
-                unknown = true
-                return@map CourseCoverage.Source(
-                    source.packageId, source.allocatedDoses, Doses.none, leftover = null
-                )
-            }
-            val wholeDoses = available.dosesIn(dose)
-            val usable = minOf(source.allocatedDoses, wholeDoses)
-            supplied += usable
-            CourseCoverage.Source(
-                packageId = source.packageId,
-                allocatedDoses = source.allocatedDoses,
-                coveredDoses = usable,
-                leftover = available - dose * wholeDoses
-            )
-        }
+        val supplied = capacities.fold(Doses.none) { total, it -> total + it.covers }
         val covered = minOf(required, supplied)
         return CourseCoverage(
             requiredDoses = required,
             coveredDoses = covered,
             coveredUntil = remaining.getOrNull(covered.count - 1)?.at,
             firstUncoveredAt = remaining.getOrNull(covered.count)?.at,
-            perSource = perSource,
-            requiresRecount = unknown
+            perSource = capacities.map {
+                CourseCoverage.Source(it.packageId, it.allocated, it.covers, it.leftover)
+            },
+            requiresRecount = capacities.any { it.isUnknown }
         )
     }
 
@@ -152,7 +136,7 @@ data class CourseMedicine(
      * не снимается — это решение человека (C1). Пачка без известного числа сохраняет своё
      * выделение. [packageId] может ещё не быть в препарате: «сколько выделю, если подключу».
      */
-    fun maxDoses(
+    internal fun maxDoses(
         packageId: Uuid,
         dose: Quantity,
         required: Doses,
@@ -170,11 +154,13 @@ data class CourseMedicine(
      * снизу освобождают. Выделение здесь только уменьшается, а пачка без известного числа своё
      * сохраняет. Доза и расписание курса от этого не меняются (PLAN D5, C1).
      */
-    fun clampedTo(dose: Quantity, required: Doses, availability: Availability): CourseMedicine {
-        val clamped = sources.map { source ->
-            val fits = availability.dosesOf(source.packageId, dose) ?: return@map source
-            if (fits >= source.allocatedDoses) source else CourseSource(source.packageId, fits)
-        }
+    internal fun clampedTo(
+        dose: Quantity,
+        required: Doses,
+        availability: Availability
+    ): CourseMedicine {
+        val clamped = capacities(dose, availability)
+            .map { CourseSource(it.packageId, it.allows) }
         var excess = clamped.fold(Doses.none) { total, it -> total + it.allocatedDoses }
             .minusOrNone(required)
         val trimmed = clamped.toMutableList()
@@ -193,15 +179,18 @@ data class CourseMedicine(
      * больше выделенного и не больше целых доз, что в ней есть. Пачек, из которых не уходит
      * ничего, в ответе нет; порядок ответа — порядок расходования.
      */
-    fun spend(dose: Quantity, doses: Doses, availability: Availability): Map<Uuid, Doses> {
+    internal fun spend(
+        dose: Quantity,
+        doses: Doses,
+        availability: Availability
+    ): Map<Uuid, Doses> {
         var left = doses
         val spent = LinkedHashMap<Uuid, Doses>()
-        for (source in sources) {
+        for (capacity in capacities(dose, availability)) {
             if (left.isNone) break
-            val inPack = availability.dosesOf(source.packageId, dose) ?: Doses.none
-            val taken = minOf(source.allocatedDoses, inPack, left)
+            val taken = minOf(capacity.covers, left)
             if (taken.isNone) continue
-            spent[source.packageId] = taken
+            spent[capacity.packageId] = taken
             left -= taken
         }
         return spent
@@ -212,7 +201,7 @@ data class CourseMedicine(
      * вычетом расхода и не больше [availableAfter] (PLAN D5). Нулевое выделение расходом не
      * оживает: приём из невыделенной пачки брони не создаёт.
      */
-    fun dosesAfterIntake(
+    internal fun dosesAfterIntake(
         packageId: Uuid,
         dose: Quantity,
         taken: Quantity,
@@ -227,6 +216,45 @@ data class CourseMedicine(
         val limited =
             if (leftAllocated.amount <= availableAfter.amount) leftAllocated else availableAfter
         return limited.dosesIn(dose)
+    }
+
+    /**
+     * Что даёт каждая пачка под дозу, в порядке расходования. Одно место на все вопросы: пока
+     * обеспечение, расход и зажим считали это порознь, правило «не больше выделенного и не больше
+     * целых доз, что в пачке есть» было написано трижды и могло разойтись.
+     */
+    private fun capacities(dose: Quantity, availability: Availability): List<SourceCapacity> =
+        sources.map { source ->
+            val available = availability.known(source.packageId)
+            val whole = available?.dosesIn(dose)
+            SourceCapacity(
+                packageId = source.packageId,
+                allocated = source.allocatedDoses,
+                whole = whole,
+                leftover = if (available == null || whole == null) null
+                else available - dose * whole
+            )
+        }
+
+    /**
+     * Пачка под дозой: сколько целых доз в ней есть ([whole], `null` — неизвестно), сколько из
+     * них покрывает приёмы ([covers]) и сколько выделения она позволяет держать ([allows]).
+     *
+     * Разница между [covers] и [allows] — это и есть правило D5 про неизвестное число: такая
+     * пачка ничего не обеспечивает, но и выделение своё не теряет, потому что снижать его
+     * догадкой нельзя.
+     */
+    private data class SourceCapacity(
+        val packageId: Uuid,
+        val allocated: Doses,
+        val whole: Doses?,
+        val leftover: Quantity?
+    ) {
+        val isUnknown: Boolean get() = whole == null
+
+        val covers: Doses get() = whole?.let { minOf(allocated, it) } ?: Doses.none
+
+        val allows: Doses get() = whole?.let { minOf(allocated, it) } ?: allocated
     }
 
     private fun requireHolds(packageId: Uuid) {

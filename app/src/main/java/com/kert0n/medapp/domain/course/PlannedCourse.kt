@@ -76,6 +76,43 @@ class PlannedCourse(
     }
 
     /**
+     * Обеспечение курса: на сколько из оставшихся приёмов хватит пачек препарата и с какого приёма
+     * не хватает (PLAN D5). Дозу спрашивать не нужно — она у курса, и в этом его ценность.
+     */
+    fun coverage(
+        remaining: List<ScheduledOccurrence>,
+        availability: Availability
+    ): CourseCoverage = medicine.coverage(dose, remaining, availability)
+
+    /**
+     * Верхняя граница ползунка пачки в целых дозах: меньшее из того, что пачка даёт, и того, что
+     * потребность оставляет сверх выделенного остальным (PLAN D5).
+     */
+    fun maxDoses(packageId: Uuid, required: Doses, availability: Availability): Doses =
+        medicine.maxDoses(packageId, dose, required, availability)
+
+    /**
+     * Курс с выделениями, зажатыми под нехватку и оставшуюся потребность. Доза, расписание и даты
+     * не меняются — расписание это намерение человека, и чужое действие его не переписывает (C1).
+     *
+     * Зажимать нечего — возвращает себя: пересчёт идёт после каждого изменения входов (D5), и
+     * поднимать редакцию на каждом было бы шумом в истории пунктов.
+     */
+    fun clamped(required: Doses, availability: Availability, at: Instant): PlannedCourse {
+        requireActive("пересчёт выделения")
+        val clamped = medicine.clampedTo(dose, required, availability)
+        if (clamped == medicine) return this
+        return changed(medicine = clamped, revision = revision.next(), updatedAt = at)
+    }
+
+    /**
+     * Сколько целых доз остаётся выделено пачке после подтверждённого приёма: не больше
+     * выделенного за вычетом расхода и не больше того, что в пачке осталось (PLAN D5).
+     */
+    fun dosesAfterIntake(packageId: Uuid, taken: Quantity, availableAfter: Quantity): Doses =
+        medicine.dosesAfterIntake(packageId, dose, taken, availableAfter)
+
+    /**
      * Раскладывает неотвеченные пункты этого курса, данные в календарном порядке, по пачкам
      * препарата: какой приём из какой пачки. `null` — приём не обеспечен, и полная доза
      * «неизвестно откуда» за него не записывается; пачки вне препарата не подставляются (PLAN D5).

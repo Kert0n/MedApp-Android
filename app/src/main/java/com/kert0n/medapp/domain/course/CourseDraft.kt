@@ -1,5 +1,6 @@
 package com.kert0n.medapp.domain.course
 
+import com.kert0n.medapp.domain.pack.Availability
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.Quantity
@@ -91,6 +92,15 @@ class CourseDraft(
         revision = revision.next(),
         updatedAt = at
     )
+
+    /**
+     * Верхняя граница ползунка пачки. Пока доза не задана, границы нет: выделять нечего, и ноль
+     * здесь честнее выдуманного числа.
+     */
+    fun maxDoses(packageId: Uuid, required: Doses, availability: Availability): Doses {
+        val dose = dose ?: return Doses.none
+        return medicine.maxDoses(packageId, dose, required, availability)
+    }
 
     /**
      * Активация: нужны расписание, доза и хотя бы одна пачка; дальше их наличие обеспечивает тип

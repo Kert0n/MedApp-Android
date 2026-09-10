@@ -4,10 +4,10 @@ import com.kert0n.medapp.domain.pack.Availability
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
+import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.availability
 import com.kert0n.medapp.fixture.doses
-import com.kert0n.medapp.fixture.medicine
 import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
 import java.math.BigDecimal
@@ -17,18 +17,16 @@ import org.junit.Test
 /** Предел выделения пачки считается в целых дозах, и тупика «1 + 1 при дозе 2» нет (PLAN D5). */
 class MaxDosesTest {
 
-    private val dose = tablets("2")
-
     private val availability = availability(PACK to tablets("20"), OTHER_PACK to tablets("12"))
 
     private fun twoPacks(first: Int, second: Int) =
-        medicine(source(PACK, first), source(OTHER_PACK, second))
+        activeCourse(sources = listOf(source(PACK, first), source(OTHER_PACK, second)))
 
-    private fun CourseMedicine.limit(
+    private fun PlannedCourse.limit(
         packageId: kotlin.uuid.Uuid,
         required: Int,
         availability: Availability = this@MaxDosesTest.availability
-    ) = maxDoses(packageId, dose, doses(required), availability)
+    ) = maxDoses(packageId, doses(required), availability)
 
     @Test
     fun doseTwoOutOfTwoSinglesGivesZeroDoses() {
@@ -70,7 +68,8 @@ class MaxDosesTest {
     @Test
     fun packageThatIsNotYetASourceIsAnsweredToo() {
         // «Сколько можно выделить, если подключить эту пачку» — тот же расчёт.
-        assertEquals(doses(4), medicine(source(PACK, 5)).limit(OTHER_PACK, required = 9))
+        val onlyFirst = activeCourse(sources = listOf(source(PACK, 5)))
+        assertEquals(doses(4), onlyFirst.limit(OTHER_PACK, required = 9))
     }
 
     @Test
@@ -94,8 +93,8 @@ class MaxDosesTest {
     @Test
     fun fractionalDoseIsCountedAsWhole() {
         // Половина таблетки — законная доза; из двадцати таблеток это сорок приёмов.
-        val half = Quantity(BigDecimal("0.5"), TABLETS)
-        val found = medicine(source(PACK, 0)).maxDoses(PACK, half, doses(100), availability)
+        val found = activeCourse(doseAmount = BigDecimal("0.5"), sources = listOf(source(PACK, 0)))
+            .maxDoses(PACK, doses(100), availability)
         assertEquals(doses(40), found)
     }
 }

@@ -1,11 +1,11 @@
 package com.kert0n.medapp.domain.course
 
 import com.kert0n.medapp.fixture.MOSCOW
+import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.availability
 import com.kert0n.medapp.fixture.doses
-import com.kert0n.medapp.fixture.medicine
 import com.kert0n.medapp.fixture.schedule
 import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
@@ -41,15 +41,15 @@ class CoverageTest {
 
     private val availability = availability(PACK to tablets("20"), OTHER_PACK to tablets("12"))
 
-    private val dose = tablets("2")
-
-    private fun twoPacks(first: Int, second: Int) =
-        medicine(source(PACK, first), source(OTHER_PACK, second))
+    private fun twoPacks(first: Int, second: Int) = activeCourse(
+        schedule = fourTimesADay,
+        sources = listOf(source(PACK, first), source(OTHER_PACK, second))
+    )
 
     @Test
     fun twentyEightNeededWithFiveAndFourAllocatedCoversNineAndNamesTheFirstGap() {
         assertEquals(28, remaining.size)
-        val found = twoPacks(first = 5, second = 4).coverage(dose, remaining, availability)
+        val found = twoPacks(first = 5, second = 4).coverage(remaining, availability)
         assertEquals(doses(28), found.requiredDoses)
         assertEquals(doses(9), found.coveredDoses)
         assertEquals(doses(19), found.missingDoses)
@@ -65,7 +65,7 @@ class CoverageTest {
             from = week.start.atStartOfDay(MOSCOW).toInstant(),
             until = week.endInclusive.plusDays(1).atStartOfDay(MOSCOW).toInstant()
         )
-        val found = medicine(source(PACK, 7)).coverage(dose, plan, availability)
+        val found = activeCourse(sources = listOf(source(PACK, 7))).coverage(plan, availability)
         assertTrue(found.isFullyCovered)
         assertEquals(plan.last().at, found.coveredUntil)
         assertNull(found.firstUncoveredAt)
@@ -73,7 +73,7 @@ class CoverageTest {
 
     @Test
     fun unsuppliedCourseIsCoveredFromTheVeryFirstIntake() {
-        val found = medicine().coverage(dose, remaining, availability)
+        val found = activeCourse(schedule = fourTimesADay).coverage(remaining, availability)
         assertEquals(doses(0), found.coveredDoses)
         assertNull(found.coveredUntil)
         assertEquals(remaining.first().at, found.firstUncoveredAt)
@@ -84,7 +84,7 @@ class CoverageTest {
         // Выделено девять доз, а свободно шесть таблеток — три дозы. Обеспечение честно меньше
         // выделенного, и человек видит, почему.
         val shrunk = availability(PACK to tablets("6"), OTHER_PACK to tablets("12"))
-        val found = twoPacks(first = 9, second = 0).coverage(dose, remaining, shrunk)
+        val found = twoPacks(first = 9, second = 0).coverage(remaining, shrunk)
         assertEquals(doses(3), found.coveredDoses)
         assertEquals(doses(9), found.perSource.first().allocatedDoses)
         assertEquals(doses(3), found.perSource.first().coveredDoses)
@@ -95,7 +95,7 @@ class CoverageTest {
         // По одной таблетке в двух пачках при дозе в две: ноль покрытых приёмов, и остатки
         // видны каждый в своей строке, а не сложились в одну дозу.
         val singles = availability(PACK to tablets("1"), OTHER_PACK to tablets("1"))
-        val found = twoPacks(first = 5, second = 4).coverage(dose, remaining, singles)
+        val found = twoPacks(first = 5, second = 4).coverage(remaining, singles)
         assertEquals(doses(0), found.coveredDoses)
         assertEquals(listOf(tablets("1"), tablets("1")), found.perSource.map { it.leftover })
     }
@@ -103,7 +103,7 @@ class CoverageTest {
     @Test
     fun leftoverIsWhatCannotMakeAWholeDose() {
         val odd = availability(PACK to tablets("5"), OTHER_PACK to tablets("12"))
-        val found = twoPacks(first = 2, second = 0).coverage(dose, remaining, odd)
+        val found = twoPacks(first = 2, second = 0).coverage(remaining, odd)
         assertEquals(tablets("1"), found.perSource.first().leftover)
         assertEquals(tablets("0"), found.perSource.last().leftover)
     }
@@ -113,7 +113,7 @@ class CoverageTest {
         // Исход операции по первой пачке не установлен: выделение сохраняется, но обеспеченным
         // не считается, и обеспечение помечено требующим проверки.
         val partial = availability(OTHER_PACK to tablets("12"))
-        val found = twoPacks(first = 5, second = 4).coverage(dose, remaining, partial)
+        val found = twoPacks(first = 5, second = 4).coverage(remaining, partial)
         assertTrue(found.requiresRecount)
         assertEquals(doses(4), found.coveredDoses)
         assertEquals(doses(5), found.perSource.first().allocatedDoses)
@@ -129,7 +129,7 @@ class CoverageTest {
             from = week.start.atStartOfDay(MOSCOW).toInstant(),
             until = week.endInclusive.plusDays(1).atStartOfDay(MOSCOW).toInstant()
         )
-        val found = medicine(source(PACK, 10)).coverage(dose, plan, availability)
+        val found = activeCourse(sources = listOf(source(PACK, 10))).coverage(plan, availability)
         assertEquals(doses(7), found.requiredDoses)
         assertEquals(doses(7), found.coveredDoses)
         assertNull(found.firstUncoveredAt)
@@ -137,7 +137,7 @@ class CoverageTest {
 
     @Test
     fun finishedCalendarNeedsNothing() {
-        val found = twoPacks(first = 5, second = 4).coverage(dose, emptyList(), availability)
+        val found = twoPacks(first = 5, second = 4).coverage(emptyList(), availability)
         assertEquals(doses(0), found.requiredDoses)
         assertTrue(found.isFullyCovered)
         assertNull(found.coveredUntil)
