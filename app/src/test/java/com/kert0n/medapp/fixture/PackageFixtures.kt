@@ -5,9 +5,7 @@ import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.pack.EffectiveAmount
 import com.kert0n.medapp.domain.pack.ExpiryDate
 import com.kert0n.medapp.domain.pack.Package
-import com.kert0n.medapp.domain.pack.PackageAccess
 import com.kert0n.medapp.domain.pack.PackageFacts
-import com.kert0n.medapp.domain.pack.PackageLifecycle
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
 import com.kert0n.medapp.domain.value.Money
 import com.kert0n.medapp.domain.value.Quantity
@@ -44,8 +42,8 @@ fun pack(
     openedOn: LocalDate? = null,
     templateId: Uuid? = null,
     claims: Claims? = null,
-    lifecycle: PackageLifecycle = PackageLifecycle.ACTIVE,
-    access: PackageAccess = PackageAccess.AVAILABLE
+    lifecycle: Package.Lifecycle = Package.Lifecycle.ACTIVE,
+    access: Package.Access = Package.Access.AVAILABLE
 ) = Package(
     id = id,
     medKitId = medKitId,

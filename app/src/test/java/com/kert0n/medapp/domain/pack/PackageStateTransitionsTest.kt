@@ -28,12 +28,12 @@ class PackageStateTransitionsTest {
 
     @Test(expected = IllegalStateException::class)
     fun inaccessiblePackIsNotEdited() {
-        pack(access = PackageAccess.LOST).describe(factsOf(pack()))
+        pack(access = Package.Access.LOST).describe(factsOf(pack()))
     }
 
     @Test(expected = IllegalStateException::class)
     fun inaccessiblePackIsNotMoved() {
-        pack(access = PackageAccess.LOST).moveTo(SHARED_KIT)
+        pack(access = Package.Access.LOST).moveTo(SHARED_KIT)
     }
 
     @Test
@@ -57,7 +57,8 @@ class PackageStateTransitionsTest {
     @Test
     fun editClearsWhatWasCleared() {
         val filled = pack(category = "жаропонижающие", expiresOn = expiry("2027-03-31"))
-        val cleared = filled.describe(factsOf(filled).withShared(category = null).copy(expiresOn = null))
+        val emptied = factsOf(filled).withShared(category = null).copy(expiresOn = null)
+        val cleared = filled.describe(emptied)
         assertNull(cleared.facts.category)
         assertNull(cleared.facts.expiresOn)
     }
@@ -91,8 +92,8 @@ class PackageStateTransitionsTest {
     @Test
     fun archivingAnInaccessiblePackRemovesItFromTheList() {
         assertEquals(
-            PackageLifecycle.ARCHIVED,
-            pack(access = PackageAccess.LOST).archive().lifecycle
+            Package.Lifecycle.ARCHIVED,
+            pack(access = Package.Access.LOST).archive().lifecycle
         )
     }
 
@@ -102,8 +103,8 @@ class PackageStateTransitionsTest {
         // чужие брони на пачке, которой у нас больше нет.
         val shared = pack(claims = Claims(BigDecimal("5"), BigDecimal("2")))
         val lost = shared.loseAccess()
-        assertEquals(PackageAccess.LOST, lost.access)
-        assertEquals(PackageLifecycle.ACTIVE, lost.lifecycle)
+        assertEquals(Package.Access.LOST, lost.access)
+        assertEquals(Package.Lifecycle.ACTIVE, lost.lifecycle)
         assertNull(lost.claims)
     }
 
@@ -118,8 +119,8 @@ class PackageStateTransitionsTest {
         // Две оси, а не одна: выбросить свою часть общей пачки и потом выйти из аптечки — это
         // два разных события, и оба остаются записанными.
         val lost = pack(quantity = tablets("2")).consume(tablets("2")).loseAccess()
-        assertEquals(PackageLifecycle.ARCHIVED, lost.lifecycle)
-        assertEquals(PackageAccess.LOST, lost.access)
+        assertEquals(Package.Lifecycle.ARCHIVED, lost.lifecycle)
+        assertEquals(Package.Access.LOST, lost.access)
     }
 
     @Test

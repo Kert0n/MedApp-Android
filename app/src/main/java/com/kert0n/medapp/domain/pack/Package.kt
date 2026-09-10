@@ -30,12 +30,12 @@ class Package(
     val addedAt: Instant,         // для чужой пачки — момент ПЕРВОГО НАБЛЮДЕНИЯ
     val templateId: Uuid? = null, // из какой карточки справочника заполнено
     val claims: Claims? = null,   // null у неопубликованной аптечки
-    val lifecycle: PackageLifecycle = PackageLifecycle.ACTIVE,
-    val access: PackageAccess = PackageAccess.AVAILABLE
+    val lifecycle: Lifecycle = Lifecycle.ACTIVE,
+    val access: Access = Access.AVAILABLE
 ) {
 
     init {
-        require(lifecycle != PackageLifecycle.ACTIVE || !quantity.isZero) {
+        require(lifecycle != Lifecycle.ACTIVE || !quantity.isZero) {
             "активная пачка не бывает пустой"
         }
         // Подсказка — это «сколько я обычно принимаю из ЭТОЙ пачки»: величина в чужой единице
@@ -106,8 +106,8 @@ class Package(
      * больше не достаём, и потерять доступ к уже выброшенной — оба факта остаются записанными.
      */
     fun archive(): Package =
-        if (lifecycle == PackageLifecycle.ARCHIVED) this
-        else changed(lifecycle = PackageLifecycle.ARCHIVED)
+        if (lifecycle == Lifecycle.ARCHIVED) this
+        else changed(lifecycle = Lifecycle.ARCHIVED)
 
     /**
      * Доступ утрачен: вышли из аптечки, унесли её или удалили. Идемпотентно.
@@ -117,12 +117,12 @@ class Package(
      * трогается — выбросить пачку и потерять к ней доступ можно в любом порядке.
      */
     fun loseAccess(): Package =
-        if (access == PackageAccess.LOST) this
-        else changed(access = PackageAccess.LOST, claims = null)
+        if (access == Access.LOST) this
+        else changed(access = Access.LOST, claims = null)
 
     private fun withQuantity(left: Quantity): Package = changed(
         quantity = left,
-        lifecycle = if (left.isZero) PackageLifecycle.ARCHIVED else lifecycle
+        lifecycle = if (left.isZero) Lifecycle.ARCHIVED else lifecycle
     )
 
     /**
@@ -133,10 +133,10 @@ class Package(
      * отдельным явным действием со своим подтверждением, а не следствием пересчёта.
      */
     private fun requireUsable(action: String) {
-        check(lifecycle == PackageLifecycle.ACTIVE) {
+        check(lifecycle == Lifecycle.ACTIVE) {
             "$action недоступен для пачки в состоянии $lifecycle"
         }
-        check(access == PackageAccess.AVAILABLE) {
+        check(access == Access.AVAILABLE) {
             "$action недоступен: доступ к пачке утрачен"
         }
     }
@@ -154,8 +154,8 @@ class Package(
         quantity: Quantity = this.quantity,
         templateId: Uuid? = this.templateId,
         claims: Claims? = this.claims,
-        lifecycle: PackageLifecycle = this.lifecycle,
-        access: PackageAccess = this.access
+        lifecycle: Lifecycle = this.lifecycle,
+        access: Access = this.access
     ): Package = Package(
         id = id,
         medKitId = medKitId,
@@ -176,4 +176,19 @@ class Package(
 
     override fun toString(): String =
         "Package(id=$id, name=${facts.name}, lifecycle=$lifecycle, access=$access)"
+
+    /**
+     * Жива ли пачка как вещь. Отдельная ось от [Access]: выбросить пачку и потерять к ней доступ
+     * можно в любом порядке, и оба факта нужны истории.
+     */
+    enum class Lifecycle {
+        ACTIVE,
+        ARCHIVED    // израсходована, утилизирована или удалена человеком
+    }
+
+    /**
+     * Видим ли мы пачку на сервере — состояние нашего доступа, а не самой пачки: она цела и лежит
+     * в аптечке, из которой мы вышли.
+     */
+    enum class Access { AVAILABLE, LOST }
 }

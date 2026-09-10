@@ -23,7 +23,7 @@ class MedKit(
     val id: Uuid,                   // придуман клиентом; он же серверный
     val name: String,               // 1..200, только на устройстве
     val location: String?,          // ≤300, место хранения; только на устройстве
-    val publication: KitPublication,
+    val publication: Publication,
     val participantCount: Long,     // 1 у локальной, иначе userCount с сервера
     val createdAt: Instant
 ) {
@@ -32,7 +32,7 @@ class MedKit(
         requireText(name, NAME_MAX_LENGTH, "MedKit.name")
         requireOptionalText(location, LOCATION_MAX_LENGTH, "MedKit.location")
         require(participantCount >= 1) { "участник всегда есть хотя бы один — я сам" }
-        if (publication == KitPublication.LOCAL) {
+        if (publication == Publication.LOCAL) {
             require(participantCount == 1L) { "у локальной аптечки других участников нет" }
         }
     }
@@ -43,7 +43,7 @@ class MedKit(
      * Отдельно от [isShared]. Пока группа операций публикации не завершена целиком, часть пачек
      * на сервере уже есть, а часть нет: приглашённый увидел бы половину аптечки (PLAN D2).
      */
-    val acceptsInvitations: Boolean get() = publication == KitPublication.PUBLISHED
+    val acceptsInvitations: Boolean get() = publication == Publication.PUBLISHED
 
     /** Меняет личные сведения, сохраняя тождество и состояние публикации аптечки. */
     fun describe(name: String, location: String?): MedKit = MedKit(
@@ -62,6 +62,12 @@ class MedKit(
     override fun hashCode(): Int = id.hashCode()
 
     override fun toString(): String = "MedKit(id=$id, name=$name, publication=$publication)"
+
+    enum class Publication {
+        LOCAL,        // на сервере не существует
+        PUBLISHING,   // группа операций публикации ещё не завершена
+        PUBLISHED     // существует на сервере
+    }
 
     companion object {
         const val NAME_MAX_LENGTH = 200

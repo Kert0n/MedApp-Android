@@ -1,6 +1,5 @@
 package com.kert0n.medapp.domain.pack
 
-import com.kert0n.medapp.domain.medkit.KitPublication
 import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.value.Quantity
 
@@ -49,8 +48,8 @@ class PackageIdentityTest {
             quantity = tablets("20"),
             addedAt = Instant.EPOCH
         )
-        assertEquals(PackageLifecycle.ACTIVE, built.lifecycle)
-        assertEquals(PackageAccess.AVAILABLE, built.access)
+        assertEquals(Package.Lifecycle.ACTIVE, built.lifecycle)
+        assertEquals(Package.Access.AVAILABLE, built.access)
         assertEquals("Парацетамол", built.name)
         assertEquals(TABLET_FORM, built.facts.formId)
     }
@@ -58,20 +57,20 @@ class PackageIdentityTest {
     @Test(expected = IllegalArgumentException::class)
     fun activePackIsNeverEmpty() {
         // Инвариант, верный всегда: и при заведении, и при чтении сохранённого состояния.
-        pack(quantity = Quantity.zero(TABLETS), lifecycle = PackageLifecycle.ACTIVE)
+        pack(quantity = Quantity.zero(TABLETS), lifecycle = Package.Lifecycle.ACTIVE)
     }
 
     @Test
     fun archivedPackWithNothingLeftIsLegitimate() {
         val archived =
-            pack(quantity = Quantity.zero(TABLETS), lifecycle = PackageLifecycle.ARCHIVED)
+            pack(quantity = Quantity.zero(TABLETS), lifecycle = Package.Lifecycle.ARCHIVED)
         assertTrue(archived.quantity.isZero)
-        assertEquals(PackageLifecycle.ARCHIVED, archived.lifecycle)
+        assertEquals(Package.Lifecycle.ARCHIVED, archived.lifecycle)
     }
 
     @Test
     fun renamedKitIsTheSameKit() {
-        val created = MedKit(HOME_KIT, "Домашняя", null, KitPublication.LOCAL, 1, Instant.EPOCH)
+        val created = MedKit(HOME_KIT, "Домашняя", null, MedKit.Publication.LOCAL, 1, Instant.EPOCH)
         assertEquals(created, created.describe("Дачная", "верхняя полка"))
         assertEquals(created.hashCode(), created.describe("Дачная", null).hashCode())
     }

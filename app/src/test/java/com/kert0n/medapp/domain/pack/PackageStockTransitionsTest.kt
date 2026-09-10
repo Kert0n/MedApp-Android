@@ -25,14 +25,14 @@ class PackageStockTransitionsTest {
     fun consumingToZeroArchivesThePack() {
         val empty = pack(quantity = tablets("2")).consume(tablets("2"))
         assertTrue(empty.quantity.isZero)
-        assertEquals(PackageLifecycle.ARCHIVED, empty.lifecycle)
+        assertEquals(Package.Lifecycle.ARCHIVED, empty.lifecycle)
     }
 
     @Test
     fun consumingPartOfThePackKeepsItActive() {
         val left = pack(quantity = tablets("20")).consume(tablets("0.5"))
         assertEquals(tablets("19.5"), left.quantity)
-        assertEquals(PackageLifecycle.ACTIVE, left.lifecycle)
+        assertEquals(Package.Lifecycle.ACTIVE, left.lifecycle)
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -48,7 +48,7 @@ class PackageStockTransitionsTest {
     @Test
     fun recountToZeroArchivesThePack() {
         val empty = pack(quantity = tablets("20")).correctTo(Quantity.zero(TABLETS))
-        assertEquals(PackageLifecycle.ARCHIVED, empty.lifecycle)
+        assertEquals(Package.Lifecycle.ARCHIVED, empty.lifecycle)
     }
 
     @Test
@@ -56,7 +56,7 @@ class PackageStockTransitionsTest {
         // Пересчёт — замена значения, а не дельта: пачку могли докупить или ошибиться в учёте.
         val more = pack(quantity = tablets("3")).correctTo(tablets("12"))
         assertEquals(tablets("12"), more.quantity)
-        assertEquals(PackageLifecycle.ACTIVE, more.lifecycle)
+        assertEquals(Package.Lifecycle.ACTIVE, more.lifecycle)
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -67,12 +67,12 @@ class PackageStockTransitionsTest {
     @Test(expected = IllegalStateException::class)
     fun recountDoesNotReviveAnArchivedPack() {
         // «Удалена человеком» не отменяется числом.
-        pack(lifecycle = PackageLifecycle.ARCHIVED).correctTo(tablets("5"))
+        pack(lifecycle = Package.Lifecycle.ARCHIVED).correctTo(tablets("5"))
     }
 
     @Test(expected = IllegalStateException::class)
     fun archivedPackIsNotConsumed() {
-        pack(lifecycle = PackageLifecycle.ARCHIVED).consume(tablets("1"))
+        pack(lifecycle = Package.Lifecycle.ARCHIVED).consume(tablets("1"))
     }
 
 }

@@ -1,8 +1,7 @@
 package com.kert0n.medapp.presentation.pack
 
 import com.kert0n.medapp.domain.pack.ExpiryDate
-import com.kert0n.medapp.domain.pack.PackageAccess
-import com.kert0n.medapp.domain.pack.PackageLifecycle
+import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.presentation.value.MoneyPresentationDTO
 import com.kert0n.medapp.presentation.value.QuantityPresentationDTO
 import java.time.Instant
@@ -43,7 +42,7 @@ data class PackagePresentationDTO(
     val addedAt: Instant,
     val templateId: Uuid?,
     val claims: ClaimsPresentationDTO?,
-    val lifecycle: PackageLifecycle,
-    val access: PackageAccess,
+    val lifecycle: Package.Lifecycle,
+    val access: Package.Access,
     val syncedAt: Instant?
 )

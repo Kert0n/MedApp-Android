@@ -1,8 +1,7 @@
 package com.kert0n.medapp.domain.course
 
 import com.kert0n.medapp.domain.course.Revision
-import com.kert0n.medapp.domain.pack.PackageAccess
-import com.kert0n.medapp.domain.pack.PackageLifecycle
+import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.fixture.LATER
 import com.kert0n.medapp.fixture.OTHER_PACK
@@ -55,8 +54,8 @@ class CourseSourceStackTest {
 
     @Test
     fun unusablePackageIsNotASource() {
-        val archived = pack(formId = TABLET_FORM, lifecycle = PackageLifecycle.ARCHIVED)
-        val lost = pack(id = OTHER_PACK, formId = TABLET_FORM, access = PackageAccess.LOST)
+        val archived = pack(formId = TABLET_FORM, lifecycle = Package.Lifecycle.ARCHIVED)
+        val lost = pack(id = OTHER_PACK, formId = TABLET_FORM, access = Package.Access.LOST)
         assertEquals(
             CourseRejected.Reason.PACKAGE_UNUSABLE,
             draftWithDose().attach(archived, doses = doses(1), at = LATER).rejection()

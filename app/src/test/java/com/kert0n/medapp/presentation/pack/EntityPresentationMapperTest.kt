@@ -1,10 +1,8 @@
 package com.kert0n.medapp.presentation.pack
 
-import com.kert0n.medapp.domain.medkit.KitPublication
 import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.pack.Package
-import com.kert0n.medapp.domain.pack.PackageLifecycle
 import com.kert0n.medapp.domain.value.Money
 import com.kert0n.medapp.presentation.medkit.MedKitPresentationDTO
 import com.kert0n.medapp.presentation.medkit.toPresentationDTO
@@ -61,12 +59,13 @@ class EntityPresentationMapperTest {
         updates.emit(listOf(edited.consume(tablets("19"))))
         runCurrent()
         assertEquals("0", state.value.packages.single().quantity.amount)
-        assertEquals(PackageLifecycle.ARCHIVED, state.value.packages.single().lifecycle)
+        assertEquals(Package.Lifecycle.ARCHIVED, state.value.packages.single().lifecycle)
     }
 
     @Test
     fun stateFlowReceivesRenamingAndLocationClearingOfTheSameKit() = runTest {
-        val original = MedKit(HOME_KIT, "Домашняя", "Шкаф", KitPublication.LOCAL, 1, Instant.EPOCH)
+        val original =
+            MedKit(HOME_KIT, "Домашняя", "Шкаф", MedKit.Publication.LOCAL, 1, Instant.EPOCH)
         val updates = MutableSharedFlow<List<MedKit>>()
         val state = updates.map { kits ->
             MedKitListState(kits.map { it.toPresentationDTO() })

@@ -2,8 +2,6 @@ package com.kert0n.medapp.domain.course
 
 import com.kert0n.medapp.domain.pack.Availability
 import com.kert0n.medapp.domain.pack.Package
-import com.kert0n.medapp.domain.pack.PackageAccess
-import com.kert0n.medapp.domain.pack.PackageLifecycle
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.Quantity
 import kotlin.uuid.Uuid
@@ -44,8 +42,8 @@ data class CourseMedicine(
     /** Подключает пачку последней в расходе; отказ называет причину, ведущую к действию. */
     fun attach(pkg: Package, doses: Doses): Result<CourseMedicine> {
         val rejection = when {
-            pkg.lifecycle != PackageLifecycle.ACTIVE ||
-                pkg.access != PackageAccess.AVAILABLE -> CourseRejected.Reason.PACKAGE_UNUSABLE
+            pkg.lifecycle != Package.Lifecycle.ACTIVE ||
+                pkg.access != Package.Access.AVAILABLE -> CourseRejected.Reason.PACKAGE_UNUSABLE
             holds(pkg.id) -> CourseRejected.Reason.ALREADY_ATTACHED
             // Две пачки без формы несовместимы: это два разных незнания, а не одно и то же.
             pkg.facts.formId == null -> CourseRejected.Reason.FORM_UNKNOWN
