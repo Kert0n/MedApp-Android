@@ -1,11 +1,6 @@
 package com.kert0n.medapp.data.sync.pack
 
 import com.kert0n.medapp.domain.model.pack.EffectiveAmount
-import com.kert0n.medapp.domain.model.sync.ConsumeIntent
-import com.kert0n.medapp.domain.model.sync.CorrectStockIntent
-import com.kert0n.medapp.domain.model.sync.DeletePackageIntent
-import com.kert0n.medapp.domain.model.sync.ReconcileStockIntent
-import com.kert0n.medapp.domain.model.sync.SyncIntent
 import com.kert0n.medapp.domain.model.value.Quantity
 import kotlin.uuid.Uuid
 
@@ -37,7 +32,7 @@ import kotlin.uuid.Uuid
  */
 fun effectiveAmount(
     confirmed: Quantity,
-    unclosed: List<SyncIntent> = emptyList(),
+    unclosed: List<PackageSyncCommand> = emptyList(),
     unresolvedOperationIds: List<Uuid> = emptyList()
 ): EffectiveAmount {
     if (unresolvedOperationIds.isNotEmpty()) {
@@ -46,12 +41,19 @@ fun effectiveAmount(
     var projected = confirmed
     var touched = false
     for (command in unclosed) {
+        // Исчерпывающий `when` по корню понятия, без `else`: новая команда упаковки не сможет
+        // молча не попасть в проекцию — компилятор потребует ответить, меняет она количество или
+        // нет.
         val next = when (command) {
-            is ConsumeIntent -> projected.minusOrZero(command.amount)
-            is CorrectStockIntent -> command.actual
-            is ReconcileStockIntent -> command.actual
-            is DeletePackageIntent -> Quantity.zero(projected.unitId)
-            else -> continue
+            is PackageSyncCommand.Consume -> projected.minusOrZero(command.amount)
+            is PackageSyncCommand.CorrectStock -> command.actual
+            is PackageSyncCommand.Reconcile -> command.actual
+            is PackageSyncCommand.Delete -> Quantity.zero(projected.unitId)
+            is PackageSyncCommand.Create,
+            is PackageSyncCommand.Describe,
+            is PackageSyncCommand.Move,
+            is PackageSyncCommand.SetClaim,
+            is PackageSyncCommand.ReleaseClaim -> continue
         }
         projected = next
         touched = true

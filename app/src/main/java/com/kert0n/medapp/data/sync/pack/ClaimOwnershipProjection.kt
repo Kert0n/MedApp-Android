@@ -2,8 +2,6 @@ package com.kert0n.medapp.data.sync.pack
 
 import com.kert0n.medapp.domain.model.course.CourseBrief
 import com.kert0n.medapp.domain.model.pack.ClaimOwnership
-import com.kert0n.medapp.domain.model.sync.ReleaseClaimIntent
-import com.kert0n.medapp.domain.model.sync.SyncIntent
 
 /**
  * Отвечает домену, чем объяснена моя бронь на пачку: назначением, локальным снятием — или ничем.
@@ -18,9 +16,9 @@ import com.kert0n.medapp.domain.model.sync.SyncIntent
  */
 fun claimOwnership(
     assignedCourse: CourseBrief?,
-    unclosed: List<SyncIntent> = emptyList()
+    unclosed: List<PackageSyncCommand> = emptyList()
 ): ClaimOwnership = when {
-    unclosed.any { it is ReleaseClaimIntent } -> ClaimOwnership.ReleasedLocally
+    unclosed.any { it is PackageSyncCommand.ReleaseClaim } -> ClaimOwnership.ReleasedLocally
     assignedCourse != null -> ClaimOwnership.AssignedTo(assignedCourse)
     else -> ClaimOwnership.NoKnownOwner
 }

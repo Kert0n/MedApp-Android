@@ -2,8 +2,6 @@ package com.kert0n.medapp.data.sync.pack
 
 import com.kert0n.medapp.domain.model.course.CourseBrief
 import com.kert0n.medapp.domain.model.pack.ClaimOwnership
-import com.kert0n.medapp.domain.model.sync.ReleaseClaimIntent
-import com.kert0n.medapp.domain.model.sync.SetClaimIntent
 import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.tablets
@@ -28,7 +26,7 @@ class ClaimOwnershipProjectionTest {
         // Курс уже отменён, снятие ещё не уехало: бронь вот-вот освободится.
         assertEquals(
             ClaimOwnership.ReleasedLocally,
-            claimOwnership(course, listOf(ReleaseClaimIntent(PACK)))
+            claimOwnership(course, listOf(PackageSyncCommand.ReleaseClaim(PACK)))
         )
     }
 
@@ -43,7 +41,7 @@ class ClaimOwnershipProjectionTest {
         // его фактом «что-то отправляется» значило бы не показать человеку то, что он разбирает.
         assertEquals(
             ClaimOwnership.NoKnownOwner,
-            claimOwnership(assignedCourse = null, unclosed = listOf(SetClaimIntent(PACK, tablets("10"))))
+            claimOwnership(assignedCourse = null, unclosed = listOf(PackageSyncCommand.SetClaim(PACK, tablets("10"))))
         )
     }
 }

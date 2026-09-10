@@ -1,12 +1,6 @@
 package com.kert0n.medapp.data.sync.pack
 
 import com.kert0n.medapp.domain.model.pack.EffectiveAmount
-import com.kert0n.medapp.domain.model.sync.ConsumeIntent
-import com.kert0n.medapp.domain.model.sync.CorrectStockIntent
-import com.kert0n.medapp.domain.model.sync.DeletePackageIntent
-import com.kert0n.medapp.domain.model.sync.DescribePackageIntent
-import com.kert0n.medapp.domain.model.sync.ReconcileStockIntent
-import com.kert0n.medapp.domain.model.sync.ReleaseClaimIntent
 import com.kert0n.medapp.domain.model.pack.PackageSharedFacts
 import com.kert0n.medapp.fixture.INTAKE
 import com.kert0n.medapp.fixture.PACK
@@ -38,7 +32,7 @@ class EffectiveAmountProjectionTest {
     fun consumptionIsSubtractedOnce() {
         assertEquals(
             EffectiveAmount.Known(tablets("17"), confirmed = false),
-            effectiveAmount(tablets("20"), listOf(ConsumeIntent(PACK, tablets("3"), INTAKE)))
+            effectiveAmount(tablets("20"), listOf(PackageSyncCommand.Consume(PACK, tablets("3"), INTAKE)))
         )
     }
 
@@ -48,8 +42,8 @@ class EffectiveAmountProjectionTest {
         val projected = effectiveAmount(
             confirmed = tablets("20"),
             unclosed = listOf(
-                ConsumeIntent(PACK, tablets("3"), INTAKE),
-                CorrectStockIntent(PACK, tablets("30"))
+                PackageSyncCommand.Consume(PACK, tablets("3"), INTAKE),
+                PackageSyncCommand.CorrectStock(PACK, tablets("30"))
             )
         )
         assertEquals(tablets("30"), projected.quantityOrNull)
@@ -61,7 +55,7 @@ class EffectiveAmountProjectionTest {
         // переходом `correctTo`. Разойдись они — экран показывал бы одно, база другое.
         val stored = pack(quantity = tablets("20"))
         val recounted = stored.correctTo(tablets("30"))
-        val projected = effectiveAmount(stored.quantity, listOf(CorrectStockIntent(PACK, tablets("30"))))
+        val projected = effectiveAmount(stored.quantity, listOf(PackageSyncCommand.CorrectStock(PACK, tablets("30"))))
         assertEquals(recounted.quantity, projected.quantityOrNull)
     }
 
@@ -70,9 +64,9 @@ class EffectiveAmountProjectionTest {
         val projected = effectiveAmount(
             confirmed = tablets("20"),
             unclosed = listOf(
-                ConsumeIntent(PACK, tablets("3"), INTAKE),
-                ReconcileStockIntent(PACK, tablets("12"), throughSequence = 5),
-                ConsumeIntent(PACK, tablets("2"), INTAKE)
+                PackageSyncCommand.Consume(PACK, tablets("3"), INTAKE),
+                PackageSyncCommand.Reconcile(PACK, tablets("12"), throughSequence = 5),
+                PackageSyncCommand.Consume(PACK, tablets("2"), INTAKE)
             )
         )
         assertEquals(tablets("10"), projected.quantityOrNull)
@@ -82,7 +76,7 @@ class EffectiveAmountProjectionTest {
     fun deletionProjectsZero() {
         assertEquals(
             tablets("0"),
-            effectiveAmount(tablets("20"), listOf(DeletePackageIntent(PACK))).quantityOrNull
+            effectiveAmount(tablets("20"), listOf(PackageSyncCommand.Delete(PACK))).quantityOrNull
         )
     }
 
@@ -93,8 +87,8 @@ class EffectiveAmountProjectionTest {
         val projected = effectiveAmount(
             confirmed = tablets("20"),
             unclosed = listOf(
-                DescribePackageIntent(PACK, paracetamol, paracetamol.copy(country = "Украина")),
-                ReleaseClaimIntent(PACK)
+                PackageSyncCommand.Describe(PACK, paracetamol, paracetamol.copy(country = "Украина")),
+                PackageSyncCommand.ReleaseClaim(PACK)
             )
         )
         assertEquals(EffectiveAmount.Known(tablets("20"), confirmed = true), projected)
@@ -106,7 +100,7 @@ class EffectiveAmountProjectionTest {
         // по состоянию очереди.
         assertEquals(
             tablets("0"),
-            effectiveAmount(tablets("2"), listOf(ConsumeIntent(PACK, tablets("5"), INTAKE))).quantityOrNull
+            effectiveAmount(tablets("2"), listOf(PackageSyncCommand.Consume(PACK, tablets("5"), INTAKE))).quantityOrNull
         )
     }
 
@@ -115,7 +109,7 @@ class EffectiveAmountProjectionTest {
         // Пока неизвестно, включён ли расход в серверный остаток, любое число было бы догадкой.
         val projected = effectiveAmount(
             confirmed = tablets("20"),
-            unclosed = listOf(ConsumeIntent(PACK, tablets("3"), INTAKE)),
+            unclosed = listOf(PackageSyncCommand.Consume(PACK, tablets("3"), INTAKE)),
             unresolvedOperationIds = listOf(INTAKE)
         )
         assertEquals(EffectiveAmount.NeedsRecount(tablets("20"), listOf(INTAKE)), projected)
