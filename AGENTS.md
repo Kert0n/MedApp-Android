@@ -213,26 +213,40 @@ adb devices   # проверить, что устройство на месте,
 ```
 
 Набор тестов зависит от реализованных PR.
-`NetworkContractTest` и клиентский `ContractProbe` запланированы в PR 5;
+`WireContractTest` и клиентский `ContractProbe` появляются в PR 5;
 их наличие и команду запуска проверяйте по коду, не выдавайте запланированное за выполненное.
 Запуск сервера и фактические проверки HTTP описаны в PLAN B7/J1.
 
 ## Связь с сервером
 
-Из `../MedAppServer`, с JDK 25 и работающим Docker:
+**Контракт проверяется против боевого сервера** `https://medapp.ru.net`: dev-окружение прячет
+то, чем живёт прод, — TLS, прокси, конфигурацию, данные каталога. Клиентский `ContractProbe`
+запускается только явно, без `-Pprobe` он пропускается и в прод не ходит:
+
+```bash
+./gradlew :app:connectedDebugAndroidTest -Pprobe \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.kert0n.medapp.network.server.ContractProbe
+```
+
+Учётки лежат в `local.properties`, который в git не попадает: `MEDAPP_BASE_URL`,
+`MEDAPP_REGISTRATION_TOKEN` и два пробных пользователя `MEDAPP_PROBE_A_LOGIN/KEY`,
+`MEDAPP_PROBE_B_LOGIN/KEY`. **Пробные пользователи заводятся один раз** —
+`scripts/register-probe-users.sh`, который запускает человек, — и дальше переиспользуются; новых
+не заводить. Синтетические аптечки проба удаляет за собой. Сервер считает каждую выдачу токена
+с адреса, поэтому пробу не гоняют в цикле.
+
+Локальный сервер — только для отладки, когда прод показал проблему. Из `../MedAppServer`, с
+JDK 25 и работающим Docker:
 
 ```bash
 ./gradlew test --tests '*ResourceApiContractTest' --tests '*OfflineSyncStoriesTest' --tests '*BasicWorkflowStoriesTest' --tests '*DrugMovementStoriesTest'
 ```
 
-Для запуска приложения сервера на хосте: `./gradlew bootRun --args='--spring.profiles.active=dev'`.
-`compose.dev.yaml` поднимает **только БД**, Spring dev запускает её автоматически.
-Для проверки по TCP отдельно запустить клиентский `ContractProbe` после реализации PR 5,
-указав адрес доступного тестового сервера. Для Android Emulator адрес хоста обычно `10.0.2.2`;
-порт и разрешение локального HTTP задаются конфигурацией debug-сборки.
-
-Сам сервер поднят по адресу https://medapp.ru.net ключи и конфиги ты можешь найти локально
-src/MedAppServer/src/main/resources
+Приложение сервера на хосте: `./gradlew bootRun --args='--spring.profiles.active=dev'`;
+`compose.dev.yaml` поднимает **только БД**, Spring dev запускает её автоматически. Для Android
+Emulator адрес хоста — `10.0.2.2`; разрешение локального HTTP заводится в debug-сборке, только
+когда такая отладка понадобилась. Ключи и конфиги сервера — в
+`../MedAppServer/src/main/resources`.
 
 ## Границы изменений
 
