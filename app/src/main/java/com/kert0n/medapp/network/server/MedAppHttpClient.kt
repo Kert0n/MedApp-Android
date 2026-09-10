@@ -1,5 +1,6 @@
 package com.kert0n.medapp.network.server
 
+import com.kert0n.medapp.network.account.AccessTokens
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.plugins.HttpRequestRetry
@@ -21,15 +22,20 @@ import kotlin.coroutines.cancellation.CancellationException
  * дальше, решает политика операции (PLAN E3), а не транспорт.
  *
  * Статус ответа исключением не становится: успех у каждой операции свой, и проверяет его тот,
- * кто операцию объявил. Лог пишется, только если передан [logger] (debug), и без секретов.
+ * кто операцию объявил. Лог пишется, только если передан [logger] (debug), и без секретов;
+ * пропуск в запросы добавляет [MedAppAuth], если переданы [tokens].
  */
 fun medAppHttpClient(
     engine: HttpClientEngine,
     baseUrl: String,
     logger: Logger? = null,
+    tokens: AccessTokens? = null,
     retryDelay: HttpRequestRetryConfig.() -> Unit = { exponentialDelay(randomizationMs = 500) }
 ): HttpClient = HttpClient(engine) {
     expectSuccess = false
+    if (tokens != null) {
+        install(MedAppAuth) { this.tokens = tokens }
+    }
     if (logger != null) {
         install(Logging) {
             this.logger = SecretMaskingLogger(logger)

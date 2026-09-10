@@ -2,6 +2,7 @@ package com.kert0n.medapp.di
 
 import android.util.Log
 import com.kert0n.medapp.BuildConfig
+import com.kert0n.medapp.network.account.AccessTokens
 import io.ktor.client.plugins.logging.Logger
 import com.kert0n.medapp.network.server.crptHttpClient
 import com.kert0n.medapp.network.server.medAppHttpClient
@@ -33,10 +34,11 @@ object NetworkModule {
     @Provides
     @Singleton
     @MedAppHttp
-    fun medAppHttp(): HttpClient = medAppHttpClient(
+    fun medAppHttp(tokens: AccessTokens): HttpClient = medAppHttpClient(
         engine = OkHttp.create(),
         baseUrl = BuildConfig.BASE_URL,
-        logger = if (BuildConfig.DEBUG) LogcatLogger else null
+        logger = if (BuildConfig.DEBUG) LogcatLogger else null,
+        tokens = tokens
     )
 
     /** Лог HTTP в debug; секреты из него вычищает клиент, а не этот адаптер. */
