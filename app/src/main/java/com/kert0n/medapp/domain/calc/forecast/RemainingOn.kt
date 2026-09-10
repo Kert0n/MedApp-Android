@@ -1,5 +1,6 @@
 package com.kert0n.medapp.domain.calc.forecast
 
+import com.kert0n.medapp.domain.calc.availability.Availability
 import com.kert0n.medapp.domain.calc.coverage.sourceCapacity
 import com.kert0n.medapp.domain.calc.coverage.spendTopDown
 import com.kert0n.medapp.domain.calc.schedule.occurrences
@@ -57,9 +58,7 @@ fun remainingOn(
 
     // Доступность — то же самое, чем считаются обеспечение и пределы ползунков: пачка без
     // известного остатка в расчёт не входит, и её прогноз останется неизвестным.
-    val availability: Map<Uuid, Quantity> = packages.mapNotNull { stock ->
-        stock.availableToMe?.let { stock.packageId to it }
-    }.toMap()
+    val availability = Availability.from(packages)
 
     val answered = resolved
         .filter { it.status != IntakeStatus.PLANNED && it.courseId != null }

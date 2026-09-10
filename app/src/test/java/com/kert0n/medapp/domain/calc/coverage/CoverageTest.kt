@@ -6,6 +6,7 @@ import com.kert0n.medapp.fixture.MOSCOW
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.activeCourse
+import com.kert0n.medapp.fixture.availability
 import com.kert0n.medapp.fixture.doses
 import com.kert0n.medapp.fixture.schedule
 import com.kert0n.medapp.fixture.source
@@ -41,7 +42,7 @@ class CoverageTest {
         until = fourTimesADay.endInclusive.plusDays(1).atStartOfDay(MOSCOW).toInstant()
     )
 
-    private val availability = mapOf(PACK to tablets("20"), OTHER_PACK to tablets("12"))
+    private val availability = availability(PACK to tablets("20"), OTHER_PACK to tablets("12"))
 
     private fun course(first: Int, second: Int) = activeCourse(
         schedule = fourTimesADay,
@@ -88,7 +89,7 @@ class CoverageTest {
     fun allocationBeyondWhatThePackageGivesIsNotCoverage() {
         // Выделено девять доз, а свободно шесть таблеток — три дозы. Обеспечение честно меньше
         // выделенного, и человек видит, почему.
-        val shrunk = mapOf(PACK to tablets("6"), OTHER_PACK to tablets("12"))
+        val shrunk = availability(PACK to tablets("6"), OTHER_PACK to tablets("12"))
         val found = coverage(course(first = 9, second = 0), remaining, shrunk)
         assertEquals(doses(3), found.coveredDoses)
         assertEquals(doses(9), found.perSource.first().allocatedDoses)
@@ -99,7 +100,7 @@ class CoverageTest {
     fun remainderSmallerThanADoseStaysInItsRowAndDoesNotSpill() {
         // По одной таблетке в двух пачках при дозе в две: ноль покрытых приёмов, и остатки
         // видны каждый в своей строке, а не сложились в одну дозу.
-        val singles = mapOf(PACK to tablets("1"), OTHER_PACK to tablets("1"))
+        val singles = availability(PACK to tablets("1"), OTHER_PACK to tablets("1"))
         val found = coverage(course(first = 5, second = 4), remaining, singles)
         assertEquals(doses(0), found.coveredDoses)
         assertEquals(listOf(tablets("1"), tablets("1")), found.perSource.map { it.leftover })
@@ -107,7 +108,7 @@ class CoverageTest {
 
     @Test
     fun leftoverIsWhatCannotMakeAWholeDose() {
-        val odd = mapOf(PACK to tablets("5"), OTHER_PACK to tablets("12"))
+        val odd = availability(PACK to tablets("5"), OTHER_PACK to tablets("12"))
         val found = coverage(course(first = 2, second = 0), remaining, odd)
         assertEquals(tablets("1"), found.perSource.first().leftover)
         assertEquals(tablets("0"), found.perSource.last().leftover)
@@ -117,7 +118,7 @@ class CoverageTest {
     fun unknownAvailabilityIsNotPassedOffAsCoverage() {
         // Исход операции по первой пачке не установлен: выделение сохраняется, но обеспеченным
         // не считается, и обеспечение помечено требующим проверки.
-        val found = coverage(course(first = 5, second = 4), remaining, mapOf(OTHER_PACK to tablets("12")))
+        val found = coverage(course(first = 5, second = 4), remaining, availability(OTHER_PACK to tablets("12")))
         assertTrue(found.requiresRecount)
         assertEquals(doses(4), found.coveredDoses)
         assertEquals(doses(5), found.perSource.first().allocatedDoses)

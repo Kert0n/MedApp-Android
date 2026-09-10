@@ -1,5 +1,6 @@
 package com.kert0n.medapp.domain.calc.coverage
 
+import com.kert0n.medapp.domain.calc.availability.Availability
 import com.kert0n.medapp.domain.calc.schedule.ScheduledOccurrence
 import com.kert0n.medapp.domain.model.course.Course
 import com.kert0n.medapp.domain.model.value.Doses
@@ -14,9 +15,9 @@ import kotlin.uuid.Uuid
  * шестидесятидневного кэша (PLAN H1), иначе годовой курс оказался бы «обеспечен полностью» на
  * основании двух ближайших месяцев.
  *
- * [availability] — `availableToMe` по пачкам (PLAN D4). **Отсутствие ключа значит «неизвестно»**:
- * такой источник не выдаётся за обеспеченный и поднимает [CourseCoverage.requiresRecount], но
- * своего выделения не теряет (PLAN D5).
+ * Пачку без известного числа [Availability] называет неизвестной, и здесь такой источник не
+ * выдаётся за обеспеченный и поднимает [CourseCoverage.requiresRecount], но своего выделения не
+ * теряет (PLAN D5).
  *
  * Расход идёт **сверху вниз** по стеку: пока в источнике невыбранного выделения меньше дозы,
  * переходим к следующему, а остаток строки не переливается. Поэтому обеспечение считается как
@@ -26,7 +27,7 @@ import kotlin.uuid.Uuid
 fun coverage(
     course: Course,
     remaining: List<ScheduledOccurrence>,
-    availability: Map<Uuid, Quantity>
+    availability: Availability
 ): CourseCoverage {
     val dose = requireNotNull(course.dose) { "обеспечение без дозы курса не определено" }
     val requiredDoses = Doses(remaining.size)
@@ -34,7 +35,7 @@ fun coverage(
     var unknown = false
     var supplied = Doses.none
     val perSource = course.sources.map { source ->
-        val available = availability[source.packageId]
+        val available = availability.known(source.packageId)
         if (available == null) {
             unknown = true
             return@map SourceCoverage(source.packageId, source.allocatedDoses, Doses.none, null)

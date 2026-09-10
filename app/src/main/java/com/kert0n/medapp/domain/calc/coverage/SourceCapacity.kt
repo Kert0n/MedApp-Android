@@ -1,5 +1,6 @@
 package com.kert0n.medapp.domain.calc.coverage
 
+import com.kert0n.medapp.domain.calc.availability.Availability
 import com.kert0n.medapp.domain.model.course.Course
 import com.kert0n.medapp.domain.model.value.Doses
 import com.kert0n.medapp.domain.model.value.Quantity
@@ -12,15 +13,15 @@ import kotlin.uuid.Uuid
  * Одно место на две задачи — раскладку будущих пунктов по пачкам и прогноз остатка. Пока их было
  * две, «остаток меньше дозы не переливается» пришлось бы соблюсти дважды и однажды забыть.
  *
- * Отсутствие пачки в [availability] значит «неизвестно», и вместимость такого источника — ноль:
- * до сверки он за обеспеченный не выдаётся (PLAN D5).
+ * Про неизвестную пачку [Availability] числа не даёт, и вместимость такого источника здесь —
+ * ноль: до сверки он за обеспеченный не выдаётся (PLAN D5).
  */
 internal fun sourceCapacity(
     course: Course,
     dose: Quantity,
-    availability: Map<Uuid, Quantity>
+    availability: Availability
 ): List<Pair<Uuid, Doses>> = course.sources.map { source ->
-    val wholeDoses = availability[source.packageId]?.dosesIn(dose) ?: Doses.none
+    val wholeDoses = availability.dosesOf(source.packageId, dose) ?: Doses.none
     source.packageId to minOf(source.allocatedDoses, wholeDoses)
 }
 

@@ -1,5 +1,6 @@
 package com.kert0n.medapp.domain.calc.coverage
 
+import com.kert0n.medapp.domain.calc.availability.Availability
 import com.kert0n.medapp.domain.model.course.Course
 import com.kert0n.medapp.domain.model.intake.Intake
 import com.kert0n.medapp.domain.model.intake.IntakeStatus
@@ -28,13 +29,13 @@ import kotlin.uuid.Uuid
  * вызывающий: раскладка зависит от того, какой приём наступает раньше, а не от порядка строк в
  * запросе.
  *
- * [availability] — `availableToMe` по пачкам; отсутствие ключа значит «неизвестно», и такой
- * источник обеспеченным не считается: до сверки выдавать его за обеспеченный нельзя (PLAN D5).
+ * Пачку, про которую [Availability] числа не даёт, раскладка пропускает: до сверки выдавать
+ * такой источник за обеспеченный нельзя (PLAN D5).
  */
 fun assignSources(
     course: Course,
     upcoming: List<Intake>,
-    availability: Map<Uuid, Quantity>
+    availability: Availability
 ): Map<Uuid, Uuid?> {
     upcoming.forEach { intake ->
         require(intake.courseId == course.id) { "пункт ${intake.id} не принадлежит курсу" }

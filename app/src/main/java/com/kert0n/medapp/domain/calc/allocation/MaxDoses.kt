@@ -1,5 +1,6 @@
 package com.kert0n.medapp.domain.calc.allocation
 
+import com.kert0n.medapp.domain.calc.availability.Availability
 import com.kert0n.medapp.domain.model.course.Course
 import com.kert0n.medapp.domain.model.value.Doses
 import com.kert0n.medapp.domain.model.value.Quantity
@@ -23,9 +24,9 @@ import kotlin.uuid.Uuid
  * таблетках сумма 1 + 1 сравнялась бы с потребностью на приём, ползунки зажались бы, а покрытие
  * осталось нулевым — состояние без выхода.
  *
- * [availability] — `availableToMe` по пачкам (PLAN D4). **Отсутствие ключа значит «неизвестно»**,
- * а не ноль: при требуемой сверке числовой предел недоступен, и тогда сохраняется последнее
- * выделение — снижать его догадкой нельзя, повышать нечем (PLAN D5).
+ * Про пачку с требуемой сверкой [Availability] числа не даёт, и тогда сохраняется последнее
+ * выделение: снижать его догадкой нельзя, повышать нечем (PLAN D5). Ответ «неизвестно» и ответ
+ * «ноль» здесь ведут себя по-разному, поэтому их и различает тип, а не соглашение.
  *
  * [packageId] не обязан быть источником курса: тот же расчёт отвечает на «сколько можно выделить,
  * если подключить эту пачку».
@@ -34,12 +35,12 @@ fun maxDoses(
     packageId: Uuid,
     course: Course,
     requiredDoses: Doses,
-    availability: Map<Uuid, Quantity>
+    availability: Availability
 ): Doses {
     val dose = requireNotNull(course.dose) { "предел выделения без дозы курса не определён" }
     val allocatedHere =
         course.sources.firstOrNull { it.packageId == packageId }?.allocatedDoses ?: Doses.none
-    val available = availability[packageId] ?: return allocatedHere
+    val available = availability.known(packageId) ?: return allocatedHere
     val allocatedElsewhere = course.allocatedDosesTotal - allocatedHere
     val stillNeeded = requiredDoses.minusOrNone(allocatedElsewhere)
     return minOf(available.dosesIn(dose), stillNeeded)

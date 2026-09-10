@@ -9,6 +9,7 @@ import com.kert0n.medapp.fixture.LATER
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.activeCourse
+import com.kert0n.medapp.fixture.availability
 import com.kert0n.medapp.fixture.course
 import com.kert0n.medapp.fixture.plannedIntake
 import com.kert0n.medapp.fixture.source
@@ -22,7 +23,7 @@ import org.junit.Test
 /** Источники расходуются сверху вниз и сами не появляются (PLAN D5). */
 class AssignSourcesTest {
 
-    private val availability = mapOf(PACK to tablets("20"), OTHER_PACK to tablets("12"))
+    private val availability = availability(PACK to tablets("20"), OTHER_PACK to tablets("12"))
 
     /** Пять пунктов подряд, каждый со своим идентификатором и своим временем. */
     private val plan: List<Intake> = (0 until 5).map { day ->
@@ -78,7 +79,7 @@ class AssignSourcesTest {
     @Test
     fun remainderSmallerThanADoseDoesNotSpillIntoTheNextSource() {
         // По одной таблетке в двух пачках при дозе в две: обеспеченных приёмов ноль, а не один.
-        val singles = mapOf(PACK to tablets("1"), OTHER_PACK to tablets("1"))
+        val singles = availability(PACK to tablets("1"), OTHER_PACK to tablets("1"))
         val found = assignSources(
             course = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 5))),
             upcoming = plan,
@@ -90,7 +91,7 @@ class AssignSourcesTest {
     @Test
     fun packageGivesNoMoreThanItPhysicallyHas() {
         // Выделено пять доз, а свободно четыре таблетки — две дозы: дальше идёт вторая пачка.
-        val shrunk = mapOf(PACK to tablets("4"), OTHER_PACK to tablets("12"))
+        val shrunk = availability(PACK to tablets("4"), OTHER_PACK to tablets("12"))
         val found = assignSources(
             course = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 5))),
             upcoming = plan,
@@ -106,7 +107,7 @@ class AssignSourcesTest {
         val found = assignSources(
             course = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 2))),
             upcoming = plan,
-            availability = mapOf(OTHER_PACK to tablets("12"))
+            availability = availability(OTHER_PACK to tablets("12"))
         )
         assertEquals(listOf(OTHER_PACK, OTHER_PACK, null, null, null), plan.map { found[it.id] })
     }
@@ -118,7 +119,7 @@ class AssignSourcesTest {
         val found = assignSources(
             course = activeCourse(sources = listOf(source(PACK, 2))),
             upcoming = plan,
-            availability = availability + (elsewhere to tablets("50"))
+            availability = availability(PACK to tablets("20"), elsewhere to tablets("50"))
         )
         assertEquals(listOf(PACK, PACK, null, null, null), plan.map { found[it.id] })
     }

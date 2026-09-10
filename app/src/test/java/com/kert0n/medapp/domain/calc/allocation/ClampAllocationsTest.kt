@@ -7,6 +7,7 @@ import com.kert0n.medapp.fixture.MOSCOW
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.activeCourse
+import com.kert0n.medapp.fixture.availability
 import com.kert0n.medapp.fixture.doses
 import com.kert0n.medapp.fixture.factsOf
 import com.kert0n.medapp.fixture.pack
@@ -23,13 +24,13 @@ class ClampAllocationsTest {
 
     private val course = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 4)))
 
-    private val plenty = mapOf(PACK to tablets("20"), OTHER_PACK to tablets("12"))
+    private val plenty = availability(PACK to tablets("20"), OTHER_PACK to tablets("12"))
 
     @Test
     fun shortageLowersOnlyTheSourceThatLostStock() {
         // В первой пачке осталось четыре таблетки — две дозы: выделение зажато до двух, второй
         // источник не тронут.
-        val shrunk = mapOf(PACK to tablets("4"), OTHER_PACK to tablets("12"))
+        val shrunk = availability(PACK to tablets("4"), OTHER_PACK to tablets("12"))
         assertEquals(
             listOf(doses(2), doses(4)),
             clampAllocations(course, requiredDoses = doses(28), availability = shrunk)
@@ -41,7 +42,7 @@ class ClampAllocationsTest {
     fun recalculationTouchesNeitherScheduleNorDoseNorDates() {
         // Единственное, что функция умеет вернуть, — источники. Расписание чужим действием не
         // переписывается: «сокращаем курс до максимально возможного срока» здесь невыразимо.
-        val shrunk = mapOf(PACK to tablets("0"), OTHER_PACK to tablets("0"))
+        val shrunk = availability(PACK to tablets("0"), OTHER_PACK to tablets("0"))
         val clamped = clampAllocations(course, requiredDoses = doses(28), availability = shrunk)
         val after = clamped.fold(course) { acc, s -> acc.allocate(s.packageId, s.allocatedDoses, LATER) }
         assertEquals(listOf(doses(0), doses(0)), after.sources.map { it.allocatedDoses })
@@ -64,7 +65,7 @@ class ClampAllocationsTest {
             from = week.start.atStartOfDay(MOSCOW).toInstant(),
             until = week.endInclusive.plusDays(1).atStartOfDay(MOSCOW).toInstant()
         )
-        val shrunk = mapOf(PACK to tablets("4"), OTHER_PACK to tablets("0"))
+        val shrunk = availability(PACK to tablets("4"), OTHER_PACK to tablets("0"))
         val clamped = clampAllocations(course, requiredDoses = doses(plan.size), availability = shrunk)
         val after = clamped.fold(course) { acc, s -> acc.allocate(s.packageId, s.allocatedDoses, LATER) }
         val found = coverage(after, plan, shrunk)
@@ -87,7 +88,7 @@ class ClampAllocationsTest {
     fun unknownAvailabilityKeepsTheLastAllocation() {
         // При требуемой сверке предел неизвестен: выделение сохраняется, а обеспечение помечено
         // требующим проверки — и автоматическая замена брони до сверки не отправляется.
-        val partial = mapOf(OTHER_PACK to tablets("12"))
+        val partial = availability(OTHER_PACK to tablets("12"))
         val clamped = clampAllocations(course, requiredDoses = doses(28), availability = partial)
         assertEquals(listOf(doses(5), doses(4)), clamped.map { it.allocatedDoses })
         assertTrue(coverage(course, emptyList(), partial).requiresRecount)
@@ -96,7 +97,7 @@ class ClampAllocationsTest {
     @Test
     fun grownStockDoesNotRaiseTheAllocationByItself() {
         // Автоматического увеличения нет: выделение — решение человека, а не следствие поставки.
-        val grown = mapOf(PACK to tablets("100"), OTHER_PACK to tablets("100"))
+        val grown = availability(PACK to tablets("100"), OTHER_PACK to tablets("100"))
         assertEquals(
             listOf(doses(5), doses(4)),
             clampAllocations(course, requiredDoses = doses(28), availability = grown)
@@ -110,7 +111,7 @@ class ClampAllocationsTest {
         // имеет (PLAN D5, C1).
         val hinted = pack(quantity = tablets("20"))
             .describe(factsOf(pack()).copy(defaultIntakeAmount = tablets("1")))
-        val available = mapOf(PACK to hinted.quantity, OTHER_PACK to tablets("12"))
+        val available = availability(PACK to hinted.quantity, OTHER_PACK to tablets("12"))
         assertEquals(
             listOf(doses(5), doses(4)),
             clampAllocations(course, requiredDoses = doses(28), availability = available)

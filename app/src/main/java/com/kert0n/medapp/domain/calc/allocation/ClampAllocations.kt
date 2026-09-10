@@ -1,5 +1,6 @@
 package com.kert0n.medapp.domain.calc.allocation
 
+import com.kert0n.medapp.domain.calc.availability.Availability
 import com.kert0n.medapp.domain.model.course.Course
 import com.kert0n.medapp.domain.model.course.CourseSource
 import com.kert0n.medapp.domain.model.value.Doses
@@ -21,10 +22,9 @@ import kotlin.uuid.Uuid
  * неответа приёма, пересчёта либо утилизации запаса, изменения источников, активации и отмены
  * курса, переноса или утраты доступа, разрешения неопределённой операции (PLAN D5, F5).
  *
- * **Отсутствие пачки в [availability] значит «неизвестно»**, и тогда прежнее выделение
- * сохраняется: при требуемой сверке числовой предел недоступен, снижать выделение догадкой
- * нельзя, а автоматическую замену брони до сверки не отправляют. Обеспечение при этом помечено
- * требующим проверки — это делает `coverage`.
+ * Пачка без известного числа выделение сохраняет: при требуемой сверке числового предела нет,
+ * снижать выделение догадкой нельзя, а автоматическую замену брони до сверки не отправляют.
+ * Обеспечение при этом помечено требующим проверки — это делает `coverage`.
  *
  * Автоматического **увеличения** нет: подросший остаток выделение не поднимает, потому что
  * выделение — решение человека, а не следствие поставки.
@@ -32,11 +32,11 @@ import kotlin.uuid.Uuid
 fun clampAllocations(
     course: Course,
     requiredDoses: Doses,
-    availability: Map<Uuid, Quantity>
+    availability: Availability
 ): List<CourseSource> {
     val dose = requireNotNull(course.dose) { "пересчёт выделения без дозы курса не определён" }
     val clamped = course.sources.map { source ->
-        val available = availability[source.packageId] ?: return@map source
+        val available = availability.known(source.packageId) ?: return@map source
         val fits = available.dosesIn(dose)
         if (fits >= source.allocatedDoses) source
         else CourseSource(source.packageId, fits)
