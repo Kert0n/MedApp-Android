@@ -19,10 +19,12 @@ class SyncOperationRoomRepository @Inject constructor(
         dependsOn: Set<Uuid>
     ): SyncOperation = queue.enqueue(id, command, at, groupId, dependsOn)
 
-    override suspend fun find(id: Uuid): SyncOperation? = queue.find(id)?.toDomainOrNull()
+    override suspend fun find(id: Uuid): SyncOperation? =
+        (queue.find(id)?.toDomain() as? StoredSyncOperation.Readable)?.operation
 
+    /** Нечитаемые сюда не попадают: их находит и называет [unreadable]. */
     override suspend fun withStatus(status: SyncOperationStatus): List<SyncOperation> =
-        queue.withStatus(status).mapNotNull { it.toDomainOrNull() }
+        queue.withStatus(status).mapNotNull { (it.toDomain() as? StoredSyncOperation.Readable)?.operation }
 
     override suspend fun settle(
         id: Uuid,
@@ -32,6 +34,6 @@ class SyncOperationRoomRepository @Inject constructor(
         attempted: Boolean
     ) = queue.settle(id, status, lastError, at, if (attempted) 1 else 0)
 
-    override suspend fun unreadable(): List<Uuid> =
-        queue.all().filter { it.toDomainOrNull() == null }.map { it.operation.id }
+    override suspend fun unreadable(): List<StoredSyncOperation.Unreadable> =
+        queue.all().mapNotNull { it.toDomain() as? StoredSyncOperation.Unreadable }
 }

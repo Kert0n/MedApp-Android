@@ -14,6 +14,7 @@ import com.kert0n.medapp.storage.course.CourseDao
 import com.kert0n.medapp.storage.course.toSourceStorageEntities
 import com.kert0n.medapp.storage.course.toStorageEntity as toCourseStorageEntity
 import com.kert0n.medapp.storage.database.MedAppDatabase
+import com.kert0n.medapp.storage.server.StoredSyncOperation
 import com.kert0n.medapp.storage.server.SyncOperationDao
 import com.kert0n.medapp.storage.server.SyncOperationStorageRow
 import com.kert0n.medapp.storage.stock.StockMovementDao
@@ -134,21 +135,24 @@ class PackageRoomRepository @Inject constructor(
      * эти факты уже включает, и их неустановленный исход больше не делает его неизвестным (E3).
      */
     private fun amountOf(pkg: Package, unclosed: List<SyncOperationStorageRow>): EffectiveAmount {
-        val read = unclosed.map { it to it.toDomainOrNull() }
-        val cut = read.maxOfOrNull { (_, operation) ->
-            (operation?.command as? PackageSyncCommand.Reconcile)?.throughSequence ?: -1L
+        val read = unclosed.map { it.operation.sequence to it.toDomain() }
+        val cut = read.maxOfOrNull { (_, stored) ->
+            (stored.readable()?.command as? PackageSyncCommand.Reconcile)?.throughSequence ?: -1L
         } ?: -1L
         val commands = ArrayList<PackageSyncCommand>(unclosed.size)
         val unresolved = ArrayList<Uuid>()
-        for ((row, operation) in read) {
-            if (row.operation.sequence <= cut) continue
+        for ((sequence, stored) in read) {
+            if (sequence <= cut) continue
+            val operation = stored.readable()
             val command = operation?.command as? PackageSyncCommand
             when {
-                command == null -> unresolved += row.operation.id
+                command == null -> unresolved += stored.id
                 operation.status == SyncOperationStatus.NEEDS_RECOUNT -> unresolved += operation.id
                 else -> commands += command
             }
         }
         return PackageQueueState(pkg, commands, unresolved).amount
     }
+
+    private fun StoredSyncOperation.readable() = (this as? StoredSyncOperation.Readable)?.operation
 }
