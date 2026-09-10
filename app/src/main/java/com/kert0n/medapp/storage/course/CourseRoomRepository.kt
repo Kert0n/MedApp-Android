@@ -39,6 +39,9 @@ class CourseRoomRepository @Inject constructor(
     override suspend fun saveDraft(draft: CourseDraft): Boolean = database.withTransaction {
         val existing = courses.findPlan(draft.id)
         if (existing != null && !existing.isDraft) return@withTransaction false
+        // Запись эпизода живёт вечно, а план после конца лечения удаляется: «плана нет» само по
+        // себе не значит «черновик ещё можно сохранить».
+        if (existing == null && courses.findRecord(draft.id) != null) return@withTransaction false
         courses.saveCourse(
             course = draft.toStorageEntity(),
             times = draft.schedule?.toTimeStorageEntities(draft.id).orEmpty(),

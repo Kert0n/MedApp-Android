@@ -76,6 +76,12 @@ interface CourseDao {
         expected: Revision
     ): Boolean {
         if (reviseIfRevisionIs(course.id, expected.number, course.revision, course.updatedAt) == 0) {
+            // Ноль строк законен ровно в одном случае: плана больше нет, писать некуда. Живой
+            // план другой редакции — пересчёт из устаревшего состава, и молча пропустить его
+            // нельзя: транзакция вокруг уже записала расход, обеспечение которого он и считал.
+            check(findPlan(course.id) == null) {
+                "выделения посчитаны из редакции ${expected.number}, а план уже другой"
+            }
             return false
         }
         deleteSourcesOf(course.id)
