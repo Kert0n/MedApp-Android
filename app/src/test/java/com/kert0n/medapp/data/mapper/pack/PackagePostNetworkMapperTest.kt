@@ -87,7 +87,7 @@ class PackagePostNetworkMapperTest {
     }
 
     @Test(expected = IllegalArgumentException::class)
-    fun wireFieldsRefuseAnOverlongDescription() {
+    fun networkFieldsRefuseAnOverlongDescription() {
         PackagePostNetworkDTO(
             name = "Парацетамол",
             amount = "20",

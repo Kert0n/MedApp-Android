@@ -90,7 +90,7 @@ class PackagePatchNetworkMapperTest {
     }
 
     @Test
-    fun localOnlyFieldsNeverReachTheWire() {
+    fun localOnlyFieldsNeverReachTheNetwork() {
         // Срок годности, заметка, цена и даты остаются только на устройстве (PLAN C0, E5).
         val patch = factsOf(onServer)
             .copy(note = "в машине", price = Money(BigDecimal("120.00")))
@@ -99,17 +99,17 @@ class PackagePatchNetworkMapperTest {
     }
 
     @Test(expected = IllegalArgumentException::class)
-    fun wireEditRefusesToClearTheName() {
+    fun networkEditRefusesToClearTheName() {
         PackagePatchNetworkDTO(name = "")
     }
 
     @Test(expected = IllegalArgumentException::class)
-    fun wireEditRefusesWhitespaceThatIsNeitherValueNorClearing() {
+    fun networkEditRefusesWhitespaceThatIsNeitherValueNorClearing() {
         PackagePatchNetworkDTO(description = "   ")
     }
 
     @Test
-    fun wireEditAcceptsEmptyStringAsClearing() {
+    fun networkEditAcceptsEmptyStringAsClearing() {
         assertEquals("", PackagePatchNetworkDTO(description = "").description)
     }
 

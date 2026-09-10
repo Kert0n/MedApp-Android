@@ -31,7 +31,7 @@ data class PackagePatchNetworkDTO(
 ) {
     init {
         require(name == null || name.isNotBlank()) { "название нельзя очистить" }
-        amount?.let { requireWireAmount(it, "PackagePatchNetworkDTO.amount") }
+        amount?.let { requireNetworkAmount(it, "PackagePatchNetworkDTO.amount") }
         require(name == null || name.length <= PACKAGE_NAME_MAX_LENGTH) {
             "PackagePatchNetworkDTO.name: длиннее $PACKAGE_NAME_MAX_LENGTH символов"
         }

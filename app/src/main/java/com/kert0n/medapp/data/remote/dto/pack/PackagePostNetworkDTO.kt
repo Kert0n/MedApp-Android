@@ -36,7 +36,7 @@ data class PackagePostNetworkDTO(
         // между «влезло в модель» и «влезло в запрос» означало бы отказ сервера после успешного
         // сохранения.
         requireText(name, PACKAGE_NAME_MAX_LENGTH, "PackagePostNetworkDTO.name")
-        requireWireAmount(amount, "PackagePostNetworkDTO.amount")
+        requireNetworkAmount(amount, "PackagePostNetworkDTO.amount")
         require(amount.any { it in '1'..'9' }) {
             "PackagePostNetworkDTO.amount: начальный остаток должен быть положительным"
         }
