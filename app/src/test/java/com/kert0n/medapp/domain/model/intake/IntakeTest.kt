@@ -1,5 +1,6 @@
 package com.kert0n.medapp.domain.model.intake
 
+import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.FIRST_PLANNED_AT
 import com.kert0n.medapp.fixture.FIRST_SCHEDULED_ON
 import com.kert0n.medapp.fixture.FIRST_SCHEDULED_TIME
@@ -33,8 +34,8 @@ class IntakeTest {
         assertEquals(planned, taken)
         assertEquals(planned.hashCode(), taken.hashCode())
         assertEquals(IntakeStatus.TAKEN, taken.status)
-        assertEquals(LATER, taken.takenAt)
-        assertEquals(LATER, taken.respondedAt)
+        assertEquals(LATER, taken.taken?.at)
+        assertEquals(LATER, taken.answer?.at)
     }
 
     @Test
@@ -43,20 +44,20 @@ class IntakeTest {
         // ни плановую дозу, ни плановую пачку.
         val taken = plannedIntake().confirm(OTHER_PACK, SHARED_KIT, tablets("1"), LATER)
         assertEquals(FIRST_PLANNED_AT, taken.plannedAt)
-        assertEquals(FIRST_SCHEDULED_ON, taken.scheduledOn)
-        assertEquals(FIRST_SCHEDULED_TIME, taken.scheduledTime)
+        assertEquals(FIRST_SCHEDULED_ON, taken.slot.localDate)
+        assertEquals(FIRST_SCHEDULED_TIME, taken.slot.localTime)
         assertEquals(tablets("2"), taken.plannedAmount)
         assertEquals(PACK, taken.plannedPackageId)
         // А фактические пачка, аптечка и количество — те, что назвал человек.
-        assertEquals(OTHER_PACK, taken.takenPackageId)
-        assertEquals(SHARED_KIT, taken.medKitId)
-        assertEquals(tablets("1"), taken.takenAmount)
+        assertEquals(OTHER_PACK, taken.taken?.packageId)
+        assertEquals(SHARED_KIT, taken.taken?.medKitId)
+        assertEquals(tablets("1"), taken.taken?.amount)
     }
 
     @Test
     fun factualAmountMayDifferFromThePlanned() {
         val taken = plannedIntake().confirm(PACK, HOME_KIT, tablets("3"), LATER)
-        assertEquals(tablets("3"), taken.takenAmount)
+        assertEquals(tablets("3"), taken.taken?.amount)
         assertEquals(tablets("2"), taken.plannedAmount)
     }
 
@@ -82,8 +83,8 @@ class IntakeTest {
     fun skippedIntakeIsNotConfirmedImplicitly() {
         // Отмена пропуска — отдельное явное действие, и в первой версии её нет.
         val skipped = plannedIntake().skip(LATER)
-        assertNull(skipped.takenAmount)
-        assertEquals(LATER, skipped.respondedAt)
+        assertNull(skipped.taken?.amount)
+        assertEquals(LATER, skipped.answer?.at)
         assertThrows(IllegalStateException::class.java) {
             skipped.confirm(PACK, HOME_KIT, tablets("2"), LATER)
         }
@@ -93,7 +94,7 @@ class IntakeTest {
     @Test
     fun repeatingTheSameAnswerChangesNothing() {
         val skipped = plannedIntake().skip(LATER)
-        assertEquals(skipped.respondedAt, skipped.skip(LATER.plusSeconds(60)).respondedAt)
+        assertEquals(skipped.answer?.at, skipped.skip(LATER.plusSeconds(60)).answer?.at)
         val cancelled = plannedIntake().cancel(LATER)
         assertEquals(IntakeStatus.CANCELLED, cancelled.cancel(LATER).status)
     }
@@ -103,7 +104,7 @@ class IntakeTest {
         val cancelled = plannedIntake().cancel(LATER)
         assertEquals(tablets("2"), cancelled.plannedAmount)
         assertEquals(FIRST_PLANNED_AT, cancelled.plannedAt)
-        assertNull(cancelled.takenAt)
+        assertNull(cancelled.taken?.at)
     }
 
     @Test
@@ -117,33 +118,30 @@ class IntakeTest {
         // прошлое не переписывается ответом.
         val answered = unsupplied.confirm(PACK, HOME_KIT, tablets("2"), LATER)
         assertFalse(answered.isSupplied)
-        assertEquals(PACK, answered.takenPackageId)
+        assertEquals(PACK, answered.taken?.packageId)
     }
 
     @Test
-    fun unplannedIntakeExistsOnlyAsAFact() {
+    fun unplannedIntakeHasNoPlanAtAll() {
+        // Планировать разовый приём нечем: ни курса, ни расписания, которое его породило. Раньше
+        // это утверждал `require` над сочетанием четырёх `null`, теперь — тип: полей плана у
+        // внепланового факта нет, и статуса, кроме TAKEN, у него не бывает.
         val fact = unplannedIntake()
         assertEquals(IntakeStatus.TAKEN, fact.status)
-        assertNull(fact.courseId)
-        assertNull(fact.plannedAt)
-        // Запланировать разовый приём нечем: ни курса, ни расписания, которое его породило.
-        assertThrows(IllegalArgumentException::class.java) {
-            plannedIntake(courseId = null, courseRevision = null, scheduledOn = null, scheduledTime = null)
-        }
+        assertEquals(PACK, fact.taken.packageId)
+        assertEquals(tablets("1"), fact.taken.amount)
     }
 
     @Test
-    fun courseItemIsIdentifiedByItsRevisionAndScheduledTime() {
-        // Без них строка не отличима от внепланового факта, а повторная материализация окна
-        // перестала бы быть идемпотентной.
-        assertThrows(IllegalArgumentException::class.java) { plannedIntake(courseRevision = null) }
-        assertThrows(IllegalArgumentException::class.java) { plannedIntake(scheduledOn = null) }
-        assertThrows(IllegalArgumentException::class.java) { plannedIntake(scheduledTime = null) }
-    }
-
-    @Test
-    fun plannedItemKnowsWhenItHappens() {
-        assertThrows(IllegalArgumentException::class.java) { plannedIntake(plannedAt = null) }
+    fun courseItemIsIdentifiedByItsRevisionAndScheduledSlot() {
+        // Тождество пункта при повторной материализации окна (PLAN F4): курс, редакция и
+        // назначенные дата со временем. Ответ их не переписывает.
+        val answered = plannedIntake().confirm(PACK, HOME_KIT, tablets("2"), LATER)
+        assertEquals(COURSE, answered.courseId)
+        assertEquals(1L, answered.courseRevision)
+        assertEquals(FIRST_SCHEDULED_ON, answered.slot.localDate)
+        assertEquals(FIRST_SCHEDULED_TIME, answered.slot.localTime)
+        assertEquals(FIRST_PLANNED_AT, answered.plannedAt)
     }
 
     @Test

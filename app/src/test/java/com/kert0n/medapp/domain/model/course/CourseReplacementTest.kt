@@ -88,7 +88,7 @@ class CourseReplacementTest {
     fun cancellationDoesNotRewriteWhatAlreadyHappened() {
         // Отмена не переписывает состоявшиеся приёмы, их времена и количества (PLAN D5).
         assertEquals(IntakeStatus.TAKEN, takenYesterday.status)
-        assertEquals(tablets("2"), takenYesterday.takenAmount)
+        assertEquals(tablets("2"), takenYesterday.taken?.amount)
         assertEquals(old.id, takenYesterday.courseId)
         assertEquals(old.revision, takenYesterday.courseRevision)
 

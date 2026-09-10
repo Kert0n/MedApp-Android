@@ -9,6 +9,7 @@ import com.kert0n.medapp.domain.model.course.CourseStatus
 import com.kert0n.medapp.domain.model.intake.Intake
 import com.kert0n.medapp.domain.model.intake.IntakeStatus
 import com.kert0n.medapp.domain.calc.availability.PackageAvailability
+import com.kert0n.medapp.domain.model.intake.CourseIntake
 import com.kert0n.medapp.domain.model.pack.EffectiveAmount
 import com.kert0n.medapp.domain.model.value.Doses
 import com.kert0n.medapp.domain.model.value.Quantity
@@ -46,7 +47,7 @@ fun remainingOn(
     now: Instant,
     packages: List<PackageAvailability>,
     courses: List<Course>,
-    resolved: List<Intake>
+    resolved: List<CourseIntake>
 ): List<PackageForecast> {
     // `atZone().toLocalDate()`: `LocalDate.ofInstant` требует API 34 при нижней границе 29.
     val todayThere = now.atZone(reportZone).toLocalDate()
@@ -60,13 +61,11 @@ fun remainingOn(
     // известного остатка в расчёт не входит, и её прогноз останется неизвестным.
     val availability = Availability.from(packages)
 
+    // Пункт опознаётся курсом и назначенными датой со временем — тем же, чем он опознаётся при
+    // повторной материализации расписания (PLAN F4).
     val answered = resolved
-        .filter { it.status != IntakeStatus.PLANNED && it.courseId != null }
-        .mapNotNull { intake ->
-            val on = intake.scheduledOn ?: return@mapNotNull null
-            val time = intake.scheduledTime ?: return@mapNotNull null
-            Triple(intake.courseId, on, time)
-        }
+        .filter { it.status != IntakeStatus.PLANNED }
+        .map { Triple(it.courseId, it.slot.localDate, it.slot.localTime) }
         .toSet()
 
     val spentDoses = HashMap<Uuid, Doses>()

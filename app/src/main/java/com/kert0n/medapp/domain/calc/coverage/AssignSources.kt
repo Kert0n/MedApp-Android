@@ -2,6 +2,7 @@ package com.kert0n.medapp.domain.calc.coverage
 
 import com.kert0n.medapp.domain.calc.availability.Availability
 import com.kert0n.medapp.domain.model.course.Course
+import com.kert0n.medapp.domain.model.intake.CourseIntake
 import com.kert0n.medapp.domain.model.intake.Intake
 import com.kert0n.medapp.domain.model.intake.IntakeStatus
 import com.kert0n.medapp.domain.model.value.Doses
@@ -34,7 +35,7 @@ import kotlin.uuid.Uuid
  */
 fun assignSources(
     course: Course,
-    upcoming: List<Intake>,
+    upcoming: List<CourseIntake>,
     availability: Availability
 ): Map<Uuid, Uuid?> {
     upcoming.forEach { intake ->

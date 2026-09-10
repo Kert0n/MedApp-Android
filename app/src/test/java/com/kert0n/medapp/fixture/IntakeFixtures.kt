@@ -1,7 +1,11 @@
 package com.kert0n.medapp.fixture
 
+import com.kert0n.medapp.domain.calc.schedule.ScheduledOccurrence
+import com.kert0n.medapp.domain.model.intake.CourseIntake
 import com.kert0n.medapp.domain.model.intake.Intake
 import com.kert0n.medapp.domain.model.intake.IntakeStatus
+import com.kert0n.medapp.domain.model.intake.TakenDose
+import com.kert0n.medapp.domain.model.intake.UnplannedIntake
 import com.kert0n.medapp.domain.model.value.Quantity
 import java.time.Instant
 import java.time.LocalDate
@@ -29,25 +33,22 @@ val FIRST_PLANNED_AT: Instant =
  */
 fun plannedIntake(
     id: Uuid = INTAKE,
-    courseId: Uuid? = COURSE,
-    courseRevision: Long? = 1,
+    courseId: Uuid = COURSE,
+    courseRevision: Long = 1,
     plannedPackageId: Uuid? = PACK,
-    plannedAt: Instant? = FIRST_PLANNED_AT,
-    scheduledOn: LocalDate? = FIRST_SCHEDULED_ON,
-    scheduledTime: LocalTime? = FIRST_SCHEDULED_TIME,
-    plannedAmount: Quantity? = tablets("2"),
+    plannedAt: Instant = FIRST_PLANNED_AT,
+    scheduledOn: LocalDate = FIRST_SCHEDULED_ON,
+    scheduledTime: LocalTime = FIRST_SCHEDULED_TIME,
+    plannedAmount: Quantity = tablets("2"),
     unitId: Uuid = TABLETS
-) = Intake(
+) = CourseIntake(
     id = id,
     unitId = unitId,
-    status = IntakeStatus.PLANNED,
     courseId = courseId,
     courseRevision = courseRevision,
-    plannedPackageId = plannedPackageId,
-    plannedAt = plannedAt,
-    scheduledOn = scheduledOn,
-    scheduledTime = scheduledTime,
-    plannedAmount = plannedAmount
+    slot = ScheduledOccurrence(scheduledOn, scheduledTime, plannedAt),
+    plannedAmount = plannedAmount,
+    plannedPackageId = plannedPackageId
 )
 
 /** Внеплановый факт: курса нет, есть только состоявшийся приём. */
@@ -58,13 +59,8 @@ fun unplannedIntake(
     takenAmount: Quantity = tablets("1"),
     takenAt: Instant = LATER,
     unitId: Uuid = TABLETS
-) = Intake(
+) = UnplannedIntake(
     id = id,
     unitId = unitId,
-    status = IntakeStatus.TAKEN,
-    takenPackageId = takenPackageId,
-    medKitId = medKitId,
-    takenAmount = takenAmount,
-    takenAt = takenAt,
-    respondedAt = takenAt
+    dose = TakenDose(takenPackageId, medKitId, takenAmount, takenAt)
 )

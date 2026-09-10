@@ -1,6 +1,6 @@
 package com.kert0n.medapp.domain.calc.coverage
 
-import com.kert0n.medapp.domain.model.intake.Intake
+import com.kert0n.medapp.domain.model.intake.CourseIntake
 import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.FIRST_PLANNED_AT
 import com.kert0n.medapp.fixture.FIRST_SCHEDULED_ON
@@ -26,7 +26,7 @@ class AssignSourcesTest {
     private val availability = availability(PACK to tablets("20"), OTHER_PACK to tablets("12"))
 
     /** Пять пунктов подряд, каждый со своим идентификатором и своим временем. */
-    private val plan: List<Intake> = (0 until 5).map { day ->
+    private val plan: List<CourseIntake> = (0 until 5).map { day ->
         plannedIntake(
             id = Uuid.parse("00000000-0000-4000-8000-00000000007$day"),
             scheduledOn = FIRST_SCHEDULED_ON.plusDays(day.toLong()),
