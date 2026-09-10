@@ -3,15 +3,30 @@
 # пользователя A и кладёт его в app/src/main/assets/vocabulary.json.
 #
 # Происхождение — адрес и дата снятия — записывается в сам снимок: идентификаторы серверные,
-# и сверять их придётся с тем же сервером. Учётка и пропуск на экран не выводятся.
+# и сверять их придётся с тем же сервером. Поэтому во встроенный ассет пишется только снимок
+# с боевого адреса; для любого другого сервера путь вывода называется явно аргументом.
+#
+# Учётка и пропуск на экран не выводятся.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 props=local.properties
+production=https://medapp.ru.net
+asset=app/src/main/assets/vocabulary.json
 prop() { grep -E "^$1=" "$props" | head -1 | cut -d= -f2- || true; }
 
 base=$(prop MEDAPP_BASE_URL)
-base=${base:-https://medapp.ru.net}
+base=${base:-$production}
+out=${1:-}
+if [ -z "$out" ]; then
+    if [ "$base" != "$production" ]; then
+        echo "Снимок с $base во встроенный ассет не кладут: идентификаторы у каждого сервера свои." >&2
+        echo "Назовите файл вывода явно: $0 <путь>" >&2
+        exit 1
+    fi
+    out=$asset
+fi
+
 login=$(prop MEDAPP_PROBE_A_LOGIN)
 key=$(prop MEDAPP_PROBE_A_KEY)
 if [ -z "$login" ] || [ -z "$key" ]; then
@@ -24,8 +39,13 @@ token=$(curl -sS --fail-with-body -X POST "$base/v1/auth/token" -u "$login:$key"
 units=$(curl -sS --fail-with-body "$base/v1/quantity-units" -H "Authorization: Bearer $token")
 forms=$(curl -sS --fail-with-body "$base/v1/form-types" -H "Authorization: Bearer $token")
 
-mkdir -p app/src/main/assets
-UNITS="$units" FORMS="$forms" ORIGIN="$base" python3 - > app/src/main/assets/vocabulary.json <<'PY'
+# Пишем рядом и переносим на место: успешный ответ с испорченным JSON не должен оставить
+# вместо снимка пустой файл — сборка увезла бы его в APK.
+mkdir -p "$(dirname "$out")"
+tmp=$(mktemp "$(dirname "$out")/vocabulary.XXXXXX")
+trap 'rm -f "$tmp"' EXIT
+
+UNITS="$units" FORMS="$forms" ORIGIN="$base" python3 - > "$tmp" <<'PY'
 import datetime
 import json
 import os
@@ -42,4 +62,6 @@ print(json.dumps({
 }, ensure_ascii=False, indent=2))
 PY
 
-python3 -c "import json; s = json.load(open('app/src/main/assets/vocabulary.json')); print(f\"Снимок словарей с {s['origin']}: единиц {len(s['quantityUnits'])}, форм {len(s['formTypes'])}\")"
+python3 -c "import json, sys; s = json.load(open(sys.argv[1])); print(f\"Снимок словарей с {s['origin']}: единиц {len(s['quantityUnits'])}, форм {len(s['formTypes'])}\")" "$tmp"
+mv "$tmp" "$out"
+trap - EXIT

@@ -27,8 +27,10 @@ for user in A B; do
         echo "Пробный пользователь $user уже заведён."
         continue
     fi
-    body=$(curl -sS --fail-with-body -X POST "$base/v1/auth/register" \
-        -H "X-Registration-Token: $token")
+    # Токен уходит curl через stdin, а не аргументом: аргументы видны в списке процессов
+    # любому, кто в этот момент смотрит, а токен открывает регистрацию.
+    body=$(printf 'header = "X-Registration-Token: %s"\n' "$token" |
+        curl -sS --fail-with-body -X POST "$base/v1/auth/register" --config -)
     login=$(printf '%s' "$body" | field login)
     key=$(printf '%s' "$body" | field key)
     printf 'MEDAPP_PROBE_%s_LOGIN=%s\nMEDAPP_PROBE_%s_KEY=%s\n' \

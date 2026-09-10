@@ -107,9 +107,19 @@ class ContractProbe {
         assumeTrue(skipReason.orEmpty(), skipReason == null)
     }
 
+    /**
+     * Уборка обязана удаться: синтетическая аптечка, оставшаяся на боевом сервере, — мусор,
+     * который никто больше не найдёт. `404` уборке не мешает: аптечки уже нет.
+     */
     @After
     fun removeSyntheticKits() = runBlocking {
-        for (kit in kits) owner.deleteMedKit(kit)
+        val left = kits.filter { kit ->
+            val result = owner.deleteMedKit(kit)
+            result is ApiResult.Failure && result.failure != ApiFailure.NotFound
+        }
+        if (left.isNotEmpty()) {
+            throw AssertionError("синтетические аптечки остались на боевом сервере: $left")
+        }
     }
 
     private fun failure(result: ApiResult<*>): ApiFailure =
