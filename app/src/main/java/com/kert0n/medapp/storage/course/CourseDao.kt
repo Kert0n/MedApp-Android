@@ -78,4 +78,23 @@ interface CourseDao {
 
     @Query("DELETE FROM courses WHERE id = :id")
     suspend fun deletePlan(id: Uuid)
+
+    /**
+     * Назначение пачки активному курсу. Вставка без стратегии конфликта намеренно: второе
+     * назначение должно быть отвергнуто базой, а не пережить проверку «а нет ли уже» (PLAN F2).
+     */
+    @Insert
+    suspend fun assignPackage(assignment: ActivePackageAssignmentStorageEntity)
+
+    @Query("SELECT course_id FROM active_package_assignments WHERE package_id = :packageId")
+    suspend fun courseHolding(packageId: Uuid): Uuid?
+
+    @Query("SELECT * FROM active_package_assignments WHERE course_id = :courseId")
+    suspend fun assignmentsOf(courseId: Uuid): List<ActivePackageAssignmentStorageEntity>
+
+    @Query("DELETE FROM active_package_assignments WHERE package_id = :packageId")
+    suspend fun releasePackage(packageId: Uuid)
+
+    @Query("DELETE FROM active_package_assignments WHERE course_id = :courseId")
+    suspend fun releaseAssignmentsOf(courseId: Uuid)
 }

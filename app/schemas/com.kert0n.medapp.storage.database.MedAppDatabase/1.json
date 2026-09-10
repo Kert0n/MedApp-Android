@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "12ee14d5a94848a57d44109e8d002d8e",
+    "identityHash": "32c357c0f1355c22b3d0f83a235a0a1e",
     "entities": [
       {
         "tableName": "quantity_units",
@@ -607,11 +607,70 @@
             ]
           }
         ]
+      },
+      {
+        "tableName": "active_package_assignments",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`package_id` TEXT NOT NULL, `course_id` TEXT NOT NULL, PRIMARY KEY(`package_id`), FOREIGN KEY(`package_id`) REFERENCES `packages`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`course_id`) REFERENCES `courses`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "packageId",
+            "columnName": "package_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "courseId",
+            "columnName": "course_id",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "package_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_active_package_assignments_course_id",
+            "unique": false,
+            "columnNames": [
+              "course_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_active_package_assignments_course_id` ON `${TABLE_NAME}` (`course_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "packages",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "package_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "courses",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "course_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '12ee14d5a94848a57d44109e8d002d8e')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '32c357c0f1355c22b3d0f83a235a0a1e')"
     ]
   }
 }

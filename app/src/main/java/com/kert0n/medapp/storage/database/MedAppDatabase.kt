@@ -3,6 +3,7 @@ package com.kert0n.medapp.storage.database
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import com.kert0n.medapp.storage.course.ActivePackageAssignmentStorageEntity
 import com.kert0n.medapp.storage.course.CourseDao
 import com.kert0n.medapp.storage.course.CourseRecordStorageEntity
 import com.kert0n.medapp.storage.course.CourseSourceStorageEntity
@@ -33,7 +34,8 @@ import com.kert0n.medapp.storage.value.QuantityUnitStorageEntity
         CourseStorageEntity::class,
         CourseRecordStorageEntity::class,
         CourseTimeStorageEntity::class,
-        CourseSourceStorageEntity::class
+        CourseSourceStorageEntity::class,
+        ActivePackageAssignmentStorageEntity::class
     ],
     version = MedAppDatabase.VERSION,
     exportSchema = true
