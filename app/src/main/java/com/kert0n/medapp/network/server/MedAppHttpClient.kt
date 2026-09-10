@@ -7,6 +7,10 @@ import io.ktor.client.plugins.HttpRequestRetryConfig
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.plugins.logging.LogLevel
+import io.ktor.client.plugins.logging.Logger
+import io.ktor.client.plugins.logging.Logging
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.serialization.kotlinx.json.json
 import kotlin.coroutines.cancellation.CancellationException
@@ -17,14 +21,22 @@ import kotlin.coroutines.cancellation.CancellationException
  * дальше, решает политика операции (PLAN E3), а не транспорт.
  *
  * Статус ответа исключением не становится: успех у каждой операции свой, и проверяет его тот,
- * кто операцию объявил.
+ * кто операцию объявил. Лог пишется, только если передан [logger] (debug), и без секретов.
  */
 fun medAppHttpClient(
     engine: HttpClientEngine,
     baseUrl: String,
+    logger: Logger? = null,
     retryDelay: HttpRequestRetryConfig.() -> Unit = { exponentialDelay(randomizationMs = 500) }
 ): HttpClient = HttpClient(engine) {
     expectSuccess = false
+    if (logger != null) {
+        install(Logging) {
+            this.logger = SecretMaskingLogger(logger)
+            level = LogLevel.ALL
+            sanitizeHeader { it == HttpHeaders.Authorization || it == REGISTRATION_TOKEN_HEADER }
+        }
+    }
     install(ContentNegotiation) { json(medAppJson) }
     install(HttpTimeout) {
         connectTimeoutMillis = 10_000
@@ -44,3 +56,6 @@ fun medAppHttpClient(
 }
 
 private const val READ_RETRIES = 3
+
+/** Заголовок регистрации (PLAN B1): несёт токен сборки, поэтому в лог не попадает. */
+const val REGISTRATION_TOKEN_HEADER = "X-Registration-Token"

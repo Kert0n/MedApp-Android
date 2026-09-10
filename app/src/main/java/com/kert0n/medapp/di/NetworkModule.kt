@@ -1,6 +1,8 @@
 package com.kert0n.medapp.di
 
+import android.util.Log
 import com.kert0n.medapp.BuildConfig
+import io.ktor.client.plugins.logging.Logger
 import com.kert0n.medapp.network.server.crptHttpClient
 import com.kert0n.medapp.network.server.medAppHttpClient
 import dagger.Module
@@ -31,7 +33,18 @@ object NetworkModule {
     @Provides
     @Singleton
     @MedAppHttp
-    fun medAppHttp(): HttpClient = medAppHttpClient(OkHttp.create(), BuildConfig.BASE_URL)
+    fun medAppHttp(): HttpClient = medAppHttpClient(
+        engine = OkHttp.create(),
+        baseUrl = BuildConfig.BASE_URL,
+        logger = if (BuildConfig.DEBUG) LogcatLogger else null
+    )
+
+    /** Лог HTTP в debug; секреты из него вычищает клиент, а не этот адаптер. */
+    private object LogcatLogger : Logger {
+        override fun log(message: String) {
+            Log.d("MedAppHttp", message)
+        }
+    }
 
     @Provides
     @Singleton
