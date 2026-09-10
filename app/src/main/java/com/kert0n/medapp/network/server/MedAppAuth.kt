@@ -100,4 +100,6 @@ private fun URLBuilder.isAt(origin: Url): Boolean =
         (port.takeUnless { it == DEFAULT_PORT } ?: protocol.defaultPort) == origin.port
 
 private const val AUTH_PATH = "/v1/auth/"
-private const val TOKEN_PATH = "/v1/auth/token"
+
+/** Путь выдачи пропуска называется один раз: его знают и плагин, и объявленная операция. */
+internal const val TOKEN_PATH = "/v1/auth/token"

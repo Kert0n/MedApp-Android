@@ -1,5 +1,6 @@
 package com.kert0n.medapp.network.server
 
+import com.kert0n.medapp.network.account.AccountCredentials
 import com.kert0n.medapp.network.medkit.MedKitPostNetworkDTO
 import com.kert0n.medapp.network.pack.PackageConsumeNetworkDTO
 import com.kert0n.medapp.network.pack.PackagePatchNetworkDTO
@@ -123,7 +124,7 @@ class MedAppApiFailureTest {
     @Test
     fun throttlingCarriesRetryAfter() = runTest {
         val result = api(HttpStatusCode.TooManyRequests, headers = listOf(HttpHeaders.RetryAfter to "30"))
-            .token(com.kert0n.medapp.network.account.AccountCredentials(kit, "k"))
+            .token(AccountCredentials(kit, "k"))
 
         assertEquals(ApiFailure.TooManyRequests(30.seconds), failureOf(result))
     }
@@ -137,6 +138,21 @@ class MedAppApiFailureTest {
 
         assertEquals(ApiFailure.TooManyRequests(null), failureOf(dated))
         assertEquals(ApiFailure.TooManyRequests(null), failureOf(api(HttpStatusCode.TooManyRequests).snapshot()))
+    }
+
+    /**
+     * Признак изменения объявляет операция, а не метод: выдача пропуска — тоже `POST`, но
+     * состояния сервера она не меняет, и её сбой значит «ничего не применено».
+     */
+    @Test
+    fun aFailedTokenIssueIsUnavailableNotUnknown() = runTest {
+        val down = HttpStatusCode.ServiceUnavailable
+
+        assertEquals(ApiFailure.Unavailable, failureOf(api(down).token(AccountCredentials(kit, "k"))))
+        assertEquals(
+            ApiFailure.OutcomeUnknown,
+            failureOf(api(down).createMedKit(MedKitPostNetworkDTO(kit)))
+        )
     }
 
     @Test

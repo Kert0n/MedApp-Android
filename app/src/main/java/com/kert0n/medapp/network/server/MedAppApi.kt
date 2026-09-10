@@ -63,8 +63,15 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
             header(REGISTRATION_TOKEN_HEADER, registrationToken)
         }
 
+    /** Состояния сервера не меняет: неудача значит «пропуска нет», а не «исход неизвестен». */
     suspend fun token(credentials: AccountCredentials): ApiResult<AccessTokenNetworkDTO> =
-        call(HttpMethod.Post, "/v1/auth/token", HttpStatusCode.OK, required(AccessTokenNetworkDTO.serializer())) {
+        call(
+            HttpMethod.Post,
+            TOKEN_PATH,
+            HttpStatusCode.OK,
+            required(AccessTokenNetworkDTO.serializer()),
+            command = false
+        ) {
             basicAuth(credentials.login.toString(), credentials.key)
         }
 
@@ -193,14 +200,19 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
 
     // Исполнение
 
+    /**
+     * [command] объявляет операция, а не метод: изменяют состояние сервера все не-`GET`, кроме
+     * выдачи пропуска. Из этого признака следует исход сбоя — «ничего не применено» или
+     * «исход неизвестен» (PLAN E3).
+     */
     private suspend fun <T> call(
         method: HttpMethod,
         path: String,
         success: HttpStatusCode,
         reader: Reader<T>,
+        command: Boolean = method != HttpMethod.Get,
         configure: HttpRequestBuilder.() -> Unit = {}
     ): ApiResult<T> {
-        val command = method != HttpMethod.Get
         return try {
             val response = http.request(path) {
                 this.method = method
