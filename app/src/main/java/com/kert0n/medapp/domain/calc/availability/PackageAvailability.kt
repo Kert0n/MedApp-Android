@@ -1,6 +1,5 @@
 package com.kert0n.medapp.domain.calc.availability
 
-import com.kert0n.medapp.domain.model.pack.ClaimOwnership
 import com.kert0n.medapp.domain.model.pack.EffectiveAmount
 import com.kert0n.medapp.domain.model.pack.ExpiryDate
 import com.kert0n.medapp.domain.model.pack.PACKAGE_EXPIRES_SOON_DAYS
@@ -9,8 +8,8 @@ import java.time.LocalDate
 import kotlin.uuid.Uuid
 
 /**
- * Три с половиной величины «сколько доступно» по одной пачке (PLAN D4) — посчитанные, а не
- * сохранённые: хранимое поле разъехалось бы с очередью и с курсами при первом чужом изменении.
+ * Три величины «сколько доступно» по одной пачке (PLAN D4) — посчитанные, а не сохранённые:
+ * хранимое поле разъехалось бы с очередью и с курсами при первом чужом изменении.
  *
  * **Значение, и сущности внутри нет.** Пока проекция держала внутри `Package`, её равенство
  * сравнивало пачку по `id`: в локальной аптечке расход 20 → 19 не менял ничего другого, и две
@@ -32,9 +31,7 @@ data class PackageAvailability(
     val expiresOn: ExpiryDate?,
     val amount: EffectiveAmount,
     val reservedByOthers: Quantity,
-    val orphanClaim: Quantity,
-    val myAllocation: Quantity,
-    val claimOwnership: ClaimOwnership
+    val myAllocation: Quantity
 ) {
 
     /** `null` при требуемой сверке: точного «сколько есть» до неё не обещается. */
@@ -43,9 +40,11 @@ data class PackageAvailability(
     /**
      * Сколько я могу забрать под свой курс. Локальная оценка по последним сведениям, а не
      * гарантия серверной блокировки запаса.
+     *
+     * Своя бронь отсюда **не** вычитается: заявил её я сам, и вычитать её из своего же доступного
+     * значило бы отнять у себя собственные таблетки. Вычитается только чужое.
      */
-    val availableToMe: Quantity?
-        get() = effective?.minusOrZero(reservedByOthers)?.minusOrZero(orphanClaim)
+    val availableToMe: Quantity? get() = effective?.minusOrZero(reservedByOthers)
 
     /**
      * `null` = точное свободное неизвестно.

@@ -1,11 +1,8 @@
 package com.kert0n.medapp.domain.calc.availability
 
-import com.kert0n.medapp.domain.model.course.CourseBrief
 import com.kert0n.medapp.domain.model.pack.Claims
-import com.kert0n.medapp.domain.model.pack.ClaimOwnership
 import com.kert0n.medapp.domain.model.pack.EffectiveAmount
 import com.kert0n.medapp.domain.model.pack.ExpiryDate
-import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.INTAKE
 import com.kert0n.medapp.fixture.millilitres
 import com.kert0n.medapp.fixture.pack
@@ -21,14 +18,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Три с половиной величины «сколько доступно» (PLAN D4). Свёртки очереди здесь нет вовсе: оценка
- * количества приходит готовой, и это её единственный вход.
+ * Три величины «сколько доступно» (PLAN D4). Свёртки очереди здесь нет вовсе: оценка количества
+ * приходит готовой, и это её единственный вход.
  */
 class AvailabilityOfTest {
 
     private val today: LocalDate = LocalDate.of(2027, 3, 1)
-
-    private val course = CourseBrief(COURSE, "Курс", allocatedDoses = 7)
 
     @Test
     fun numbersFromPlanAreReproduced() {
@@ -37,8 +32,7 @@ class AvailabilityOfTest {
         val found = availabilityOf(
             pkg = pack(quantity = tablets("20"), claims = Claims(BigDecimal("15"), BigDecimal("10"))),
             amount = EffectiveAmount.Known(tablets("17"), confirmed = false),
-            myAllocation = tablets("7"),
-            claimOwnership = ClaimOwnership.AssignedTo(course)
+            myAllocation = tablets("7")
         )
         assertEquals(tablets("17"), found.effective)
         assertEquals(tablets("5"), found.reservedByOthers)
@@ -52,8 +46,7 @@ class AvailabilityOfTest {
         val local = availabilityOf(
             pkg = pack(quantity = tablets("20")),
             amount = EffectiveAmount.Known(tablets("20")),
-            myAllocation = tablets("15"),
-            claimOwnership = ClaimOwnership.AssignedTo(course)
+            myAllocation = tablets("15")
         )
         assertEquals(tablets("0"), local.reservedByOthers)
         assertEquals(tablets("5"), local.freeForAnyone)
@@ -79,42 +72,30 @@ class AvailabilityOfTest {
     }
 
     @Test
-    fun ownClaimWithoutAKnownOwnerIsNotSpentSilently() {
-        // Бесхозная бронь вычитается наравне с чужой: человек сначала разбирает назначение.
-        val orphan = availabilityOf(
-            pkg = pack(quantity = tablets("20"), claims = Claims(BigDecimal("10"), BigDecimal("10"))),
+    fun myOwnClaimDoesNotReduceWhatIsAvailableToMe() {
+        // Заявил её я сам, и другого владельца у неё не бывает: вычитать её из своего же
+        // доступного значило бы отнять у себя собственные таблетки (замечание PR 6).
+        val mine = availabilityOf(
+            pkg = pack(quantity = tablets("20"), claims = Claims(BigDecimal("15"), BigDecimal("10"))),
             amount = EffectiveAmount.Known(tablets("20")),
-            claimOwnership = ClaimOwnership.NoKnownOwner
+            myAllocation = tablets("10")
         )
-        assertEquals(tablets("10"), orphan.orphanClaim)
-        assertEquals(tablets("10"), orphan.availableToMe)
-        assertEquals(tablets("0"), orphan.reservedByOthers)
+        assertEquals(tablets("5"), mine.reservedByOthers)
+        assertEquals(tablets("15"), mine.availableToMe)
+        assertEquals(tablets("5"), mine.freeForAnyone)
     }
 
     @Test
-    fun claimExplainedByAnAssignmentIsNotOrphan() {
-        val owned = availabilityOf(
+    fun claimWithoutALocalCourseIsStillMine() {
+        // Локального курса за бронью может не быть, но источник истины — устройство, и следующая
+        // команда брони приведёт сервер в согласие. Домен на это число не смотрит.
+        val unexplained = availabilityOf(
             pkg = pack(quantity = tablets("20"), claims = Claims(BigDecimal("10"), BigDecimal("10"))),
-            amount = EffectiveAmount.Known(tablets("20")),
-            myAllocation = tablets("10"),
-            claimOwnership = ClaimOwnership.AssignedTo(course)
+            amount = EffectiveAmount.Known(tablets("20"))
         )
-        assertEquals(tablets("0"), owned.orphanClaim)
-        assertEquals(tablets("20"), owned.availableToMe)
-        assertEquals(tablets("10"), owned.freeForAnyone)
-    }
-
-    @Test
-    fun locallyReleasedClaimIsNotOrphanEither() {
-        // Назначение уже разобрано человеком: вычитать её значило бы спрятать запас, который
-        // вот-вот освободится.
-        val releasing = availabilityOf(
-            pkg = pack(quantity = tablets("20"), claims = Claims(BigDecimal("10"), BigDecimal("10"))),
-            amount = EffectiveAmount.Known(tablets("20")),
-            claimOwnership = ClaimOwnership.ReleasedLocally
-        )
-        assertEquals(tablets("0"), releasing.orphanClaim)
-        assertEquals(tablets("20"), releasing.availableToMe)
+        assertEquals(tablets("0"), unexplained.reservedByOthers)
+        assertEquals(tablets("20"), unexplained.availableToMe)
+        assertEquals(tablets("20"), unexplained.freeForAnyone)
     }
 
     @Test

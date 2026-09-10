@@ -2,7 +2,6 @@ package com.kert0n.medapp.fixture
 
 import com.kert0n.medapp.domain.calc.availability.PackageAvailability
 import com.kert0n.medapp.domain.calc.availability.availabilityOf
-import com.kert0n.medapp.domain.model.pack.ClaimOwnership
 import com.kert0n.medapp.domain.model.pack.Claims
 import com.kert0n.medapp.domain.model.pack.EffectiveAmount
 import com.kert0n.medapp.domain.model.pack.ExpiryDate
@@ -102,14 +101,12 @@ fun packAvailability(
     claims: Claims? = null,
     expiresOn: ExpiryDate? = null,
     unresolvedOperationIds: List<Uuid> = emptyList(),
-    myAllocation: Quantity = Quantity.zero(quantity.unitId),
-    claimOwnership: ClaimOwnership = ClaimOwnership.NoKnownOwner
+    myAllocation: Quantity = Quantity.zero(quantity.unitId)
 ): PackageAvailability = availabilityOf(
     pkg = pack(id = id, quantity = quantity, claims = claims, expiresOn = expiresOn),
     amount = if (unresolvedOperationIds.isEmpty()) EffectiveAmount.Known(quantity)
     else EffectiveAmount.NeedsRecount(quantity, unresolvedOperationIds),
-    myAllocation = myAllocation,
-    claimOwnership = claimOwnership
+    myAllocation = myAllocation
 )
 
 /** Срок годности из записи «2027-03-31»: в тестах читается как на упаковке. */
