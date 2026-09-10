@@ -80,8 +80,12 @@ class PackageForecastTest {
             .toSet()
         val spent = HashMap<Uuid, Quantity>()
         for (course in courses) {
+            // Отсчёт с начала текущих суток **в зоне курса**, а не с «сейчас»: неотвеченный
+            // утренний приём в полдень никуда не делся, и расход он ещё создаст (PLAN F4, D4).
+            val from = now.atZone(course.schedule.zone).toLocalDate()
+                .atStartOfDay(course.schedule.zone).toInstant()
             val ahead = Doses(
-                course.schedule.occurrences(now, until)
+                course.schedule.occurrences(from, until)
                     .count { Triple(course.id, it.localDate, it.localTime) !in answered }
             )
             for ((packageId, amount) in course.spending(ahead, availability)) {
@@ -89,6 +93,24 @@ class PackageForecastTest {
             }
         }
         return packages.map { it.forecastOn(date, reportZone, now, spent[it.packageId] ?: tablets("0")) }
+    }
+
+    @Test
+    fun anUnansweredIntakeEarlierTodayStillCosts() {
+        // Отсчёт идёт с начала суток курса: пункт девяти утра, на который не ответили, в полдень
+        // из расхода не исчезает — он ещё состоится или станет пропуском.
+        val noon = today.atTime(12, 0).atZone(MOSCOW).toInstant()
+        val forecast = remainingOn(date = today, now = noon)
+        assertEquals(tablets("18"), forecast.single().remaining)
+    }
+
+    @Test
+    fun anAnsweredIntakeEarlierTodayDoesNot() {
+        // А отвеченный — исчезает: его расход уже в остатке либо его не было.
+        val noon = today.atTime(12, 0).atZone(MOSCOW).toInstant()
+        val taken = plannedIntake().confirm(pack(), dose("2"), noon)
+        val forecast = remainingOn(date = today, now = noon, resolved = listOf(taken))
+        assertEquals(tablets("20"), forecast.single().remaining)
     }
 
     @Test
