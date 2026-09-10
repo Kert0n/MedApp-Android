@@ -305,9 +305,9 @@ class MedAppApiTest {
     }
 
     @Test
-    fun refusalCarriesItsStatus() = runTest {
+    fun refusalIsADecisionNotAnException() = runTest {
         assertEquals(
-            ApiResult.Failure(ApiFailure.Refused(404)),
+            ApiResult.Failure(ApiFailure.NotFound),
             always(HttpStatusCode.NotFound).packageSnapshot(pack)
         )
     }

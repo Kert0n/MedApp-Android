@@ -32,6 +32,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
@@ -39,6 +40,8 @@ import io.ktor.http.isSuccess
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.ListSerializer
@@ -58,7 +61,7 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
 
     /** Повторять нельзя: повтор даст вторую учётку. */
     suspend fun register(registrationToken: String): ApiResult<AccountRegisteredNetworkDTO> =
-        call(HttpMethod.Post, "/v1/auth/register", HttpStatusCode.OK, required(AccountRegisteredNetworkDTO.serializer())) {
+        call(HttpMethod.Post, REGISTER_PATH, HttpStatusCode.OK, required(AccountRegisteredNetworkDTO.serializer())) {
             header(REGISTRATION_TOKEN_HEADER, registrationToken)
         }
 
@@ -209,7 +212,7 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
                 response.status == success -> reader(response, command)
                 response.status.isSuccess() ->
                     broken(command, "успех ${response.status.value} вместо ${success.value}")
-                else -> ApiResult.Failure(refusal(response, command))
+                else -> ApiResult.Failure(refusal(response, command, path))
             }
         } catch (_: AccessTokenUnavailable) {
             ApiResult.Failure(ApiFailure.Unavailable)
@@ -218,12 +221,34 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
         }
     }
 
-    private fun refusal(response: HttpResponse, command: Boolean): ApiFailure =
-        if (response.status.value >= 500) {
-            if (command) ApiFailure.OutcomeUnknown else ApiFailure.Unavailable
-        } else {
-            ApiFailure.Refused(response.status.value)
+    /** Отказ сервера — решение по коду ответа (PLAN B5); тело добавляет только `errors[]` при 400. */
+    private suspend fun refusal(response: HttpResponse, command: Boolean, path: String): ApiFailure =
+        when (response.status.value) {
+            400 -> ApiFailure.Invalid(
+                problem(response).errors.map { ApiFailure.FieldError(it.field, it.reason) }
+            )
+            401 -> ApiFailure.Unauthorized
+            403 ->
+                if (path == REGISTER_PATH) ApiFailure.RegistrationRefused
+                else ApiFailure.Protocol("403 вне регистрации")
+            404 -> ApiFailure.NotFound
+            409 -> ApiFailure.Conflict
+            412 -> ApiFailure.PreconditionFailed
+            428 -> ApiFailure.PreconditionRequired
+            429 -> ApiFailure.TooManyRequests(retryAfter(response))
+            in 500..599 -> if (command) ApiFailure.OutcomeUnknown else ApiFailure.Unavailable
+            else -> ApiFailure.Protocol("отказ ${response.status.value} вне контракта")
         }
+
+    private suspend fun problem(response: HttpResponse): ProblemNetworkDTO = try {
+        problemJson.decodeFromString(ProblemNetworkDTO.serializer(), response.bodyAsText())
+    } catch (_: IllegalArgumentException) {
+        ProblemNetworkDTO()
+    }
+
+    /** `Retry-After` в секундах; дату и прочее вызывающий заменяет своим backoff (PLAN B5). */
+    private fun retryAfter(response: HttpResponse): Duration? =
+        response.headers[HttpHeaders.RetryAfter]?.trim()?.toLongOrNull()?.takeIf { it >= 0 }?.seconds
 
     private fun <T> required(serializer: KSerializer<T>): Reader<T> = { response, command ->
         val text = response.bodyAsText()
@@ -259,6 +284,7 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
     }
 
     private companion object {
+        const val REGISTER_PATH = "/v1/auth/register"
         const val TEMPLATE_QUERY_MAX = 200
         const val TEMPLATE_LIMIT_MAX = 50
     }
