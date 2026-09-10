@@ -74,11 +74,19 @@ object SyncCommandStorageConverter {
      * Команда из строки. `null` означает «прочитать нечем»: неизвестный вид или чужая версия
      * payload переводят операцию в `CONFLICT`, а не роняют разбор очереди.
      */
+    /**
+     * Команда строки очереди. `null` значит ровно одно: этой сборке неизвестен вид команды или
+     * версия payload — обычное следствие обновления приложения. Повреждённый payload известного
+     * вида — не «команда неизвестна», а ошибка разбора, и она называет себя сама: иначе строка
+     * очереди сообщала бы человеку неверную причину (PLAN F4).
+     */
     fun commandOf(kind: String, payload: String, payloadVersion: Int): SyncCommand? {
         if (payloadVersion != PAYLOAD_VERSION) return null
         val fields = runCatching { json.parseToJsonElement(payload) as JsonObject }.getOrNull()
-            ?: return null
-        return runCatching { read(kind, fields) }.getOrNull()
+            ?: throw IllegalArgumentException("payload команды «$kind» не разбирается")
+        return runCatching { read(kind, fields) }.getOrElse { cause ->
+            throw IllegalArgumentException("поля команды «$kind» не разбираются", cause)
+        }
     }
 
     private fun read(kind: String, fields: JsonObject): SyncCommand? = when (kind) {

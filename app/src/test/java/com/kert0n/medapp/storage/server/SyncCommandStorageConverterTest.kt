@@ -14,6 +14,7 @@ import com.kert0n.medapp.network.pack.PackageSyncCommand
 import com.kert0n.medapp.network.server.SyncCommand
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -121,11 +122,33 @@ class SyncCommandStorageConverterTest {
         )
     }
 
+    /** Вид команды, которого эта сборка не знает, — обычное следствие обновления приложения. */
     @Test
-    fun unknownKindAndBrokenPayloadAreUnreadableToo() {
+    fun anUnknownKindIsUnreadableToo() {
+        assertNull(
+            SyncCommandStorageConverter.commandOf(
+                "PACKAGE_EXPLODE",
+                "{}",
+                SyncCommandStorageConverter.PAYLOAD_VERSION
+            )
+        )
+    }
+
+    /**
+     * Повреждённый payload известного вида — не «команда неизвестна»: причины разные, и человеку
+     * сообщается своя. Иначе строка очереди объясняла бы поломку версией, которая в порядке.
+     */
+    @Test
+    fun aDamagedPayloadNamesItselfRatherThanPretendingToBeUnknown() {
         val version = SyncCommandStorageConverter.PAYLOAD_VERSION
-        assertNull(SyncCommandStorageConverter.commandOf("PACKAGE_EXPLODE", "{}", version))
-        assertNull(SyncCommandStorageConverter.commandOf("PACKAGE_DELETE", "не json", version))
-        assertNull(SyncCommandStorageConverter.commandOf("PACKAGE_DELETE", "{}", version))
+
+        for (payload in listOf("не json", "{}")) {
+            val refusal = runCatching {
+                SyncCommandStorageConverter.commandOf("PACKAGE_DELETE", payload, version)
+            }.exceptionOrNull()
+
+            assertTrue("$payload: $refusal", refusal is IllegalArgumentException)
+            assertTrue("$payload: $refusal", refusal?.message?.contains("PACKAGE_DELETE") == true)
+        }
     }
 }

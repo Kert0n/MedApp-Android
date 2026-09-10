@@ -37,7 +37,10 @@ sealed interface PackageAdjustment {
         override val note: String? = null
     ) : PackageAdjustment
 
-    /** Выбросили названное количество по названной причине; уходящая в ноль пачка архивируется. */
+    /**
+     * Выбросили названное количество по названной причине; уходящая в ноль пачка архивируется.
+     * В историю попадает не запрошенное, а ушедшее: в минус пачка не списывается.
+     */
     data class Disposal(
         override val packageId: Uuid,
         val amount: Quantity,
@@ -70,12 +73,18 @@ sealed interface PackageAdjustment {
                     movementId, packageId, pack.quantity, actual, pack.medKitId, at, at, note
                 )
             )
-            is Disposal -> Applied(
-                pack.correctTo(pack.quantity.minusOrZero(amount)),
-                StockMovement.Disposal(
-                    movementId, packageId, amount, reason, pack.medKitId, at, at, note
+            is Disposal -> {
+                // В минус пачка не уходит, поэтому «выбросил больше, чем было» списывает остаток
+                // целиком. В историю идёт то, что действительно ушло: иначе отчёт называл бы
+                // расход, которого не было.
+                val left = pack.quantity.minusOrZero(amount)
+                Applied(
+                    pack.correctTo(left),
+                    StockMovement.Disposal(
+                        movementId, packageId, pack.quantity - left, reason, pack.medKitId, at, at, note
+                    )
                 )
-            )
+            }
             is Transfer -> Applied(
                 pack.moveTo(target),
                 StockMovement.Transfer(

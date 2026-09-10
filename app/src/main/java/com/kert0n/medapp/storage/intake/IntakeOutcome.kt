@@ -66,5 +66,13 @@ class IntakeOutcome(
             "условный переход называет, из какого состояния идёт"
         }
         require(intake.status !in expected) { "переход в тот же статус не является переходом" }
+        // Учёт называет операцию, а очередь получает её в этой же транзакции. Порознь это
+        // оставило бы приём вечно ожидающим расход, которого в очереди нет.
+        require(sync.accounting != IntakeAccounting.PENDING || command != null) {
+            "ожидающий расход ставится в очередь вместе с приёмом"
+        }
+        require(sync.operationId == null || command == null || command.id == sync.operationId) {
+            "приём называет ту операцию, которая ставится вместе с ним"
+        }
     }
 }

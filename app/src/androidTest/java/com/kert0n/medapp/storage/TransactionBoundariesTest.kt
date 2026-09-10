@@ -41,6 +41,7 @@ import com.kert0n.medapp.storage.intake.IntakeOutcome
 import com.kert0n.medapp.storage.intake.IntakeRoomRepository
 import com.kert0n.medapp.storage.medkit.toStorageEntity as toMedKitStorageEntity
 import com.kert0n.medapp.storage.course.CourseReallocation
+import com.kert0n.medapp.storage.course.CourseStorageEntity
 import com.kert0n.medapp.storage.pack.PackageAdjustment
 import com.kert0n.medapp.storage.pack.PackageRoomRepository
 import com.kert0n.medapp.storage.server.QueuedCommand
@@ -342,6 +343,77 @@ class TransactionBoundariesTest {
         assertFalse(courses.saveDraft(stale))
         assertNull(courses.findDraft(COURSE))
         assertNotNull(courses.findPlan(COURSE))
+    }
+
+    /**
+     * Конец лечения уничтожает план, но запись эпизода остаётся навсегда: «плана нет» само по
+     * себе не значит «черновик ещё можно сохранить».
+     */
+    @Test
+    fun aDraftDoesNotResurrectAFinishedEpisode() = runTest {
+        val activation = draft()
+        courses.activate(activation, at = at)
+        courses.close(activation.record.close(CourseRecord.Outcome.COMPLETED, LATER), at = LATER)
+
+        assertFalse(courses.saveDraft(course(title = "Старый черновик")))
+        assertNull(courses.findDraft(COURSE))
+        assertEquals(
+            CourseRecord.Outcome.COMPLETED,
+            requireNotNull(courses.findRecord(COURSE)).outcome
+        )
+    }
+
+    /**
+     * Пересчёт выделений из устаревшего состава не проходит молча: вокруг него в той же
+     * транзакции уже записан расход, обеспечение которого он и считал.
+     */
+    @Test
+    fun aStaleReallocationAbortsTheWholeTransaction() = runTest {
+        val activation = draft()
+        courses.activate(activation, planned = listOf(plannedIntake()), at = at)
+        val stale = CourseReallocation(activation.course, activation.course.revision)
+        database.courses().updateAllocations(
+            activation.course.toCourseStorageEntity().let {
+                CourseStorageEntity(
+                    id = it.id, doseAmount = it.doseAmount, unitId = it.unitId, formId = it.formId,
+                    start = it.start, endInclusive = it.endInclusive, daysOfWeek = it.daysOfWeek,
+                    zone = it.zone, revision = it.revision + 1, createdAt = it.createdAt,
+                    updatedAt = LATER
+                )
+            },
+            emptyList(),
+            activation.course.revision
+        )
+
+        val failure = runCatching {
+            packages.adjust(
+                PackageAdjustment.Recount(PACK, tablets("17"), movementId),
+                reallocation = stale,
+                at = LATER
+            )
+        }.exceptionOrNull()
+
+        assertNotNull(failure)
+        assertEquals(tablets("20"), requireNotNull(packages.find(PACK)).quantity)
+        assertEquals(emptyList<StockMovement>(), database.stockMovements().ofPackage(PACK).map { it.toDomain() })
+    }
+
+    /** В минус пачка не уходит, и в историю попадает то, что действительно ушло. */
+    @Test
+    fun disposingMoreThanThereIsRecordsWhatActuallyLeft() = runTest {
+        packages.adjust(
+            PackageAdjustment.Disposal(
+                PACK,
+                tablets("50"),
+                StockMovement.Disposal.Reason.DAMAGED,
+                movementId
+            ),
+            at = LATER
+        )
+
+        val disposal = database.stockMovements().ofPackage(PACK).single().toDomain()
+        assertEquals(tablets("20"), (disposal as StockMovement.Disposal).amount)
+        assertEquals(Package.Lifecycle.ARCHIVED, requireNotNull(packages.find(PACK)).lifecycle)
     }
 
     /**
