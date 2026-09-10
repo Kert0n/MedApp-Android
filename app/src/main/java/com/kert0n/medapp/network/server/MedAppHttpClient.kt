@@ -13,6 +13,7 @@ import io.ktor.client.plugins.logging.Logger
 import io.ktor.client.plugins.logging.Logging
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
+import io.ktor.http.Url
 import io.ktor.serialization.kotlinx.json.json
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -24,6 +25,10 @@ import kotlin.coroutines.cancellation.CancellationException
  * Статус ответа исключением не становится: успех у каждой операции свой, и проверяет его тот,
  * кто операцию объявил. Лог пишется, только если передан [logger] (debug), и без секретов;
  * пропуск в запросы добавляет [MedAppAuth], если переданы [tokens].
+ *
+ * Перенаправлениям клиент не следует: в контракте их нет, и ответ 3xx — такой же ответ вне
+ * контракта, как и любой другой незаявленный статус. Это второе ограничение поверх привязки
+ * пропуска к адресу: политика, возвращённая по недосмотру, не должна оживлять утечку.
  */
 fun medAppHttpClient(
     engine: HttpClientEngine,
@@ -33,8 +38,12 @@ fun medAppHttpClient(
     retryDelay: HttpRequestRetryConfig.() -> Unit = { exponentialDelay(randomizationMs = 500) }
 ): HttpClient = HttpClient(engine) {
     expectSuccess = false
+    followRedirects = false
     if (tokens != null) {
-        install(MedAppAuth) { this.tokens = tokens }
+        install(MedAppAuth) {
+            this.tokens = tokens
+            origin = Url(baseUrl)
+        }
     }
     if (logger != null) {
         install(Logging) {

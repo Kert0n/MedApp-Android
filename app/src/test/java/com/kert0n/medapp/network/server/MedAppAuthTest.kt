@@ -7,16 +7,21 @@ import com.kert0n.medapp.network.account.AccountCredentials
 import com.kert0n.medapp.network.account.CredentialSource
 import com.kert0n.medapp.network.account.CredentialsSaved
 import com.kert0n.medapp.network.account.StoredAccount
+import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandleScope
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.HttpRequestData
 import io.ktor.client.request.HttpResponseData
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.Url
 import io.ktor.http.headersOf
+import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.ByteChannel
 import java.util.Base64
 import java.util.concurrent.atomic.AtomicInteger
@@ -247,6 +252,100 @@ class MedAppAuthTest {
         request.cancelAndJoin()
 
         assertTrue("отмена прошла насквозь, а не стала отказом: $caught", caught is CancellationException)
+    }
+
+    /**
+     * Пропуск предъявляется своему адресу. Смотреть только на путь мало: чужой сервер отвечает по
+     * тем же путям, и перенаправления к нему хватило бы, чтобы отдать ему пропуск.
+     */
+    @Test
+    fun tokenIsNotSentToAnotherAddress() = runTest {
+        val client = client()
+        client.get("/v1/users/me")
+
+        client.get("https://other.example/v1/users/me")
+        client.get("http://medapp.test/v1/users/me")
+        client.get("https://medapp.test:8443/v1/users/me")
+
+        assertEquals(1, tokenCalls.get())
+        assertEquals(listOf<String?>("Bearer t1", null, null, null), seenAuthorization)
+    }
+
+    /** Порт по умолчанию — тот же адрес: `https://medapp.test` и `:443` называют один сервер. */
+    @Test
+    fun theDefaultPortIsTheSameAddress() = runTest {
+        client().get("https://medapp.test:443/v1/users/me")
+
+        assertEquals(listOf<String?>("Bearer t1"), seenAuthorization)
+    }
+
+    /**
+     * Перенаправления в контракте нет: 3xx возвращается как есть, и второго запроса — тем более
+     * на чужой адрес — не случается. Это второе ограничение поверх привязки пропуска к адресу.
+     */
+    @Test
+    fun redirectIsNotFollowed() = runTest {
+        val visited = mutableListOf<String>()
+        val client = medAppHttpClient(
+            MockEngine { request ->
+                visited += request.url.host
+                if (request.url.encodedPath == "/v1/auth/token") {
+                    respond("""{"accessToken":"t1"}""", HttpStatusCode.OK, json)
+                } else {
+                    respond(
+                        "",
+                        HttpStatusCode.Found,
+                        headersOf(HttpHeaders.Location, "https://other.example/v1/users/me")
+                    )
+                }
+            },
+            "https://medapp.test",
+            tokens = AccessTokens(Stored(StoredAccount.Present(account)))
+        )
+
+        val response = client.get("/v1/users/me")
+
+        assertEquals(HttpStatusCode.Found, response.status)
+        assertEquals(listOf("medapp.test", "medapp.test"), visited)
+    }
+
+    /**
+     * Перенаправление на чужой хост с включённой политикой переходов: Ktor снимает заголовок сам,
+     * но повторно проходит через этот хук, и раньше тот ставил пропуск обратно — по совпадению
+     * пути. Привязка к адресу держит и здесь, независимо от политики переходов.
+     */
+    @Test
+    fun tokenDoesNotSurviveACrossHostRedirect() = runTest {
+        val visited = mutableListOf<Pair<String, String?>>()
+        val client = HttpClient(
+            MockEngine { request ->
+                visited += request.url.host to request.headers[HttpHeaders.Authorization]
+                when {
+                    request.url.encodedPath == "/v1/auth/token" ->
+                        respond("""{"accessToken":"t1"}""", HttpStatusCode.OK, json)
+                    request.url.host == "medapp.test" -> respond(
+                        "",
+                        HttpStatusCode.Found,
+                        headersOf(HttpHeaders.Location, "https://other.example/v1/users/me")
+                    )
+                    else -> respond("", HttpStatusCode.OK)
+                }
+            }
+        ) {
+            expectSuccess = false
+            followRedirects = true
+            install(ContentNegotiation) { json(medAppJson) }
+            install(MedAppAuth) {
+                tokens = AccessTokens(Stored(StoredAccount.Present(account)))
+                origin = Url("https://medapp.test")
+            }
+            defaultRequest { url("https://medapp.test") }
+        }
+
+        client.get("/v1/users/me")
+
+        assertEquals(listOf("medapp.test", "medapp.test", "other.example"), visited.map { it.first })
+        assertNull("чужому адресу пропуск не предъявляют", visited.last().second)
     }
 
     @Test

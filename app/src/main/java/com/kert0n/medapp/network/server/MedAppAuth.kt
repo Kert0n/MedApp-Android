@@ -11,13 +11,19 @@ import io.ktor.client.plugins.api.Send
 import io.ktor.client.plugins.api.createClientPlugin
 import io.ktor.client.request.basicAuth
 import io.ktor.client.request.post
+import io.ktor.http.DEFAULT_PORT
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.URLBuilder
+import io.ktor.http.Url
 import io.ktor.http.encodedPath
 import kotlin.coroutines.cancellation.CancellationException
 
 class MedAppAuthConfig {
     lateinit var tokens: AccessTokens
+
+    /** Адрес, которому пропуск предъявляют. Всё, что не он, — чужой сервер (PLAN G3). */
+    lateinit var origin: Url
 }
 
 /**
@@ -29,9 +35,15 @@ class MedAppAuthConfig {
  * Выдача отвечает исходом, а не строкой с исключением наперевес: отказ учётки, лимит выдачи и
  * недоступность — разные решения вызывающего, и различает их [AccessTokenIssue], а не то, чем
  * кончился разбор ответа.
+ *
+ * Пропуск предъявляется **своему** адресу — схеме, хосту и порту из настроек, — а не любому, чей
+ * путь начинается не с `/v1/auth/`. Иначе достаточно перенаправления на чужой хост, чтобы
+ * пропуск уехал туда: Ktor снимает `Authorization` на таком переходе, но повторный проход через
+ * этот хук поставил бы его обратно.
  */
 val MedAppAuth = createClientPlugin("MedAppAuth", ::MedAppAuthConfig) {
     val tokens = pluginConfig.tokens
+    val origin = pluginConfig.origin
     val http = client
 
     suspend fun issue(account: AccountCredentials): AccessTokenIssue {
@@ -67,6 +79,7 @@ val MedAppAuth = createClientPlugin("MedAppAuth", ::MedAppAuthConfig) {
         }
 
     on(Send) { request ->
+        if (!request.url.isAt(origin)) return@on proceed(request)
         if (request.url.encodedPath.startsWith(AUTH_PATH)) return@on proceed(request)
 
         val token = tokens.current ?: token(null) ?: return@on proceed(request)
@@ -79,6 +92,12 @@ val MedAppAuth = createClientPlugin("MedAppAuth", ::MedAppAuthConfig) {
         proceed(request)
     }
 }
+
+/** Тот ли это адрес: схема, хост и порт целиком, а не один хост и не один путь. */
+private fun URLBuilder.isAt(origin: Url): Boolean =
+    protocol.name == origin.protocol.name &&
+        host == origin.host &&
+        (port.takeUnless { it == DEFAULT_PORT } ?: protocol.defaultPort) == origin.port
 
 private const val AUTH_PATH = "/v1/auth/"
 private const val TOKEN_PATH = "/v1/auth/token"
