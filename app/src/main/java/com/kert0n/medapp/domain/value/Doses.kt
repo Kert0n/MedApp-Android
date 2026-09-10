@@ -5,7 +5,8 @@ package com.kert0n.medapp.domain.value
  * что доза берётся из одной пачки и между пачками не делится: по таблетке в двух пачках при дозе в
  * две — ноль доз, а не одна (PLAN D5). Отрицательным не бывает.
  */
-data class Doses(val count: Int) : Comparable<Doses> {
+@JvmInline
+value class Doses(val count: Int) : Comparable<Doses> {
 
     init {
         require(count >= 0) { "число доз не бывает отрицательным: $count" }

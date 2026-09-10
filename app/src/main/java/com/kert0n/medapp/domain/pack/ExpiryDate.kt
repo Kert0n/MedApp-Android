@@ -7,7 +7,8 @@ import java.time.YearMonth
  * Срок годности — последний день, когда пачка ещё годна. `null` вместо него значит «срока не
  * знаем», и просроченной такая пачка не бывает (PLAN D8).
  */
-data class ExpiryDate(val lastDay: LocalDate) {
+@JvmInline
+value class ExpiryDate(val lastDay: LocalDate) {
 
     /** Дата **включительная**: пачка, годная «до 31 марта», просрочена только 1 апреля. */
     fun isExpiredOn(date: LocalDate): Boolean = lastDay.isBefore(date)
