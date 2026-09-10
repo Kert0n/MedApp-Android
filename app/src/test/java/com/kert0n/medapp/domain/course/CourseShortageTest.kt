@@ -6,6 +6,7 @@ import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.availability
+import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.doses
 import com.kert0n.medapp.fixture.factsOf
 import com.kert0n.medapp.fixture.pack
@@ -85,7 +86,7 @@ class CourseShortageTest {
     fun packageHintDoesNotChangeTheClamp() {
         // Доза-подсказка упаковки личная и к лечению отношения не имеет (PLAN D5, C1).
         val hinted = pack(quantity = tablets("20"))
-            .describe(factsOf(pack()).copy(defaultIntakeAmount = tablets("1")))
+            .describe(factsOf(pack()).copy(defaultIntakeAmount = dose("1")))
         val available = availability(PACK to hinted.quantity, OTHER_PACK to tablets("12"))
         val clamped = twoPacks.clamped(doses(28), available, LATER)
         assertEquals(listOf(doses(5), doses(4)), clamped.allocations())

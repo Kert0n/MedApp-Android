@@ -7,6 +7,7 @@ import com.kert0n.medapp.fixture.expiry
 import com.kert0n.medapp.fixture.factsOf
 import com.kert0n.medapp.fixture.withShared
 import com.kert0n.medapp.fixture.pack
+import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.tablets
 
 import java.math.BigDecimal
@@ -33,7 +34,7 @@ class PackageFactsTest {
                 description = "по одной при температуре"
             ),
             expiresOn = expiry("2027-03-31"),
-            defaultIntakeAmount = tablets("1"),
+            defaultIntakeAmount = dose("1"),
             note = "в машине",
             price = Money(BigDecimal("120.00")),
             purchasedOn = LocalDate.of(2026, 1, 10),

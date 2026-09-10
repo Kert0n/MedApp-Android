@@ -7,7 +7,7 @@ import com.kert0n.medapp.domain.intake.Intake
 import com.kert0n.medapp.domain.intake.IntakeStatus
 import com.kert0n.medapp.domain.intake.TakenDose
 import com.kert0n.medapp.domain.intake.UnplannedIntake
-import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.domain.value.Dose
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -40,7 +40,7 @@ fun plannedIntake(
     plannedAt: Instant = FIRST_PLANNED_AT,
     scheduledOn: LocalDate = FIRST_SCHEDULED_ON,
     scheduledTime: LocalTime = FIRST_SCHEDULED_TIME,
-    plannedAmount: Quantity = tablets("2"),
+    plannedAmount: Dose = dose("2"),
 ) = CourseIntake(
     id = id,
     courseId = courseId,
@@ -55,7 +55,7 @@ fun unplannedIntake(
     id: Uuid = INTAKE,
     takenPackageId: Uuid = PACK,
     medKitId: Uuid = HOME_KIT,
-    takenAmount: Quantity = tablets("1"),
+    takenAmount: Dose = dose("1"),
     takenAt: Instant = LATER,
 ) = UnplannedIntake(
     id = id,

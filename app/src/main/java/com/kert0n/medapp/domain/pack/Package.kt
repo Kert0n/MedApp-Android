@@ -1,6 +1,7 @@
 package com.kert0n.medapp.domain.pack
 
 import com.kert0n.medapp.domain.medkit.MedKit
+import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
 import java.time.Instant
 import java.time.LocalDate
@@ -46,10 +47,9 @@ class Package(
      * Расход — приём, плановый или разовый. В минус не списывает (PLAN D5); пачка,
      * израсходованная до нуля, архивируется.
      */
-    fun consume(amount: Quantity): Package {
+    fun consume(amount: Dose): Package {
         requireUsable("расход")
-        require(!amount.isZero) { "расход нулевого количества не является приёмом" }
-        return withQuantity(quantity - amount)
+        return withQuantity(quantity - amount.quantity)
     }
 
     /**

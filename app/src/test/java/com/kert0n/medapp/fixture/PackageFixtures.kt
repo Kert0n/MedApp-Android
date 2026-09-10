@@ -7,6 +7,7 @@ import com.kert0n.medapp.domain.pack.ExpiryDate
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageFacts
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
+import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Money
 import com.kert0n.medapp.domain.value.Quantity
 import java.time.Instant
@@ -35,7 +36,7 @@ fun pack(
     country: String? = null,
     description: String? = null,
     expiresOn: ExpiryDate? = null,
-    defaultIntakeAmount: Quantity? = null,
+    defaultIntakeAmount: Dose? = null,
     note: String? = null,
     price: Money? = null,
     purchasedOn: LocalDate? = null,

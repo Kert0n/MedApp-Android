@@ -41,7 +41,7 @@ class DosesTest {
     fun wholeDosesOnlyBecauseADoseIsNotSplitBetweenPacks() {
         // По одной таблетке в двух пачках при дозе в две таблетки дают ноль доз, а не одну.
         val unitId = TABLETS_FOR_TEST
-        val dose = Quantity(java.math.BigDecimal("2"), unitId)
+        val dose = Dose(Quantity(java.math.BigDecimal("2"), unitId))
         assertEquals(Doses.none, Quantity(java.math.BigDecimal("1"), unitId).dosesIn(dose))
         assertEquals(Doses(3), Quantity(java.math.BigDecimal("7"), unitId).dosesIn(dose))
     }

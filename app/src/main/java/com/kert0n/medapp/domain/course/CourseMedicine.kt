@@ -2,6 +2,7 @@ package com.kert0n.medapp.domain.course
 
 import com.kert0n.medapp.domain.pack.Availability
 import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.Quantity
 import java.util.Objects
@@ -115,7 +116,7 @@ class CourseMedicine(
      * [CourseCoverage.requiresRecount].
      */
     internal fun coverage(
-        dose: Quantity,
+        dose: Dose,
         remaining: List<ScheduledOccurrence>,
         availability: Availability
     ): CourseCoverage {
@@ -143,7 +144,7 @@ class CourseMedicine(
      */
     internal fun maxDoses(
         packageId: Uuid,
-        dose: Quantity,
+        dose: Dose,
         required: Doses,
         availability: Availability
     ): Doses {
@@ -160,7 +161,7 @@ class CourseMedicine(
      * сохраняет. Доза и расписание курса от этого не меняются (PLAN D5, C1).
      */
     internal fun clampedTo(
-        dose: Quantity,
+        dose: Dose,
         required: Doses,
         availability: Availability
     ): CourseMedicine {
@@ -185,7 +186,7 @@ class CourseMedicine(
      * ничего, в ответе нет; порядок ответа — порядок расходования.
      */
     internal fun spend(
-        dose: Quantity,
+        dose: Dose,
         doses: Doses,
         availability: Availability
     ): Map<Uuid, Doses> {
@@ -208,8 +209,8 @@ class CourseMedicine(
      */
     internal fun dosesAfterIntake(
         packageId: Uuid,
-        dose: Quantity,
-        taken: Quantity,
+        dose: Dose,
+        taken: Dose,
         availableAfter: Quantity
     ): Doses {
         require(availableAfter.unitId == dose.unitId) {
@@ -217,7 +218,7 @@ class CourseMedicine(
         }
         val allocated = allocatedTo(packageId) ?: Doses.none
         if (allocated.isNone) return Doses.none
-        val leftAllocated = (dose * allocated).minusOrZero(taken)
+        val leftAllocated = (dose * allocated).minusOrZero(taken.quantity)
         val limited =
             if (leftAllocated.amount <= availableAfter.amount) leftAllocated else availableAfter
         return limited.dosesIn(dose)
@@ -228,7 +229,7 @@ class CourseMedicine(
      * обеспечение, расход и зажим считали это порознь, правило «не больше выделенного и не больше
      * целых доз, что в пачке есть» было написано трижды и могло разойтись.
      */
-    private fun capacities(dose: Quantity, availability: Availability): List<SourceCapacity> =
+    private fun capacities(dose: Dose, availability: Availability): List<SourceCapacity> =
         sources.map { source ->
             val available = availability.known(source.packageId)
             val whole = available?.dosesIn(dose)

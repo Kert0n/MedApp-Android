@@ -8,6 +8,7 @@ import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.pack
+import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.tablets
 
 import java.time.Instant
@@ -26,7 +27,7 @@ class PackageIdentityTest {
     @Test
     fun packWithLessLeftIsTheSamePack() {
         val full = pack(quantity = tablets("20"))
-        val used = full.consume(tablets("1"))
+        val used = full.consume(dose("1"))
         assertEquals(full, used)
         assertEquals(full.hashCode(), used.hashCode())
     }

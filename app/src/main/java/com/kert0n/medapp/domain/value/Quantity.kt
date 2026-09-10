@@ -53,20 +53,19 @@ data class Quantity(val amount: BigDecimal, val unitId: Uuid) {
     operator fun times(doses: Doses): Quantity =
         Quantity(amount * doses.count.toBigDecimal(), unitId)
 
-    fun covers(dose: Quantity): Boolean {
-        requireSameUnit(dose)
-        return amount >= dose.amount
+    fun covers(dose: Dose): Boolean {
+        requireSameUnit(dose.quantity)
+        return amount >= dose.quantity.amount
     }
 
     /**
      * Сколько целых доз помещается. Именно целых: доза берётся из одной упаковки и между пачками
      * не делится, поэтому по одной таблетке в двух пачках при дозе в две таблетки дают ноль доз,
-     * а не одну (PLAN D5). Нулевая доза — ошибка, делить на неё нечего.
+     * а не одну (PLAN D5). Делить на ноль здесь нечем: [Dose] нулём не бывает.
      */
-    fun dosesIn(dose: Quantity): Doses {
-        requireSameUnit(dose)
-        require(!dose.isZero) { "нулевая доза не делит остаток" }
-        val whole = amount.divideToIntegralValue(dose.amount)
+    fun dosesIn(dose: Dose): Doses {
+        requireSameUnit(dose.quantity)
+        val whole = amount.divideToIntegralValue(dose.quantity.amount)
         return Doses(if (whole > MAX_DOSES) Int.MAX_VALUE else whole.toInt())
     }
 

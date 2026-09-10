@@ -9,6 +9,7 @@ import com.kert0n.medapp.fixture.expiry
 import com.kert0n.medapp.fixture.withShared
 import com.kert0n.medapp.fixture.medKit
 import com.kert0n.medapp.fixture.pack
+import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.tablets
 
 import java.math.BigDecimal
@@ -119,7 +120,7 @@ class PackageStateTransitionsTest {
     fun archivedPackCanAlsoLoseAccess() {
         // Две оси, а не одна: выбросить свою часть общей пачки и потом выйти из аптечки — это
         // два разных события, и оба остаются записанными.
-        val lost = pack(quantity = tablets("2")).consume(tablets("2")).loseAccess()
+        val lost = pack(quantity = tablets("2")).consume(dose("2")).loseAccess()
         assertEquals(Package.Lifecycle.ARCHIVED, lost.lifecycle)
         assertEquals(Package.Access.LOST, lost.access)
     }

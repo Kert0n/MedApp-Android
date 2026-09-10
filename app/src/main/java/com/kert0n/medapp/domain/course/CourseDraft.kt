@@ -2,6 +2,7 @@ package com.kert0n.medapp.domain.course
 
 import com.kert0n.medapp.domain.pack.Availability
 import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.requireNonNegativeDecimal
@@ -48,10 +49,10 @@ class CourseDraft(
      * единицу приносит препарат, и порядок бывает любым: «две штуки чего-то» и «пачка выбрана» —
      * оба законные состояния черновика.
      */
-    val dose: Quantity?
+    val dose: Dose?
         get() {
             val unitId = medicine.unitId ?: return null
-            return doseAmount?.let { Quantity(it, unitId) }
+            return doseAmount?.let { Dose(Quantity(it, unitId)) }
         }
 
     val sources: List<CourseSource> get() = medicine.sources

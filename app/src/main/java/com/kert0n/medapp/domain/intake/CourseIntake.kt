@@ -3,7 +3,7 @@ package com.kert0n.medapp.domain.intake
 import com.kert0n.medapp.domain.course.Revision
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.course.ScheduledOccurrence
-import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.domain.value.Dose
 import java.time.Instant
 import kotlin.uuid.Uuid
 
@@ -19,7 +19,7 @@ class CourseIntake(
     val courseId: Uuid,
     val courseRevision: Revision,
     val slot: ScheduledOccurrence,
-    val plannedAmount: Quantity,
+    val plannedAmount: Dose,
     val plannedPackageId: Uuid? = null,
     val answer: IntakeAnswer? = null
 ) : Intake {
@@ -59,7 +59,7 @@ class CourseIntake(
      * (PLAN D5). Принимается сама пачка — аптечку и единицу события она приносит с собой. Подтверждается неотвеченный или пропущенный по времени пункт; повторное
      * подтверждение — второй факт со своим идентификатором, и здесь оно отвергается (E2).
      */
-    fun confirm(pkg: Package, amount: Quantity, at: Instant): CourseIntake {
+    fun confirm(pkg: Package, amount: Dose, at: Instant): CourseIntake {
         check(answer == null || answer is IntakeAnswer.Missed) {
             "подтверждается неотвеченный приём, а не $status"
         }

@@ -2,6 +2,7 @@ package com.kert0n.medapp.domain.course
 
 import com.kert0n.medapp.domain.pack.Availability
 import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.Quantity
 import java.time.Instant
@@ -35,7 +36,7 @@ class Course(
     }
 
     /** Разовая доза: назначение врача, а не подсказка упаковки (PLAN D5, C1). */
-    val dose: Quantity get() = prescription.dose
+    val dose: Dose get() = prescription.dose
 
     val schedule: CourseSchedule get() = prescription.schedule
 
@@ -114,7 +115,7 @@ class Course(
      * Сколько целых доз остаётся выделено пачке после подтверждённого приёма: не больше
      * выделенного за вычетом расхода и не больше того, что в пачке осталось (PLAN D5).
      */
-    fun dosesAfterIntake(pkg: Package, taken: Quantity, availableAfter: Quantity): Doses =
+    fun dosesAfterIntake(pkg: Package, taken: Dose, availableAfter: Quantity): Doses =
         medicine.dosesAfterIntake(pkg.id, dose, taken, availableAfter)
 
     /**

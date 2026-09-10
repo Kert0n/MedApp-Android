@@ -9,6 +9,7 @@ import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.course
+import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.doses
 import com.kert0n.medapp.fixture.millilitres
 import com.kert0n.medapp.fixture.pack
@@ -37,7 +38,7 @@ class CourseSourceFormTest {
         assertEquals(TABLET_FORM, fixed.formId)
         assertEquals(TABLETS, fixed.unitId)
         // Доза собралась только теперь: единицу принесла пачка, число задал человек.
-        assertEquals(tablets("2"), fixed.dose)
+        assertEquals(dose("2"), fixed.dose)
     }
 
     @Test
@@ -85,7 +86,7 @@ class CourseSourceFormTest {
         assertEquals(emptyList<CourseSource>(), unsupplied.sources)
         assertEquals(TABLET_FORM, unsupplied.formId)
         assertEquals(TABLETS, unsupplied.unitId)
-        assertEquals(tablets("2"), unsupplied.dose)
+        assertEquals(dose("2"), unsupplied.dose)
         assertEquals(listOf<CourseSource>(), unsupplied.sources)
     }
 

@@ -1,6 +1,7 @@
 package com.kert0n.medapp.fixture
 
 import com.kert0n.medapp.domain.pack.Availability
+import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.Quantity
 import java.math.BigDecimal
@@ -21,6 +22,11 @@ fun tablets(amount: String): Quantity = Quantity(BigDecimal(amount), TABLETS)
 fun millilitres(amount: String): Quantity = Quantity(BigDecimal(amount), MILLILITRES)
 
 fun doses(count: Int): Doses = Doses(count)
+
+/** Доза: положительное количество, которое принимают за раз. */
+fun dose(amount: String): Dose = Dose(tablets(amount))
+
+fun dose(quantity: Quantity): Dose = Dose(quantity)
 
 /** Расклад «сколько доступно мне»: чего в нём нет, про то мы не знаем (PLAN D5). */
 fun availability(vararg known: Pair<Uuid, Quantity>): Availability = Availability(mapOf(*known))

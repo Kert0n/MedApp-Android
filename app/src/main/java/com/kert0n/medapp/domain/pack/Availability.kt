@@ -1,5 +1,6 @@
 package com.kert0n.medapp.domain.pack
 
+import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.Quantity
 import kotlin.uuid.Uuid
@@ -21,7 +22,7 @@ class Availability(availableToMe: Map<Uuid, Quantity>) {
     fun known(packageId: Uuid): Quantity? = availableToMe[packageId]
 
     /** Сколько целых доз даёт пачка; `null` — неизвестно. */
-    fun dosesOf(packageId: Uuid, dose: Quantity): Doses? = known(packageId)?.dosesIn(dose)
+    fun dosesOf(packageId: Uuid, dose: Dose): Doses? = known(packageId)?.dosesIn(dose)
 
     companion object {
 

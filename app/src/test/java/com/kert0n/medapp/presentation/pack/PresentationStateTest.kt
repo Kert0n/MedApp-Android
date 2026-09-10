@@ -10,6 +10,7 @@ import com.kert0n.medapp.presentation.medkit.toPresentationDTO
 import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.factsOf
 import com.kert0n.medapp.fixture.pack
+import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.tablets
 
 import java.math.BigDecimal
@@ -45,7 +46,7 @@ class PresentationStateTest {
         runCurrent()
         assertEquals("20", state.value.packages.single().quantity.amount)
 
-        val consumed = original.consume(tablets("1"))
+        val consumed = original.consume(dose("1"))
         assertEquals(original, consumed) // Доменное тождество не меняем ради интерфейса.
         updates.emit(listOf(consumed))
         runCurrent()
@@ -56,7 +57,7 @@ class PresentationStateTest {
         runCurrent()
         assertEquals("В поездку", state.value.packages.single().note)
 
-        updates.emit(listOf(edited.consume(tablets("19"))))
+        updates.emit(listOf(edited.consume(dose("19"))))
         runCurrent()
         assertEquals("0", state.value.packages.single().quantity.amount)
         assertEquals(Package.Lifecycle.ARCHIVED, state.value.packages.single().lifecycle)
@@ -87,12 +88,12 @@ class PresentationStateTest {
     @Test
     fun numericScaleDoesNotChangePresentationState() {
         val first = pack(
-            quantity = tablets("20"), defaultIntakeAmount = tablets("1"),
+            quantity = tablets("20"), defaultIntakeAmount = dose("1"),
             price = Money(BigDecimal("150")),
             claims = Claims(BigDecimal("5"), BigDecimal("2"))
         )
         val same = pack(
-            quantity = tablets("20.000000"), defaultIntakeAmount = tablets("1.000000"),
+            quantity = tablets("20.000000"), defaultIntakeAmount = dose("1.000000"),
             price = Money(BigDecimal("150.00")),
             claims = Claims(BigDecimal("5.000000"), BigDecimal("2.000000"))
         )

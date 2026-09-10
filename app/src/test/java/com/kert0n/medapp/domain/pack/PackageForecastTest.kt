@@ -17,6 +17,7 @@ import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.plannedIntake
 import com.kert0n.medapp.fixture.schedule
 import com.kert0n.medapp.fixture.source
+import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.tablets
 import java.math.BigDecimal
 import java.time.Instant
@@ -108,7 +109,7 @@ class PackageForecastTest {
     fun answeredIntakesAreNotCountedTwice() {
         // Расход подтверждённого приёма уже в остатке: вычесть его снова значило бы списать
         // вчерашнюю таблетку второй раз.
-        val taken = plannedIntake().confirm(pack(), tablets("2"), LATER)
+        val taken = plannedIntake().confirm(pack(), dose("2"), LATER)
         val forecast = remainingOn(
             date = today.plusDays(2),
             packages = listOf(stockOf()),

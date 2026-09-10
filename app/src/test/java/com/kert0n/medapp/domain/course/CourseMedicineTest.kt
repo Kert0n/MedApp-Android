@@ -9,6 +9,7 @@ import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.course
+import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.doses
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.schedule
@@ -121,7 +122,7 @@ class CourseMedicineTest {
         val widened = active.attach(dacha, doses = doses(4), at = LATER).getOrThrow()
         assertEquals(doses(9), widened.allocatedDosesTotal)
         assertEquals(schedule(), widened.schedule)
-        assertEquals(tablets("2"), widened.dose)
+        assertEquals(dose("2"), widened.dose)
     }
 
     @Test

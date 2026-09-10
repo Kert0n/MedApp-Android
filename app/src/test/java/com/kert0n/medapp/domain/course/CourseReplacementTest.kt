@@ -9,6 +9,7 @@ import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.course
 import com.kert0n.medapp.fixture.courseRecord
+import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.doses
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.plannedIntake
@@ -39,7 +40,7 @@ class CourseReplacementTest {
     private val oldRecord = courseRecord(startedAt = EARLIER)
 
     private val takenYesterday = plannedIntake(courseRevision = old.revision.number)
-        .confirm(pack(), tablets("2"), EARLIER)
+        .confirm(pack(), dose("2"), EARLIER)
 
     private val plannedTomorrow = plannedIntake(
         id = Uuid.parse("00000000-0000-4000-8000-000000000071"),
@@ -65,28 +66,28 @@ class CourseReplacementTest {
         // Другой эпизод, а не тот же самый: тождество — id.
         assertNotEquals(closed, replacement.record)
         assertTrue(replacement.record.isOpen)
-        assertEquals(tablets("3"), replacement.course.dose)
+        assertEquals(dose("3"), replacement.course.dose)
 
         // Прежний эпизод остался записью — вместе с назначением, которое исчезло с планом.
         assertEquals(CourseRecord.Outcome.CANCELLED, closed.outcome)
         assertEquals(LATER, closed.closedAt)
         assertEquals(EARLIER, closed.startedAt)
         assertEquals(schedule(), closed.prescription.schedule)
-        assertEquals(tablets("2"), closed.prescription.dose)
+        assertEquals(dose("2"), closed.prescription.dose)
     }
 
     @Test
     fun closingDoesNotRewriteWhatAlreadyHappened() {
         // Конец лечения не переписывает состоявшиеся приёмы, их времена и количества (PLAN D5).
         assertEquals(IntakeStatus.TAKEN, takenYesterday.status)
-        assertEquals(tablets("2"), takenYesterday.taken?.amount)
+        assertEquals(dose("2"), takenYesterday.taken?.amount)
         assertEquals(old.id, takenYesterday.courseId)
         assertEquals(old.revision, takenYesterday.courseRevision)
 
         // А будущий неотвеченный пункт отменяется вместе с лечением.
         val cancelledItem = plannedTomorrow.cancel(LATER)
         assertEquals(IntakeStatus.CANCELLED, cancelledItem.status)
-        assertEquals(tablets("2"), cancelledItem.plannedAmount)
+        assertEquals(dose("2"), cancelledItem.plannedAmount)
         assertThrows(IllegalStateException::class.java) { takenYesterday.cancel(LATER) }
     }
 

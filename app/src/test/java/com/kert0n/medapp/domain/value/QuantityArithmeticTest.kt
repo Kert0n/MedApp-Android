@@ -1,6 +1,7 @@
 package com.kert0n.medapp.domain.value
 
 import com.kert0n.medapp.fixture.TABLETS
+import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.doses
 import com.kert0n.medapp.fixture.millilitres
 import com.kert0n.medapp.fixture.tablets
@@ -28,7 +29,7 @@ class QuantityArithmeticTest {
 
     @Test(expected = IllegalArgumentException::class)
     fun differentUnitsDoNotCompare() {
-        tablets("1").covers(millilitres("1"))
+        tablets("1").covers(dose(millilitres("1")))
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -49,8 +50,8 @@ class QuantityArithmeticTest {
 
     @Test
     fun coversIsInclusiveAtEquality() {
-        assertTrue(tablets("2").covers(tablets("2")))
-        assertFalse(tablets("1.999999").covers(tablets("2")))
+        assertTrue(tablets("2").covers(dose("2")))
+        assertFalse(tablets("1.999999").covers(dose("2")))
     }
 
     @Test
@@ -66,24 +67,25 @@ class QuantityArithmeticTest {
 
     @Test
     fun wholeDosesOnly() {
-        assertEquals(doses(2), tablets("5").dosesIn(tablets("2")))
-        assertEquals(doses(2), tablets("5.999999").dosesIn(tablets("2")))
+        assertEquals(doses(2), tablets("5").dosesIn(dose("2")))
+        assertEquals(doses(2), tablets("5.999999").dosesIn(dose("2")))
     }
 
     @Test
     fun halfADoseIsNoDoseAtAll() {
         // Именно это снимает тупик из D5: по одной таблетке в двух пачках при дозе в две
         // не дают ни одной дозы, и выделять их не во что.
-        assertEquals(doses(0), tablets("1").dosesIn(tablets("2")))
+        assertEquals(doses(0), tablets("1").dosesIn(dose("2")))
     }
 
     @Test(expected = IllegalArgumentException::class)
-    fun zeroDoseDoesNotDivide() {
-        tablets("5").dosesIn(Quantity.zero(TABLETS))
+    fun zeroDoseIsNotRepresentable() {
+        // Делить на ноль здесь нечем: правило живёт на самой дозе, а не на этом вызове.
+        dose(Quantity.zero(TABLETS))
     }
 
     @Test
     fun dosesAreClampedToIntRange() {
-        assertEquals(doses(Int.MAX_VALUE), tablets("1000000000000").dosesIn(tablets("0.000001")))
+        assertEquals(doses(Int.MAX_VALUE), tablets("1000000000000").dosesIn(dose("0.000001")))
     }
 }

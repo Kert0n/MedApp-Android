@@ -5,6 +5,7 @@ import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.millilitres
 import com.kert0n.medapp.fixture.pack
+import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.tablets
 
 import org.junit.Assert.assertEquals
@@ -23,26 +24,27 @@ class PackageQuantityTransitionsTest {
 
     @Test
     fun consumingToZeroArchivesThePack() {
-        val empty = pack(quantity = tablets("2")).consume(tablets("2"))
+        val empty = pack(quantity = tablets("2")).consume(dose("2"))
         assertTrue(empty.quantity.isZero)
         assertEquals(Package.Lifecycle.ARCHIVED, empty.lifecycle)
     }
 
     @Test
     fun consumingPartOfThePackKeepsItActive() {
-        val left = pack(quantity = tablets("20")).consume(tablets("0.5"))
+        val left = pack(quantity = tablets("20")).consume(dose("0.5"))
         assertEquals(tablets("19.5"), left.quantity)
         assertEquals(Package.Lifecycle.ACTIVE, left.lifecycle)
     }
 
     @Test(expected = IllegalArgumentException::class)
     fun consumingMoreThanIsLeftIsRefused() {
-        pack(quantity = tablets("3")).consume(tablets("5"))
+        pack(quantity = tablets("3")).consume(dose("5"))
     }
 
     @Test(expected = IllegalArgumentException::class)
     fun consumingNothingIsNotAnIntake() {
-        pack().consume(Quantity.zero(TABLETS))
+        // Проверка переехала на саму дозу: нулевого расхода не бывает вовсе (D1).
+        dose(Quantity.zero(TABLETS))
     }
 
     @Test
@@ -72,7 +74,7 @@ class PackageQuantityTransitionsTest {
 
     @Test(expected = IllegalStateException::class)
     fun archivedPackIsNotConsumed() {
-        pack(lifecycle = Package.Lifecycle.ARCHIVED).consume(tablets("1"))
+        pack(lifecycle = Package.Lifecycle.ARCHIVED).consume(dose("1"))
     }
 
 }

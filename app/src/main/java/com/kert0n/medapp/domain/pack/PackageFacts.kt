@@ -1,7 +1,7 @@
 package com.kert0n.medapp.domain.pack
 
 import com.kert0n.medapp.domain.value.Money
-import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.requireOptionalText
 import java.time.LocalDate
 import kotlin.uuid.Uuid
@@ -15,7 +15,7 @@ import kotlin.uuid.Uuid
 data class PackageFacts(
     val shared: PackageSharedFacts,
     val expiresOn: ExpiryDate? = null,
-    val defaultIntakeAmount: Quantity? = null,
+    val defaultIntakeAmount: Dose? = null,
     val note: String? = null,
     val price: Money? = null,
     val purchasedOn: LocalDate? = null,

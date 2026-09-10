@@ -14,6 +14,7 @@ import com.kert0n.medapp.fixture.SHARED_KIT
 import com.kert0n.medapp.fixture.millilitres
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.plannedIntake
+import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.fixture.unplannedIntake
 import org.junit.Assert.assertEquals
@@ -33,7 +34,7 @@ class IntakeTest {
         // Подтверждение не делает приём другим приёмом: это тот же пункт, у которого появился
         // ответ. Тождество — id.
         val planned = plannedIntake()
-        val taken = planned.confirm(pack(), tablets("2"), LATER)
+        val taken = planned.confirm(pack(), dose("2"), LATER)
         assertEquals(planned, taken)
         assertEquals(planned.hashCode(), taken.hashCode())
         assertEquals(IntakeStatus.TAKEN, taken.status)
@@ -46,23 +47,23 @@ class IntakeTest {
         // Пункт порождён редакцией расписания, и ответ не переписывает ни назначенное время,
         // ни плановую дозу, ни плановую пачку.
         val fromDacha = pack(id = OTHER_PACK, medKitId = SHARED_KIT)
-        val taken = plannedIntake().confirm(fromDacha, tablets("1"), LATER)
+        val taken = plannedIntake().confirm(fromDacha, dose("1"), LATER)
         assertEquals(FIRST_PLANNED_AT, taken.plannedAt)
         assertEquals(FIRST_SCHEDULED_ON, taken.slot.localDate)
         assertEquals(FIRST_SCHEDULED_TIME, taken.slot.localTime)
-        assertEquals(tablets("2"), taken.plannedAmount)
+        assertEquals(dose("2"), taken.plannedAmount)
         assertEquals(PACK, taken.plannedPackageId)
         // А фактические пачка, аптечка и количество — те, что назвал человек.
         assertEquals(OTHER_PACK, taken.taken?.packageId)
         assertEquals(SHARED_KIT, taken.taken?.medKitId)
-        assertEquals(tablets("1"), taken.taken?.amount)
+        assertEquals(dose("1"), taken.taken?.amount)
     }
 
     @Test
     fun factualAmountMayDifferFromThePlanned() {
-        val taken = plannedIntake().confirm(pack(), tablets("3"), LATER)
-        assertEquals(tablets("3"), taken.taken?.amount)
-        assertEquals(tablets("2"), taken.plannedAmount)
+        val taken = plannedIntake().confirm(pack(), dose("3"), LATER)
+        assertEquals(dose("3"), taken.taken?.amount)
+        assertEquals(dose("2"), taken.plannedAmount)
     }
 
     @Test
@@ -70,16 +71,16 @@ class IntakeTest {
         // Поздний ответ проверяет текущий источник и остаток заново, но пункт остаётся тем же.
         val missed = plannedIntake().miss(LATER)
         assertEquals(IntakeStatus.MISSED, missed.status)
-        val late = missed.confirm(pack(), tablets("2"), LATER.plusSeconds(3600))
+        val late = missed.confirm(pack(), dose("2"), LATER.plusSeconds(3600))
         assertEquals(IntakeStatus.TAKEN, late.status)
     }
 
     @Test
     fun confirmedIntakeIsNotConfirmedTwice() {
         // Второе подтверждение — второй факт со своим идентификатором, а не тот же самый.
-        val taken = plannedIntake().confirm(pack(), tablets("2"), LATER)
+        val taken = plannedIntake().confirm(pack(), dose("2"), LATER)
         assertThrows(IllegalStateException::class.java) {
-            taken.confirm(pack(), tablets("2"), LATER)
+            taken.confirm(pack(), dose("2"), LATER)
         }
     }
 
@@ -90,7 +91,7 @@ class IntakeTest {
         assertNull(skipped.taken?.amount)
         assertEquals(LATER, skipped.answer?.at)
         assertThrows(IllegalStateException::class.java) {
-            skipped.confirm(pack(), tablets("2"), LATER)
+            skipped.confirm(pack(), dose("2"), LATER)
         }
         assertThrows(IllegalStateException::class.java) { skipped.miss(LATER) }
     }
@@ -106,7 +107,7 @@ class IntakeTest {
     @Test
     fun cancelledItemKeepsItsPlanAsHistory() {
         val cancelled = plannedIntake().cancel(LATER)
-        assertEquals(tablets("2"), cancelled.plannedAmount)
+        assertEquals(dose("2"), cancelled.plannedAmount)
         assertEquals(FIRST_PLANNED_AT, cancelled.plannedAt)
         assertNull(cancelled.taken?.at)
     }
@@ -120,7 +121,7 @@ class IntakeTest {
         // Подтвердить его можно, назвав пачку: списать «неизвестно откуда» нельзя, а осознанно
         // выбранная пачка — обычный ответ человека. Плановой пачки у пункта так и не появится:
         // прошлое не переписывается ответом.
-        val answered = unsupplied.confirm(pack(), tablets("2"), LATER)
+        val answered = unsupplied.confirm(pack(), dose("2"), LATER)
         assertFalse(answered.isSupplied)
         assertEquals(PACK, answered.taken?.packageId)
     }
@@ -131,14 +132,14 @@ class IntakeTest {
         val fact = unplannedIntake()
         assertEquals(IntakeStatus.TAKEN, fact.status)
         assertEquals(PACK, fact.taken.packageId)
-        assertEquals(tablets("1"), fact.taken.amount)
+        assertEquals(dose("1"), fact.taken.amount)
     }
 
     @Test
     fun courseItemIsIdentifiedByItsRevisionAndScheduledSlot() {
         // Тождество пункта при повторной материализации окна (PLAN F4): курс, редакция и
         // назначенные дата со временем. Ответ их не переписывает.
-        val answered = plannedIntake().confirm(pack(), tablets("2"), LATER)
+        val answered = plannedIntake().confirm(pack(), dose("2"), LATER)
         assertEquals(COURSE, answered.courseId)
         assertEquals(Revision(1), answered.courseRevision)
         assertEquals(FIRST_SCHEDULED_ON, answered.slot.localDate)
@@ -149,17 +150,17 @@ class IntakeTest {
     @Test
     fun amountsAreMeasuredByTheIntakeUnit() {
         // Единица приёма — единица его плановой дозы, второго поля для неё нет.
-        assertEquals(MILLILITRES, plannedIntake(plannedAmount = millilitres("5")).unitId)
+        assertEquals(MILLILITRES, plannedIntake(plannedAmount = dose(millilitres("5"))).unitId)
         // Факт в другой единице к этому пункту не относится.
         assertThrows(IllegalArgumentException::class.java) {
-            plannedIntake().confirm(pack(), millilitres("5"), LATER)
+            plannedIntake().confirm(pack(), dose(millilitres("5")), LATER)
         }
     }
 
     @Test
     fun takingZeroIsASkipAndNotAnIntake() {
-        assertThrows(IllegalArgumentException::class.java) {
-            plannedIntake().confirm(pack(), tablets("0"), LATER)
-        }
+        // Проверка переехала на саму дозу: собрать её из нуля нельзя, и до подтверждения дело
+        // уже не доходит.
+        assertThrows(IllegalArgumentException::class.java) { dose("0") }
     }
 }

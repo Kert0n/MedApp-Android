@@ -3,6 +3,7 @@ package com.kert0n.medapp.domain.pack
 import com.kert0n.medapp.fixture.expiry
 import com.kert0n.medapp.fixture.millilitres
 import com.kert0n.medapp.fixture.pack
+import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.tablets
 
 import java.time.LocalDate
@@ -96,7 +97,7 @@ class PackageExpiryTest {
 
     @Test(expected = IllegalArgumentException::class)
     fun intakeHintInAnotherUnitIsRejected() {
-        pack(quantity = tablets("20"), defaultIntakeAmount = millilitres("5"))
+        pack(quantity = tablets("20"), defaultIntakeAmount = dose(millilitres("5")))
     }
 
     @Test(expected = IllegalArgumentException::class)

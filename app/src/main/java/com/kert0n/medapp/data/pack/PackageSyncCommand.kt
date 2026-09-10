@@ -1,6 +1,7 @@
 package com.kert0n.medapp.data.pack
 
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
+import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
 import kotlin.uuid.Uuid
 
@@ -20,7 +21,7 @@ sealed interface PackageSyncCommand {
      * потому что нехватка — конфликт операции, и разбирается она по очереди, а не числом.
      */
     fun appliedTo(amount: Quantity): Quantity? = when (this) {
-        is Consume -> amount.minusOrZero(this.amount)
+        is Consume -> amount.minusOrZero(this.amount.quantity)
         is CorrectStock -> this.actual
         is Reconcile -> this.actual
         is Delete -> Quantity.zero(amount.unitId)
@@ -108,12 +109,11 @@ sealed interface PackageSyncCommand {
      */
     data class Consume(
         override val packageId: Uuid,
-        val amount: Quantity,
+        val amount: Dose,
         val intakeId: Uuid,
         val claimAfter: Quantity? = null
     ) : PackageSyncCommand {
         init {
-            require(!amount.isZero) { "расход нулевого количества не является приёмом" }
             require(claimAfter == null || claimAfter.unitId == amount.unitId) {
                 "бронь измеряется той же единицей, что расход"
             }

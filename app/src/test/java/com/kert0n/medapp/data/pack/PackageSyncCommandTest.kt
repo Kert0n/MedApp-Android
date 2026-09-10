@@ -8,6 +8,7 @@ import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.SHARED_KIT
 import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.millilitres
+import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.tablets
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -47,7 +48,7 @@ class PackageSyncCommandTest {
             PackageSyncCommand.CorrectStock(PACK, tablets("19")),
             PackageSyncCommand.Move(PACK, SHARED_KIT),
             PackageSyncCommand.Delete(PACK),
-            PackageSyncCommand.Consume(PACK, tablets("2"), INTAKE),
+            PackageSyncCommand.Consume(PACK, dose("2"), INTAKE),
             PackageSyncCommand.SetClaim(PACK, tablets("10")),
             PackageSyncCommand.ReleaseClaim(PACK),
             PackageSyncCommand.Reconcile(PACK, tablets("12"), throughSequence = 7)
@@ -60,15 +61,15 @@ class PackageSyncCommandTest {
     fun consumeAlwaysNamesItsIntake() {
         // Команда приёма не поглощает следующий факт: у каждого подтверждения свой id.
         assertNotEquals(
-            PackageSyncCommand.Consume(PACK, tablets("2"), INTAKE),
-            PackageSyncCommand.Consume(PACK, tablets("2"), OTHER_INTAKE)
+            PackageSyncCommand.Consume(PACK, dose("2"), INTAKE),
+            PackageSyncCommand.Consume(PACK, dose("2"), OTHER_INTAKE)
         )
     }
 
     @Test
     fun claimAfterIsMeasuredByTheSameUnitAsTheConsumption() {
         assertThrows(IllegalArgumentException::class.java) {
-            PackageSyncCommand.Consume(PACK, tablets("2"), INTAKE, claimAfter = millilitres("10"))
+            PackageSyncCommand.Consume(PACK, dose("2"), INTAKE, claimAfter = millilitres("10"))
         }
     }
 
@@ -76,21 +77,21 @@ class PackageSyncCommandTest {
     fun threeMeaningsOfClaimAfterAreDistinguishable() {
         // null — внеплановый расход; положительное — новая абсолютная бронь; ноль — курсовой
         // расход без блока брони, снятие уезжает зависимой командой (PLAN E2).
-        assertEquals(null, PackageSyncCommand.Consume(PACK, tablets("2"), INTAKE).claimAfter)
+        assertEquals(null, PackageSyncCommand.Consume(PACK, dose("2"), INTAKE).claimAfter)
         assertEquals(
             tablets("8"),
-            PackageSyncCommand.Consume(PACK, tablets("2"), INTAKE, tablets("8")).claimAfter
+            PackageSyncCommand.Consume(PACK, dose("2"), INTAKE, tablets("8")).claimAfter
         )
         assertEquals(
             tablets("0"),
-            PackageSyncCommand.Consume(PACK, tablets("2"), INTAKE, tablets("0")).claimAfter
+            PackageSyncCommand.Consume(PACK, dose("2"), INTAKE, tablets("0")).claimAfter
         )
     }
 
     @Test
     fun consumingNothingIsNotAnIntake() {
         assertThrows(IllegalArgumentException::class.java) {
-            PackageSyncCommand.Consume(PACK, tablets("0"), INTAKE)
+            PackageSyncCommand.Consume(PACK, dose("0"), INTAKE)
         }
     }
 

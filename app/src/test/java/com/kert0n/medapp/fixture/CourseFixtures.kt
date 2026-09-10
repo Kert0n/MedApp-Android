@@ -8,6 +8,7 @@ import com.kert0n.medapp.domain.course.CourseSchedule
 import com.kert0n.medapp.domain.course.CourseSource
 import com.kert0n.medapp.domain.course.Prescription
 import com.kert0n.medapp.domain.course.Revision
+import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.Quantity
 import java.math.BigDecimal
@@ -84,7 +85,7 @@ fun prescription(
     doseAmount: BigDecimal = BigDecimal("2"),
     unitId: Uuid = TABLETS,
     schedule: CourseSchedule = schedule()
-) = Prescription(dose = Quantity(doseAmount, unitId), schedule = schedule)
+) = Prescription(dose = Dose(Quantity(doseAmount, unitId)), schedule = schedule)
 
 /**
  * Действующий план: доза, единица, форма и расписание у него есть по типу, и называть их в каждом

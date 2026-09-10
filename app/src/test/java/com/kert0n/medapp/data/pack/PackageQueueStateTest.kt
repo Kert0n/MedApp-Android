@@ -7,6 +7,7 @@ import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.pack
+import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.tablets
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -23,7 +24,7 @@ class PackageQueueStateTest {
 
     private val paracetamol = PackageSharedFacts(name = "Парацетамол", formId = TABLET_FORM)
 
-    private fun consume(amount: String) = PackageSyncCommand.Consume(PACK, tablets(amount), INTAKE)
+    private fun consume(amount: String) = PackageSyncCommand.Consume(PACK, dose(amount), INTAKE)
 
     @Test
     fun confirmedAmountPassesThroughUntouched() {
@@ -67,7 +68,7 @@ class PackageQueueStateTest {
         assertThrows(IllegalArgumentException::class.java) {
             PackageQueueState(
                 pack(quantity = tablets("20")),
-                listOf(PackageSyncCommand.Consume(OTHER_PACK, tablets("3"), INTAKE))
+                listOf(PackageSyncCommand.Consume(OTHER_PACK, dose("3"), INTAKE))
             )
         }
     }

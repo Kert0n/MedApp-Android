@@ -24,7 +24,7 @@ fun Package.toPresentationDTO(syncedAt: Instant? = null): PackagePresentationDTO
         country = facts.country,
         description = facts.description,
         expiresOn = facts.expiresOn,
-        defaultIntakeAmount = facts.defaultIntakeAmount?.toPresentationDTO(),
+        defaultIntakeAmount = facts.defaultIntakeAmount?.quantity?.toPresentationDTO(),
         note = facts.note,
         price = facts.price?.let {
             MoneyPresentationDTO(it.amount.stripTrailingZeros().toPlainString(), it.currencyCode)

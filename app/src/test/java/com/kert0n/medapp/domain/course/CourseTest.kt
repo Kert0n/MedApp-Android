@@ -1,6 +1,7 @@
 package com.kert0n.medapp.domain.course
 
 import com.kert0n.medapp.domain.course.Revision
+import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.activeCourse
@@ -9,6 +10,7 @@ import com.kert0n.medapp.fixture.LATER
 import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.course
+import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.doses
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.schedule
@@ -38,7 +40,7 @@ class CourseTest {
         assertNull(course(doseAmount = BigDecimal("2")).dose)
         assertNull(course(unitId = TABLETS).dose)
         assertEquals(
-            Quantity(BigDecimal("2"), TABLETS),
+            Dose(Quantity(BigDecimal("2"), TABLETS)),
             course(doseAmount = BigDecimal("2"), unitId = TABLETS).dose
         )
     }
@@ -94,7 +96,7 @@ class CourseTest {
         val draft = course(doseAmount = BigDecimal("2"), schedule = schedule())
             .attach(pack(formId = TABLET_FORM), doses(1), LATER).getOrThrow()
         val started = draft.activate(LATER).getOrThrow()
-        assertEquals(tablets("2"), started.course.dose)
+        assertEquals(dose("2"), started.course.dose)
         assertEquals(schedule(), started.course.schedule)
         // Запись эпизода несёт то же назначение: расходиться им нечем — менять его нельзя.
         assertEquals(started.course.prescription, started.record.prescription)
@@ -103,6 +105,13 @@ class CourseTest {
     @Test(expected = IllegalArgumentException::class)
     fun zeroDoseIsNotTreatment() {
         course(doseAmount = BigDecimal.ZERO)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun startedTreatmentWithAZeroDoseIsNotRepresentable() {
+        // Проверка черновика закрывала один путь; правило живёт на самой дозе, поэтому прямая
+        // сборка действующего курса — и восстановление сохранённого — тоже её соблюдают.
+        activeCourse(doseAmount = BigDecimal.ZERO)
     }
 
     @Test(expected = IllegalArgumentException::class)
