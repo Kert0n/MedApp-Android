@@ -5,6 +5,7 @@ import com.kert0n.medapp.domain.model.pack.Package
 import com.kert0n.medapp.domain.model.pack.PackageAccess
 import com.kert0n.medapp.domain.model.pack.PackageFacts
 import com.kert0n.medapp.domain.model.pack.PackageLifecycle
+import com.kert0n.medapp.domain.model.pack.PackageSharedFacts
 import com.kert0n.medapp.domain.model.value.Money
 import com.kert0n.medapp.domain.model.value.Quantity
 import java.time.Instant
@@ -46,12 +47,14 @@ fun pack(
     id = id,
     medKitId = medKitId,
     facts = PackageFacts(
-        name = name,
-        formId = formId,
-        category = category,
-        manufacturer = manufacturer,
-        country = country,
-        description = description,
+        shared = PackageSharedFacts(
+            name = name,
+            formId = formId,
+            category = category,
+            manufacturer = manufacturer,
+            country = country,
+            description = description
+        ),
         expiresOn = expiresOn,
         defaultIntakeAmount = defaultIntakeAmount,
         note = note,
@@ -69,3 +72,15 @@ fun pack(
 
 /** Сведения, взятые у пачки: круговой тест начинается с того, что уже сохранено. */
 fun factsOf(pkg: Package): PackageFacts = pkg.facts
+
+/** Правка одного общего поля: композиция читается в тесте как «та же пачка, другое название». */
+fun PackageFacts.withShared(
+    name: String = shared.name,
+    formId: Uuid? = shared.formId,
+    category: String? = shared.category,
+    manufacturer: String? = shared.manufacturer,
+    country: String? = shared.country,
+    description: String? = shared.description
+): PackageFacts = copy(
+    shared = PackageSharedFacts(name, formId, category, manufacturer, country, description)
+)

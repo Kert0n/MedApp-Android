@@ -23,6 +23,9 @@ fun PackageFacts.toPatchNetworkMapping(
     sync: PackageSyncState
 ): PackagePatchNetworkMapping {
     val known = current.facts
+    // Правка была только локальной — на провод не идёт ничего. Вопрос задаётся структуре, а не
+    // перечислением шести полей, где седьмое забудут (PLAN E2, D3).
+    if (shared == known.shared) return PackagePatchNetworkMapping(dto = null, formIdClearUnsupported = false)
     val dto = PackagePatchNetworkDTO(
         name = name.takeIf { it != known.name },
         formId = formId.takeIf { it != null && it != known.formId },

@@ -8,9 +8,11 @@ import com.kert0n.medapp.fixture.CAPSULE_FORM
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.factsOf
+import com.kert0n.medapp.fixture.withShared
 import com.kert0n.medapp.fixture.pack
 
 import java.math.BigDecimal
+import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -48,8 +50,17 @@ class PackagePatchNetworkMapperTest {
     }
 
     @Test
+    fun localOnlyEditIsAnsweredByTheComposition() {
+        // «Правка была только локальной?» — это вопрос к структуре сведений, а не сравнение шести
+        // полей россыпью, где седьмое забудут (PLAN E2, D3).
+        val localEdit = factsOf(onServer).copy(note = "в машине", expiresOn = LocalDate.of(2027, 3, 31))
+        assertEquals(factsOf(onServer).shared, localEdit.shared)
+        assertNull(localEdit.toPatchNetworkMapping(onServer, synced).dto)
+    }
+
+    @Test
     fun onlyTheChangedFieldTravels() {
-        val renamed = factsOf(onServer).copy(name = "Парацетамол-Дарница")
+        val renamed = factsOf(onServer).withShared(name = "Парацетамол-Дарница")
         val patch = renamed.toPatchNetworkMapping(onServer, synced)
         val dto = requireNotNull(patch.dto)
         assertEquals("Парацетамол-Дарница", dto.name)
@@ -59,7 +70,7 @@ class PackagePatchNetworkMapperTest {
 
     @Test
     fun clearedTextTravelsAsAnEmptyString() {
-        val patch = factsOf(onServer).copy(description = null)
+        val patch = factsOf(onServer).withShared(description = null)
             .toPatchNetworkMapping(onServer, synced)
         assertEquals("", requireNotNull(patch.dto).description)
     }
@@ -68,7 +79,7 @@ class PackagePatchNetworkMapperTest {
     fun clearingTheFormOfAServerPackIsReportedInsteadOfSentAsNull() {
         // `null` на проводе значит «не менять», а `""` не является UUID: молча выдать
         // неудалённую серверную форму за очищенную нельзя.
-        val patch = factsOf(onServer).copy(formId = null).toPatchNetworkMapping(onServer, synced)
+        val patch = factsOf(onServer).withShared(formId = null).toPatchNetworkMapping(onServer, synced)
         assertTrue(patch.formIdClearUnsupported)
         assertNull(patch.dto?.formId)
     }
@@ -76,14 +87,14 @@ class PackagePatchNetworkMapperTest {
     @Test
     fun clearingTheFormOfAPackNotYetOnTheServerIsFine() {
         // Ограничение — протокольное, поэтому зависит от предусловия, а не от самой пачки.
-        val patch = factsOf(onServer).copy(formId = null)
+        val patch = factsOf(onServer).withShared(formId = null)
             .toPatchNetworkMapping(onServer, notSynced)
         assertFalse(patch.formIdClearUnsupported)
     }
 
     @Test
     fun changingTheFormToAnotherOneTravels() {
-        val patch = factsOf(onServer).copy(formId = CAPSULE_FORM)
+        val patch = factsOf(onServer).withShared(formId = CAPSULE_FORM)
             .toPatchNetworkMapping(onServer, synced)
         assertEquals(CAPSULE_FORM, requireNotNull(patch.dto).formId)
         assertFalse(patch.formIdClearUnsupported)

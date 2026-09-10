@@ -5,6 +5,7 @@ import com.kert0n.medapp.domain.model.value.Money
 import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.SHARED_KIT
 import com.kert0n.medapp.fixture.factsOf
+import com.kert0n.medapp.fixture.withShared
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.tablets
 
@@ -38,13 +39,13 @@ class PackageStateTransitionsTest {
     @Test
     fun editReplacesTheWholeDescriptiveState() {
         val described = pack().describe(
-            factsOf(pack()).copy(
-                name = "Парацетамол-Дарница",
-                category = "жаропонижающие",
-                expiresOn = LocalDate.of(2027, 3, 31),
-                note = "в машине",
-                price = Money(BigDecimal("120.00"))
-            )
+            factsOf(pack())
+                .withShared(name = "Парацетамол-Дарница", category = "жаропонижающие")
+                .copy(
+                    expiresOn = LocalDate.of(2027, 3, 31),
+                    note = "в машине",
+                    price = Money(BigDecimal("120.00"))
+                )
         )
         assertEquals("Парацетамол-Дарница", described.name)
         assertEquals("жаропонижающие", described.facts.category)
@@ -56,7 +57,7 @@ class PackageStateTransitionsTest {
     @Test
     fun editClearsWhatWasCleared() {
         val filled = pack(category = "жаропонижающие", expiresOn = LocalDate.of(2027, 3, 31))
-        val cleared = filled.describe(factsOf(filled).copy(category = null, expiresOn = null))
+        val cleared = filled.describe(factsOf(filled).withShared(category = null).copy(expiresOn = null))
         assertNull(cleared.facts.category)
         assertNull(cleared.facts.expiresOn)
     }
@@ -64,7 +65,7 @@ class PackageStateTransitionsTest {
     @Test
     fun editDoesNotTouchQuantityOrOwnership() {
         val moved = pack(quantity = tablets("20"))
-        val described = moved.describe(factsOf(moved).copy(name = "другое"))
+        val described = moved.describe(factsOf(moved).withShared(name = "другое"))
         assertEquals(tablets("20"), described.quantity)
         assertEquals(HOME_KIT, described.medKitId)
     }

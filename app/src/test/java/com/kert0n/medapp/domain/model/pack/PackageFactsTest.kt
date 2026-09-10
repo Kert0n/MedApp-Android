@@ -4,6 +4,7 @@ import com.kert0n.medapp.domain.model.value.Money
 
 import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.factsOf
+import com.kert0n.medapp.fixture.withShared
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.tablets
 
@@ -22,12 +23,14 @@ class PackageFactsTest {
     @Test
     fun editCarriesEverythingDescriptive() {
         val facts = PackageFacts(
-            name = "Парацетамол",
-            formId = TABLET_FORM,
-            category = "жаропонижающие",
-            manufacturer = "Дарница",
-            country = "Украина",
-            description = "по одной при температуре",
+            shared = PackageSharedFacts(
+                name = "Парацетамол",
+                formId = TABLET_FORM,
+                category = "жаропонижающие",
+                manufacturer = "Дарница",
+                country = "Украина",
+                description = "по одной при температуре"
+            ),
             expiresOn = LocalDate.of(2027, 3, 31),
             defaultIntakeAmount = tablets("1"),
             note = "в машине",
@@ -49,18 +52,18 @@ class PackageFactsTest {
 
     @Test(expected = IllegalArgumentException::class)
     fun blankNameIsRejected() {
-        factsOf(pack()).copy(name = "   ")
+        factsOf(pack()).withShared(name = "   ")
     }
 
     @Test(expected = IllegalArgumentException::class)
     fun emptyStringIsNotAWayToSayThereIsNone() {
         // На проводе `""` означает очистку, в домене — ничего: два смысла в одном месте
         // разошлись бы при первом же маппинге.
-        factsOf(pack()).copy(category = "")
+        factsOf(pack()).withShared(category = "")
     }
 
     @Test(expected = IllegalArgumentException::class)
     fun overlongDescriptionIsRejected() {
-        factsOf(pack()).copy(description = "я".repeat(PACKAGE_DESCRIPTION_MAX_LENGTH + 1))
+        factsOf(pack()).withShared(description = "я".repeat(PACKAGE_DESCRIPTION_MAX_LENGTH + 1))
     }
 }

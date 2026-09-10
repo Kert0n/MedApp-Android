@@ -3,16 +3,17 @@ package com.kert0n.medapp.domain.model.pack
 import com.kert0n.medapp.domain.model.value.Money
 import com.kert0n.medapp.domain.model.value.Quantity
 import com.kert0n.medapp.domain.model.value.requireOptionalText
-import com.kert0n.medapp.domain.model.value.requireText
 import java.time.LocalDate
 import kotlin.uuid.Uuid
 
 /**
- * Описательные сведения об упаковке — то, что человек про неё знает и правит.
+ * Описательные сведения об упаковке целиком — то, что человек про неё знает и правит.
  *
- * **Часть пачки, а не мешок аргументов.** Границы длин объявлены здесь один раз, и [Package] их
- * не переобъявляет: пока сведения были отдельным носителем для фабрики, одни и те же шесть
- * проверок стояли в трёх местах и расходились бы молча.
+ * **Композиция, а не плоский список.** [shared] — то, что уезжает на сервер; остальные поля
+ * личные и не уезжают вовсе (PLAN C0). Пока граница жила в комментарии, каждый маппер выбирал
+ * поля вручную, а «локальная ли это правка» проверялось перечислением шести имён. Теперь это
+ * один вопрос к структуре, и сведения при этом остаются **одной** вещью: `PackageSharedFacts` —
+ * часть упаковки, а не второй тип рядом с ней (решение PR 3, PLAN E2).
  *
  * `null` означает «сведений нет», включая очистку: редактор загружает состояние целиком и
  * сохраняет целиком, поэтому `expiresOn = null` очищает срок, а `price = null` — цену. Отдельный
@@ -23,12 +24,7 @@ import kotlin.uuid.Uuid
  * сценарий без автоматической конверсии (PLAN D3, H3 №8, №9).
  */
 data class PackageFacts(
-    val name: String,
-    val formId: Uuid? = null,
-    val category: String? = null,
-    val manufacturer: String? = null,
-    val country: String? = null,
-    val description: String? = null,
+    val shared: PackageSharedFacts,
     val expiresOn: LocalDate? = null,
     val defaultIntakeAmount: Quantity? = null,
     val note: String? = null,
@@ -37,17 +33,15 @@ data class PackageFacts(
     val openedOn: LocalDate? = null
 ) {
     init {
-        requireText(name, PACKAGE_NAME_MAX_LENGTH, "PackageFacts.name")
-        requireOptionalText(category, PACKAGE_CATEGORY_MAX_LENGTH, "PackageFacts.category")
-        requireOptionalText(
-            manufacturer,
-            PACKAGE_MANUFACTURER_MAX_LENGTH,
-            "PackageFacts.manufacturer"
-        )
-        requireOptionalText(country, PACKAGE_COUNTRY_MAX_LENGTH, "PackageFacts.country")
-        requireOptionalText(description, PACKAGE_DESCRIPTION_MAX_LENGTH, "PackageFacts.description")
         requireOptionalText(note, PACKAGE_NOTE_MAX_LENGTH, "PackageFacts.note")
     }
+
+    val name: String get() = shared.name
+    val formId: Uuid? get() = shared.formId
+    val category: String? get() = shared.category
+    val manufacturer: String? get() = shared.manufacturer
+    val country: String? get() = shared.country
+    val description: String? get() = shared.description
 
     /**
      * Дата передаётся, а не берётся из часов: иначе свойство непроверяемо тестом.

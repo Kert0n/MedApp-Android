@@ -45,7 +45,7 @@ class PackageIdentityTest {
         val built = Package(
             id = PACK,
             medKitId = HOME_KIT,
-            facts = PackageFacts(name = "Парацетамол", formId = TABLET_FORM),
+            facts = PackageFacts(PackageSharedFacts(name = "Парацетамол", formId = TABLET_FORM)),
             quantity = tablets("20"),
             addedAt = Instant.EPOCH
         )
@@ -78,8 +78,10 @@ class PackageIdentityTest {
 
     @Test
     fun descriptiveFactsCarryTheirOwnInvariantsOnce() {
-        // Границы длин объявлены в PackageFacts, и Package их не переобъявляет.
-        val tooLong = runCatching { PackageFacts(name = "я".repeat(PACKAGE_NAME_MAX_LENGTH + 1)) }
+        // Границы длин объявлены сведениями, и Package их не переобъявляет.
+        val tooLong = runCatching {
+            PackageFacts(PackageSharedFacts(name = "я".repeat(PACKAGE_NAME_MAX_LENGTH + 1)))
+        }
         assertTrue(tooLong.isFailure)
     }
 }
