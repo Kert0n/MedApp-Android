@@ -2,6 +2,7 @@ package com.kert0n.medapp.domain.model.course
 
 import com.kert0n.medapp.domain.model.value.Quantity
 import com.kert0n.medapp.fixture.COURSE
+import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.LATER
 import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.course
@@ -59,7 +60,7 @@ class CourseTest {
     @Test
     fun activeCourseStillGetsRenamed() {
         // Название и заметка — не назначенное лечение (PLAN D5).
-        val active = course(status = CourseStatus.ACTIVE, title = "Курс")
+        val active = activeCourse().rename("Курс", null, LATER)
         assertEquals("Курс от врача", active.rename("Курс от врача", null, LATER).title)
     }
 
@@ -82,13 +83,13 @@ class CourseTest {
 
     @Test(expected = IllegalStateException::class)
     fun scheduleOfAnActiveCourseIsRefused() {
-        course(status = CourseStatus.ACTIVE).setDraftSchedule(schedule(), at = LATER)
+        activeCourse().setDraftSchedule(schedule(), at = LATER)
     }
 
     @Test(expected = IllegalStateException::class)
     fun doseOfAnActiveCourseIsRefused() {
         // Изменившееся лечение — отмена прежнего курса и новый, а не правка действующего.
-        course(status = CourseStatus.ACTIVE).setDraftDose(BigDecimal("3"), at = LATER)
+        activeCourse().setDraftDose(BigDecimal("3"), at = LATER)
     }
 
     @Test(expected = IllegalArgumentException::class)

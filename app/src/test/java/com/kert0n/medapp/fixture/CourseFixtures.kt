@@ -2,6 +2,7 @@ package com.kert0n.medapp.fixture
 
 import com.kert0n.medapp.domain.model.course.Course
 import com.kert0n.medapp.domain.model.course.CourseSchedule
+import com.kert0n.medapp.domain.model.course.CourseSource
 import com.kert0n.medapp.domain.model.course.CourseStatus
 import java.math.BigDecimal
 import java.time.DayOfWeek
@@ -56,6 +57,7 @@ fun course(
     unitId: Uuid? = null,
     formId: Uuid? = null,
     schedule: CourseSchedule? = null,
+    sources: List<CourseSource> = emptyList(),
     status: CourseStatus = CourseStatus.DRAFT,
     revision: Long = 0,
     createdAt: Instant = EARLIER,
@@ -68,8 +70,37 @@ fun course(
     unitId = unitId,
     formId = formId,
     schedule = schedule,
+    sources = sources,
     status = status,
     revision = revision,
     createdAt = createdAt,
     updatedAt = updatedAt
 )
+
+/**
+ * Действующий курс: доза, единица, форма и расписание у него уже есть по инварианту, и называть
+ * их в каждом тесте незачем. По умолчанию — две таблетки раз в день неделю.
+ */
+fun activeCourse(
+    id: Uuid = COURSE,
+    doseAmount: BigDecimal = BigDecimal("2"),
+    unitId: Uuid = TABLETS,
+    formId: Uuid = TABLET_FORM,
+    schedule: CourseSchedule = schedule(),
+    sources: List<CourseSource> = emptyList(),
+    revision: Long = 1,
+    updatedAt: Instant = EARLIER
+) = course(
+    id = id,
+    doseAmount = doseAmount,
+    unitId = unitId,
+    formId = formId,
+    schedule = schedule,
+    sources = sources,
+    status = CourseStatus.ACTIVE,
+    revision = revision,
+    updatedAt = updatedAt
+)
+
+/** Источник: пачка и её выделение в целых дозах. */
+fun source(packageId: Uuid, doses: Int) = CourseSource(packageId, doses)
