@@ -9,8 +9,13 @@ import kotlin.uuid.Uuid
  * значит неизвестно, а не ноль: [known] и [dosesOf] отвечают `null`, и что с этим делать, решает
  * вызывающий. Пачка, требующая сверки, в расклад не попадает (D4).
  */
-@JvmInline
-value class Availability(private val availableToMe: Map<Uuid, Quantity>) {
+class Availability(availableToMe: Map<Uuid, Quantity>) {
+
+    /**
+     * Своя копия, а не переданная карта: расклад, посчитанный один раз, не должен меняться вслед
+     * за тем, кто его собрал. Обёрткой-`value class` тут не обойтись — она хранит ту же ссылку.
+     */
+    private val availableToMe: Map<Uuid, Quantity> = availableToMe.toMap()
 
     /** `null` — про эту пачку мы не знаем; ноль — знаем, что не осталось ничего. */
     fun known(packageId: Uuid): Quantity? = availableToMe[packageId]

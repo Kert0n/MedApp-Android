@@ -51,6 +51,17 @@ class PackageQueueStateTest {
     }
 
     @Test
+    fun changingTheListAfterwardsDoesNotChangeTheProjection() {
+        // Свёртка считается при сборке: без своей копии добавленное позже удаление осталось бы
+        // невидимым, и остаток показывал бы двадцать при уже назначенном нуле.
+        val commands: MutableList<PackageSyncCommand> = mutableListOf(consume("3"))
+        val state = PackageQueueState(pack(quantity = tablets("20")), commands)
+        commands += PackageSyncCommand.Delete(PACK)
+        assertEquals(EffectiveAmount.Known(tablets("17")), state.amount)
+        assertEquals(1, state.unclosed.size)
+    }
+
+    @Test
     fun commandsOfAnotherPackAreNotFoldedIn() {
         // Чужая команда дала бы неверный остаток молча: состояние теперь знает, чьё оно.
         assertThrows(IllegalArgumentException::class.java) {

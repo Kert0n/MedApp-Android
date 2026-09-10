@@ -11,12 +11,20 @@ import kotlin.uuid.Uuid
  * (PLAN E1, E3). Домену отдаётся [amount]; признаки очереди остаются здесь, и экран сводит их с
  * доменным результатом сам.
  */
-data class PackageQueueState(
+class PackageQueueState(
     val packageId: Uuid,
     val confirmed: Quantity,
-    val unclosed: List<PackageSyncCommand> = emptyList(),
-    val unresolvedOperationIds: List<Uuid> = emptyList()
+    unclosed: List<PackageSyncCommand> = emptyList(),
+    unresolvedOperationIds: List<Uuid> = emptyList()
 ) {
+
+    /**
+     * Свои копии: свёртка считается один раз при сборке, и список, оставшийся у вызывающего,
+     * иначе расходился бы с уже посчитанным остатком.
+     */
+    val unclosed: List<PackageSyncCommand> = unclosed.toList()
+
+    val unresolvedOperationIds: List<Uuid> = unresolvedOperationIds.toList()
 
     init {
         // Чужая команда в этой свёртке дала бы неверный остаток молча.

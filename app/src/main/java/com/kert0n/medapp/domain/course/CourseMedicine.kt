@@ -4,6 +4,7 @@ import com.kert0n.medapp.domain.pack.Availability
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.Quantity
+import java.util.Objects
 import kotlin.uuid.Uuid
 
 /**
@@ -18,11 +19,18 @@ import kotlin.uuid.Uuid
  * себя чужие сущности ему незачем. Наружу этим не пользуются — публичная сторона у лечения одна,
  * и это курс: он принимает пачку и спрашивает препарат уже её идентификатором.
  */
-data class CourseMedicine(
-    val sources: List<CourseSource> = emptyList(),
+class CourseMedicine(
+    sources: List<CourseSource> = emptyList(),
     val formId: Uuid? = null,
     val unitId: Uuid? = null
 ) {
+
+    /**
+     * Своя копия, а не переданный список: `val` защищает ссылку, а не содержимое, и список,
+     * оставшийся у вызывающего, добавил бы пачку в обход проверки уникальности и без роста
+     * редакции курса.
+     */
+    val sources: List<CourseSource> = sources.toList()
 
     init {
         require(sources.distinctBy { it.packageId }.size == sources.size) {
@@ -89,15 +97,15 @@ data class CourseMedicine(
         if (from == to) return this
         val moved = sources.toMutableList()
         moved.add(to, moved.removeAt(from))
-        return copy(sources = moved)
+        return withSources(moved)
     }
 
     /** Задаёт выделение пачки в целых дозах; верхнюю границу называет [maxDoses]. */
     internal fun allocate(packageId: Uuid, doses: Doses): CourseMedicine {
         requireHolds(packageId)
-        return copy(sources = sources.map {
-            if (it.packageId == packageId) CourseSource(packageId, doses) else it
-        })
+        return withSources(
+            sources.map { if (it.packageId == packageId) CourseSource(packageId, doses) else it }
+        )
     }
 
     /**
@@ -168,7 +176,7 @@ data class CourseMedicine(
             trimmed[index] = CourseSource(source.packageId, source.allocatedDoses - taken)
             excess -= taken
         }
-        return copy(sources = trimmed)
+        return withSources(trimmed)
     }
 
     /**
@@ -253,6 +261,21 @@ data class CourseMedicine(
 
         val allows: Doses get() = whole?.let { minOf(allocated, it) } ?: allocated
     }
+
+    private fun withSources(sources: List<CourseSource>): CourseMedicine =
+        CourseMedicine(sources = sources, formId = formId, unitId = unitId)
+
+    override fun equals(other: Any?): Boolean =
+        this === other || (
+            other is CourseMedicine &&
+                sources == other.sources &&
+                formId == other.formId &&
+                unitId == other.unitId
+            )
+
+    override fun hashCode(): Int = Objects.hash(sources, formId, unitId)
+
+    override fun toString(): String = "CourseMedicine($sources, form=$formId, unit=$unitId)"
 
     private fun requireHolds(packageId: Uuid) {
         require(holds(packageId)) { "пачка $packageId не источник этого курса" }

@@ -45,6 +45,15 @@ class CourseMedicineTest {
     }
 
     @Test
+    fun changingTheListAfterwardsDoesNotChangeTheMedicine() {
+        // Иначе пачка попадала бы в препарат в обход проверки уникальности и без роста редакции.
+        val chosen = mutableListOf(source(PACK, 5))
+        val medicine = CourseMedicine(chosen, formId = TABLET_FORM, unitId = TABLETS)
+        chosen += source(PACK, 1)
+        assertEquals(listOf(PACK), medicine.sources.map { it.packageId })
+    }
+
+    @Test
     fun samePackageDoesNotEnterTheStackTwice() {
         val once = draftWithDose().attach(home, doses = doses(5), at = LATER).getOrThrow()
         val again = once.attach(home, doses = doses(1), at = LATER)

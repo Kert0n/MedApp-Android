@@ -101,6 +101,17 @@ class CourseScheduleTest {
     }
 
     @Test
+    fun changingTheListAfterwardsDoesNotChangeTheSchedule() {
+        // `val` защищает ссылку, а не содержимое: без своей копии список, оставшийся у
+        // вызывающего, менял бы и действующий курс, и назначение в записи эпизода.
+        val times = mutableListOf(LocalTime.of(9, 0))
+        val week = schedule(times = times)
+        times[0] = LocalTime.of(21, 0)
+        assertEquals(listOf(LocalTime.of(9, 0)), week.times)
+        assertEquals(schedule(), week)
+    }
+
+    @Test
     fun sameScheduleIsTheSameValue() {
         assertEquals(schedule(), schedule())
         assertEquals(schedule().hashCode(), schedule().hashCode())

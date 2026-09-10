@@ -7,6 +7,7 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
+import java.util.Objects
 
 /**
  * Календарное намерение человека: с какого по какое число, в какие дни недели, в какое время и
@@ -14,13 +15,22 @@ import java.time.temporal.ChronoUnit
  * неизменно (PLAN D5). Дата конца включительная; «в девять утра» — девять утра своей зоны, а не
  * системной, поэтому перелёт лечение не сдвигает.
  */
-data class CourseSchedule(
+class CourseSchedule(
     val start: LocalDate,
     val endInclusive: LocalDate,
-    val daysOfWeek: Set<DayOfWeek>,
-    val times: List<LocalTime>,
+    daysOfWeek: Set<DayOfWeek>,
+    times: List<LocalTime>,
     val zone: ZoneId
 ) {
+
+    /**
+     * Свои копии, а не переданные коллекции: `val` защищает ссылку, а не содержимое, и список,
+     * оставшийся у вызывающего, менял бы расписание действующего курса — вместе с назначением в
+     * записи эпизода, где оно неизменно по определению (PLAN D5).
+     */
+    val daysOfWeek: Set<DayOfWeek> = daysOfWeek.toSet()
+
+    val times: List<LocalTime> = times.toList()
 
     init {
         require(!endInclusive.isBefore(start)) {
@@ -34,6 +44,21 @@ data class CourseSchedule(
         }
         require(times == times.sorted()) { "времена хранятся по возрастанию" }
     }
+
+    override fun equals(other: Any?): Boolean =
+        this === other || (
+            other is CourseSchedule &&
+                start == other.start &&
+                endInclusive == other.endInclusive &&
+                daysOfWeek == other.daysOfWeek &&
+                times == other.times &&
+                zone == other.zone
+            )
+
+    override fun hashCode(): Int = Objects.hash(start, endInclusive, daysOfWeek, times, zone)
+
+    override fun toString(): String =
+        "CourseSchedule($start — $endInclusive, $daysOfWeek, $times, $zone)"
 
     /**
      * Сколько пунктов порождает расписание целиком. Считается арифметикой по неделям, а не
