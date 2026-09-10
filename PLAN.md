@@ -319,6 +319,7 @@ UUID и проверяем принадлежность; недоступнос�
 | **Версия и обвязка синхронизации** | `version`, `claimsVersion`, `syncedAt` в домене | `PackageSyncState` в слое данных                                                  | указание пользователя: домен содержит только бизнес-правила. Версия — токен, который клиент не толкует; о нём правило не формулируется, и ни один вычислитель D4–D5 его не читает |
 | **Статус упаковки**            | один `PackageStatus` из трёх значений             | `PackageLifecycle` + `PackageAccess`                                              | указание пользователя: жизнь пачки и наш доступ к ней — разные вопросы. Склейка вынуждала запрещать «архивная теряет доступ», хотя это обычная последовательность               |
 | **Фабрики против конструкторов** | `create`/`restore` у сущностей, фабрики у движений | публичные конструкторы; вид движения — тип (sealed)                             | указание пользователя: фабрики прикрывали слишком широкие типы и втащили в домен мешок аргументов. Узкие типы делают неверное состояние невыразимым                            |
+| **Раскладка по каталогам**     | всё в одном `model/`, файлы росли до двухсот строк | каталог называет понятие; один публичный тип — один файл                          | указание пользователя: так «где всё про упаковку» отвечается именем каталога. Одно деление повторяется на каждом слое, поэтому слой и понятие читаются независимо              |
 | **Предел целой части цены**    | брался из `QUANTITY_MAX_INTEGER_DIGITS`          | свой `MONEY_MAX_INTEGER_DIGITS`, серверный предел принят как продуктовый          | решение пользователя: цена на сервер не уезжает, и её граница — решение продукта, а не побочный эффект общей константы                        |
 | **Имена типов**                | придумывались под каждый случай                   | сущность + назначение + слой: `PackagePatchNetworkDTO`                            | решение пользователя: по имени видно, что это и чьё, без чтения KDoc                                                                          |
 | **Нижняя граница Android**     | Android 8.0 (`minSdk` 26)                        | **Android 10 (`minSdk` 29)**                                                      | решение пользователя 2026-09-09; ТЗ 4.5–4.6 называет 8.0, но доля 8.x не оправдывает поддержку, а 29 снимает часть ограничений платформы  |
@@ -1753,23 +1754,38 @@ ui  →  domain  ←  data (local | remote | sync)
 com.kert0n.medapp
 ├─ app/        MedApp(@HiltAndroidApp), MainActivity, navigation/
 ├─ core/       result/, time/(Clock), text/
-├─ presentation/  dto/ (ввод и состояние по содержимому), mapper/ (toDomain, toPresentationDTO)
 ├─ di/         NetworkModule, DatabaseModule, RepositoryModule, WorkModule, DispatcherModule
 ├─ domain/
-│   ├─ model/      Quantity, MedKit, Package, Course, Intake, StockAdjustment, ...
+│   ├─ model/      по понятиям: value/, medkit/, pack/, stock/, course/, intake/
 │   ├─ calc/       ScheduleCalculator, AllocationLimits, CoverageCalculator, ForecastCalculator
 │   ├─ repository/ интерфейсы
 │   └─ usecase/    сценарии
 ├─ data/
-│   ├─ remote/     dto/, medapp/(MedAppApi), crpt/(CrptApi)
+│   ├─ remote/     dto/ по понятиям, medapp/(MedAppApi), crpt/(CrptApi)
 │   ├─ local/      entity/, dao/, MedAppDatabase, converters/
-│   ├─ mapper/     dto↔domain, entity↔domain
+│   ├─ mapper/     по понятиям: dto↔domain, entity↔domain
 │   ├─ repository/ реализации
-│   └─ sync/       SyncOperationFactory, OperationSender, SnapshotApplier, SyncWorker
+│   └─ sync/       по понятиям: состояние синхронизации; SyncOperationFactory, OperationSender,
+│                  SnapshotApplier, SyncWorker
+├─ presentation/  dto/ и mapper/ по понятиям: ввод (toDomain) и состояние экрана по содержимому
 ├─ platform/   notifications/, scanner/, credentials/, connectivity/, clipboard/
 └─ feature/    bootstrap/, medkits/, packages/, courses/, schedule/, intake/,
                sharing/, analytics/, scanner/, settings/, syncstatus/
 ```
+
+**Внутри слоя каталог называет понятие, а не вид файла.** `domain/model/pack/`, `data/mapper/pack/`,
+`presentation/dto/pack/` — одно и то же деление повторяется на каждом слое, поэтому «где всё про
+упаковку» отвечается по имени каталога, а не поиском. Понятия добавляются по мере PR: `course/` и
+`intake/` появятся в PR 3, `stock/` в хранении — в PR 4.
+
+**Один публичный тип — один файл, названный по нему.** Исключение одно: перечисление причин отказа
+остаётся рядом со своим маппером, потому что вместе они и есть его контракт. Набор констант — это
+самостоятельная вещь, и он живёт в своём файле (`PackageLimits`, `MedKitLimits`, `DecimalLimits`),
+а не занимает первый экран файла с сущностью.
+
+**Виды события — соседние файлы одного пакета, а не вложенные типы.** Наследники sealed-интерфейса
+в Kotlin могут лежать в разных файлах того же пакета; вложенные — нет. Поэтому семь видов движения
+остатка видны списком каталога `domain/model/stock/`, а общий префикс `Stock*` держит их вместе.
 
 **Один Gradle-модуль `:app`.** Границы задаются пакетами и интерфейсами; модуль не дробится без
 отдельного обоснования. ViewModel не читает DAO и HTTP. Сохранённые данные приходят из Room,
