@@ -535,22 +535,37 @@ class Package(                            // СУЩНОСТЬ: тождеств�
     override fun equals(other: Any?): Boolean   // по id
 }
 
+/** Та часть сведений, что переходит границу публикации: описание ПРЕПАРАТА (C0, E2). */
+data class PackageSharedFacts(
+    val name: String,
+    val formId: Uuid? = null,
+    val category: String? = null,
+    val manufacturer: String? = null,
+    val country: String? = null,
+    val description: String? = null
+)
+
 /** Описательные сведения об упаковке целиком — аргумент describe. null = сведений нет. */
 data class PackageFacts(
-    val name: String,
-    val formId: Uuid?,
-    val category: String?,
-    val manufacturer: String?,
-    val country: String?,
-    val description: String?,
-    val expiresOn: LocalDate?,
-    val defaultIntakeAmount: Quantity?,
-    val note: String?,
-    val price: Money?,
-    val purchasedOn: LocalDate?,
-    val openedOn: LocalDate?
-)
+    val shared: PackageSharedFacts,
+    val expiresOn: LocalDate? = null,
+    val defaultIntakeAmount: Quantity? = null,
+    val note: String? = null,
+    val price: Money? = null,
+    val purchasedOn: LocalDate? = null,
+    val openedOn: LocalDate? = null
+) {
+    val name: String get() = shared.name   // и так же остальные пять общих полей
+}
 ```
+
+**Сведения не раздваиваются, а получают часть** (решение PR 3). `PackageSharedFacts` — не второй
+плоский тип рядом с упаковкой, а её часть, поэтому граница C0 переезжает из комментария в
+структуру. Следствий два. Шесть текстовых инвариантов объявлены один раз и не могут разойтись
+между упаковкой и намерением отправки. И вопрос «правка была только локальной?» — это
+`before.shared == after.shared`, а не сравнение шести полей россыпью, где седьмое забудут; сетевой
+маппер на этом и стоит. Имя — `SharedFacts`, а не `Description`: описание уже есть внутри, и
+второе имя дало бы `facts.description.description`.
 
 **Упаковка и аптечка — сущности, а не величины.** Пачка, из которой приняли таблетку, — та же
 пачка; переименованная аптечка — та же аптечка. Тождество — `id`, равенство по нему, `data class`
@@ -685,7 +700,7 @@ availableToMe    = 17 − 5 = 12            ✔ выделение можно н
 ошибка.
 
 ```kotlin
-/** Проекция для экранов. Ничего не хранит: иначе разъедется с очередью и с курсами. */
+/** Проекция для расчётов и экранов. Ничего не хранит: иначе разъедется с очередью и с курсами. */
 sealed interface StockViewState {
     data class Known(val effective: Quantity, val pending: Boolean) : StockViewState
     data class NeedsRecount(val lastObserved: Quantity, val unresolvedOperationIds: List<Uuid>) :
@@ -694,22 +709,35 @@ sealed interface StockViewState {
 
 data class PackageStock(
     val pkg: Package,
-    val pendingIntents: List<SyncIntent>, // незакрытые локальные намерения, в порядке sequence
-    val myAllocation: Quantity,         // из course_sources активных курсов
-    val course: CourseBrief?,           // курс, которому назначена пачка
-    val today: LocalDate
+    val today: LocalDate,
+    val pendingIntents: List<SyncIntent> = emptyList(), // незакрытые намерения ЭТОЙ пачки, в порядке sequence
+    val unresolvedOperationIds: List<Uuid> = emptyList(), // операции с неустановленным исходом
+    val myAllocation: Quantity = Quantity.zero(pkg.quantity.unitId), // из course_sources активных курсов
+    val course: CourseBrief? = null      // курс, которому назначена пачка
 ) {
     val stock: StockViewState
     val effective: Quantity?             // null при требуемой сверке
     val reservedByOthers: Quantity
+    val orphanClaim: Quantity            // своя бронь без локального владельца
     val freeForAnyone: Quantity?          // null = точное свободное неизвестно
     val availableToMe: Quantity?
     val isExpired: Boolean
-    val expiresSoon: Boolean
+    val expiresSoon: Boolean             // порог PACKAGE_EXPIRES_SOON_DAYS = 3, верхний из D8
 }
-
-data class CourseBrief(val id: Uuid, val title: String, val allocatedDoses: Int)
 ```
+
+Виды `StockViewState` лежат внутри него, а не соседними файлами: это два исхода одного вопроса,
+как `Mapped` и `Rejected` у приведения ввода, а не каталог видов события (H1, D7).
+
+`unresolvedOperationIds` приходит аргументом, потому что вопрос «установлен ли исход» решает
+очередь. Домен эти номера не толкует — он переносит их в `NeedsRecount`; но **знать о самом
+требовании сверки обязаны все расчёты**, а не только экран: обеспечение, предел ползунка и
+прогноз обязаны в этом случае не выдавать числа.
+
+Отсечение прежних намерений сверкой (`throughSequence`) делает слой данных: номером очереди
+владеет база, и в проекцию список приходит уже в порядке и без отсечённого — здесь сверка просто
+называет остаток. Отрицательный расчёт показывается нулём; нехватка — это конфликт операции, а не
+успешный расход, и разбирается он по состоянию очереди.
 
 `PackageStock` — доменная проекция для расчётов, а не состояние экрана. Она использует только
 доменные намерения E2, не знает DTO, HTTP и названий из словарей. Адаптер представления добавляет
@@ -738,8 +766,10 @@ data class CourseSchedule(
         require(!endInclusive.isBefore(start))
         require(daysOfWeek.isNotEmpty())
         require(times.isNotEmpty() && times.distinct().size == times.size)
+        require(times == times.sorted())
     }
 
+    /** Арифметикой по полным неделям и остатку: размер плана нужен до материализации. */
     fun occurrenceCount(): Int
 }
 
@@ -756,39 +786,61 @@ data class CourseSource(
     }
 }
 
-data class Course(
+/** СУЩНОСТЬ: тождество по id, обычный класс, состояние меняют только переходы. */
+class Course(
     val id: Uuid,
     val title: String,               // 1..200
-    val note: String?,               // ≤500 — «что купить», запись от врача
-    val doseAmount: BigDecimal?,     // разовая доза курса
-    val unitId: Uuid?,               // фиксируется первым источником
-    val formId: Uuid?,               // фиксируется первым источником
-    val schedule: CourseSchedule?,
-    val sources: List<CourseSource>, // ПОРЯДОК = приоритет расходования
-    val status: CourseStatus,
-    val revision: Long,              // редакция черновика/источников; активные доза и расписание неизменны
+    val note: String? = null,        // ≤500 — «что купить», запись от врача
+    val doseAmount: BigDecimal? = null, // разовая доза курса, строго положительная
+    val unitId: Uuid? = null,        // фиксируется первым источником
+    val formId: Uuid? = null,        // фиксируется первым источником
+    val schedule: CourseSchedule? = null,
+    val sources: List<CourseSource> = emptyList(), // ПОРЯДОК = приоритет расходования
+    val status: CourseStatus = CourseStatus.DRAFT,
+    val revision: Long = 0,          // редакция черновика/источников; активные доза и расписание неизменны
     val createdAt: Instant,
     val updatedAt: Instant
 ) {
+    init {
+        // Одна пачка — один источник; непустой стек означает зафиксированные форму и единицу;
+        // у ACTIVE есть расписание и доза, а источников может не остаться вовсе.
+    }
+
     val dose: Quantity?              // doseAmount + unitId
     val allocatedDosesTotal: Int
-    fun allocatedOf(packageId: Uuid): Quantity?
+    fun allocatedOf(packageId: Uuid): Quantity?   // выделение в единицах пачки = целевая бронь
 
-    fun rename(title: String, note: String?): Course
-    fun setDraftSchedule(schedule: CourseSchedule): Course   // только DRAFT, revision++
-    fun setDraftDose(amount: BigDecimal): Course              // только DRAFT, revision++
-    fun attach(pkg: Package, doses: Int): Result<Course>     // фиксирует форму и единицу
-    fun detach(packageId: Uuid): Course
-    fun reorder(from: Int, to: Int): Course
+    fun rename(title: String, note: String?, at: Instant): Course
+    fun setDraftSchedule(schedule: CourseSchedule, at: Instant): Course // только DRAFT, revision++
+    fun setDraftDose(amount: BigDecimal, at: Instant): Course           // только DRAFT, revision++
+    fun attach(pkg: Package, doses: Int, at: Instant): Result<Course>   // фиксирует форму и единицу
+    fun detach(packageId: Uuid, at: Instant): Course
+    fun reorder(from: Int, to: Int, at: Instant): Course
     fun allocate(
         packageId: Uuid,
-        doses: Int
+        doses: Int,
+        at: Instant
     ): Course        // предел вычисляется use case по свежему состоянию
-    fun activate(): Result<Course>
-    fun complete(): Course
-    fun cancel(): Course
+    fun activate(at: Instant): Result<Course>  // требует расписания, дозы и источника
+    fun complete(at: Instant): Course          // выделения освобождаются, стек остаётся историей
+    fun cancel(at: Instant): Course
 }
+
+/**
+ * Причина отказа — значение перечисления, а не текст: «укажите форму» и «эта пачка другой формы»
+ * ведут человека к разным действиям (PLAN H1). Внутри `Result` она приезжает как `CourseRejected`.
+ */
+enum class CourseRejection {
+    PACKAGE_UNUSABLE, ALREADY_ATTACHED, FORM_UNKNOWN, FORM_MISMATCH, UNIT_MISMATCH,
+    COURSE_CLOSED, NOT_DRAFT, SCHEDULE_MISSING, DOSE_MISSING, SOURCES_MISSING
+}
+
+/** Выписка о курсе для проекции остатка: полный `Course` был бы обратной зависимостью (D4). */
+data class CourseBrief(val id: Uuid, val title: String, val allocatedDoses: Int)
 ```
+
+`at: Instant` у переходов — не украшение: `updatedAt` обязан меняться на переходе, а часы домен
+получает аргументом, а не из системы (H1), иначе поведение курса непроверяемо тестом.
 
 ### Источник курса и серверная бронь — одно и то же
 
@@ -871,7 +923,8 @@ data class Course(
 **У курса свой `zone`.** Перелёт не сдвигает назначенное лечение молча; смена зоны курса —
 часть нового расписания: для активного курса создаётся новый курс, прошлый сохраняется.
 
-Правило перехода на летнее и зимнее время, одно на весь проект, живёт в `ScheduleCalculator`:
+Правило перехода на летнее и зимнее время, одно на весь проект, живёт в
+`domain/calc/schedule/Occurrences.kt` — в самой функции, а не в интерфейсе поверх неё:
 
 - **время не существует** (перевод вперёд) → сдвигаем **вперёд** до ближайшего существующего;
 - **время существует дважды** (перевод назад) → берём **первое** вхождение.
@@ -881,8 +934,9 @@ data class Course(
 ```kotlin
 data class SourceCoverage(
     val packageId: Uuid,
-    val allocatedDoses: Int,
-    val leftover: Quantity      // остаток пачки, не покрывающий целую дозу
+    val allocatedDoses: Int,     // намерение человека
+    val coveredDoses: Int,       // то из него, что подтверждает свежий остаток
+    val leftover: Quantity?      // остаток пачки, не покрывающий целую дозу; null — неизвестен
 )
 
 data class CourseCoverage(
@@ -890,12 +944,19 @@ data class CourseCoverage(
     val coveredDoses: Int,           // сколько из них обеспечено
     val coveredUntil: Instant?,      // «доступный курс» — до какого момента хватит
     val firstUncoveredAt: Instant?,  // с какого приёма не хватает
-    val perSource: List<SourceCoverage>
+    val perSource: List<SourceCoverage>,
+    val requiresRecount: Boolean = false  // по какой-то пачке исход операции не установлен
 ) {
     val missingDoses: Int get() = requiredDoses - coveredDoses
     val isFullyCovered: Boolean get() = missingDoses == 0
 }
 ```
+
+`coveredDoses` в строке источника отделено от `allocatedDoses` намеренно: они расходятся, когда
+чужая бронь выросла или пачку пересчитали вниз, и именно эта разница объясняет человеку, почему
+обеспечено меньше выделенного. `requiresRecount` — то же требование проверки, что у остатка
+(D4): выделение сохраняется, но за обеспеченное не выдаётся, а `leftover` у такого источника
+неизвестен, а не равен нулю.
 
 Верхняя граница ползунка, в дозах:
 
@@ -928,8 +989,12 @@ maxDoses(i) = min( availableToMe(i).dosesIn(dose),
 Обеспечение пересчитывается после изменения любого входа расчёта: применения снимка,
 подтверждения/пропуска/неответа приёма, пересчёта или утилизации запаса, изменения источников,
 активации/отмены курса, переноса/утраты доступа и разрешения неопределённой операции.
-Для источника `allocatedDoses = min(previousAllocatedDoses, availableToMe.dosesIn(course.dose))`.
-Избыток над оставшимся числом пунктов снимается с конца стека. Автоматического увеличения нет.
+Для источника `allocatedDoses = min(previousAllocatedDoses, availableToMe.dosesIn(course.dose))`;
+это `clampAllocations` в `domain/calc/allocation/`. Избыток над оставшимся числом пунктов
+снимается с конца стека (`trimToRequired`): сверху расходуют, снизу освобождают, и
+пропорциональное снятие тронуло бы источник, из которого человек как раз принимает.
+Автоматического увеличения нет. Функция возвращает **только источники** — тронуть календарь ей
+нечем, и это и есть машинная запись правила «расписание при нехватке не меняется».
 При `NeedsRecount` числовой предел неизвестен: сохраняем последнее выделение, помечаем обеспечение
 требующим проверки и не отправляем его автоматическую замену до сверки. Если сервер изменил форму
 или единицу пачки, несовместимый источник отключается с объяснением, а доза/единица курса не
@@ -951,7 +1016,8 @@ maxDoses(i) = min( availableToMe(i).dosesIn(dose),
 
 Для частичной или увеличенной дозы исходный источник ограничивается одновременно прежним
 выделенным объёмом за вычетом фактического расхода и доступным остатком после расхода:
-`floor(max(0, min(oldAllocatedAmount − takenAmount, availableAfter)) / plannedDose)`.
+`floor(max(0, min(oldAllocatedAmount − takenAmount, availableAfter)) / plannedDose)` —
+это `dosesAfterIntake` в `domain/calc/allocation/`.
 Затем суммарные выделения ограничиваются оставшейся потребностью с конца стека.
 Пример: 5 доз по 2, принято 1 → расход 1, осталось 4 целых выделенных дозы (8 единиц), 1
 освобождена.
@@ -976,25 +1042,23 @@ enum class IntakeStatus {
     CANCELLED  // плановый пункт отменён вместе с курсом
 }
 
-data class Intake(
+/** СУЩНОСТЬ: подтверждение не делает приём другим приёмом. Тождество по id. */
+class Intake(
     val id: Uuid,
-    val courseId: Uuid?,               // null — внеплановый разовый приём
-    val courseRevision: Long?,         // какой редакцией расписания порождён
-    val plannedPackageId: Uuid?,       // null, когда приём НЕ ОБЕСПЕЧЕН
-    val takenPackageId: Uuid?,         // null, пока не подтверждён
-    val medKitId: Uuid?,               // аптечка НА МОМЕНТ СОБЫТИЯ
-    val plannedAt: Instant?,
-    val scheduledOn: LocalDate?,       // исходная дата пункта в зоне курса
-    val scheduledTime: LocalTime?,     // исходное время, до разрешения DST
-    val plannedAmount: Quantity?,
-    val takenAt: Instant?,
-    val takenAmount: Quantity?,
     val unitId: Uuid,                  // единица НА МОМЕНТ СОБЫТИЯ
-    val respondedAt: Instant?,
     val status: IntakeStatus,
-    val accounting: IntakeAccounting,
-    val operationId: Uuid?,           // связь с расходом в очереди
-    val reconciliationId: Uuid?       // ручная сверка, если факт включён в неё
+    val courseId: Uuid? = null,        // null — внеплановый разовый приём
+    val courseRevision: Long? = null,  // какой редакцией расписания порождён
+    val plannedPackageId: Uuid? = null, // null, когда приём НЕ ОБЕСПЕЧЕН
+    val takenPackageId: Uuid? = null,  // null, пока не подтверждён
+    val medKitId: Uuid? = null,        // аптечка НА МОМЕНТ СОБЫТИЯ
+    val plannedAt: Instant? = null,
+    val scheduledOn: LocalDate? = null,   // исходная дата пункта в зоне курса
+    val scheduledTime: LocalTime? = null, // исходное время, до разрешения DST
+    val plannedAmount: Quantity? = null,
+    val takenAt: Instant? = null,
+    val takenAmount: Quantity? = null,
+    val respondedAt: Instant? = null
 ) {
     init {
         require(
@@ -1003,11 +1067,36 @@ data class Intake(
         )
         require(status != IntakeStatus.PLANNED || plannedAt != null)
         require(courseId != null || status == IntakeStatus.TAKEN)  // внеплановый только состоявшийся
+        // Пункт курса опознаётся редакцией и исходными датой со временем — это его тождество при
+        // повторной материализации (F4); у внепланового факта их нет вовсе.
+        // Количества измеряются unitId, принятый ноль — это пропуск, а не приём.
     }
+
+    val isSupplied: Boolean            // источник с целой дозой под пункт найден
+
+    fun confirm(packageId: Uuid, medKitId: Uuid, amount: Quantity, at: Instant): Intake
+    fun skip(at: Instant): Intake      // только PLANNED, идемпотентно для самого пропуска
+    fun miss(at: Instant): Intake
+    fun cancel(at: Instant): Intake
 }
 ```
 
+**Учёт расхода — не свойство приёма** (решение PR 3). `accounting`, `operationId` и
+`reconciliationId` живут в `IntakeSyncState` слоя данных: в локальной аптечке исходящих операций
+нет вовсе (E1), значит понятие существует только из-за сервера — тот же довод, что снял версию
+предусловия с упаковки (D3). Ни одно правило о приёме — переходы, доза, обеспечение — его не
+читает. Инвариант «у `TAKEN` не бывает `NOT_APPLICABLE`» проверяется транзакцией, которая меняет
+статус и учёт вместе (F5), где PLAN его и держит.
+
 ```kotlin
+// data/sync/intake — обвязка синхронизации, не домен
+data class IntakeSyncState(
+    val intakeId: Uuid,
+    val accounting: IntakeAccounting = IntakeAccounting.NOT_APPLICABLE,
+    val operationId: Uuid? = null,       // связь с расходом в очереди
+    val reconciliationId: Uuid? = null   // ручная сверка, если факт включён в неё
+)
+
 enum class IntakeAccounting {
     NOT_APPLICABLE,   // PLANNED / SKIPPED / MISSED / CANCELLED, расхода нет
     LOCAL_APPLIED,    // локальный остаток и факт записаны одной транзакцией
@@ -1240,12 +1329,12 @@ data class NotificationSettings(
 
 | намерение                    | проекция                                                                                                   |
 |------------------------------|------------------------------------------------------------------------------------------------------------|
-| `Consume(amount)`            | вычесть `amount` один раз                                                                                  |
-| `CorrectStock(actual)`       | заменить на введённый фактический остаток; это не дельта                                                   |
-| `DeletePackage`              | ноль и состояние ожидающего архивирования                                                                  |
+| `ConsumeIntent(amount)`      | вычесть `amount` один раз                                                                                  |
+| `CorrectStockIntent(actual)` | заменить на введённый фактический остаток; это не дельта                                                   |
+| `DeletePackageIntent`        | ноль и состояние ожидающего архивирования                                                                  |
 | описательная правка, бронь   | количества не меняют                                                                                       |
-| `CreatePackage`              | начальная база уже зафиксирована локально; второй приход не создаётся                                      |
-| `ReconcileStock`             | после отсечения прежних намерений на `throughSequence` использовать `actual`, более новые применить сверху |
+| `CreatePackageIntent`        | начальная база уже зафиксирована локально; второй приход не создаётся                                      |
+| `ReconcileStockIntent`       | после отсечения прежних намерений на `throughSequence` использовать `actual`, более новые применить сверху |
 
 При отрицательном расчёте показываем ноль и отдельный дефицит/конфликт; ошибку не превращаем в
 успешный расход. Для неподтверждённых описательных изменений также нужна проекция сохранённого
@@ -1268,49 +1357,46 @@ data class NotificationSettings(
 
 ## E2. Очередь: намерение, запрос, исход
 
-**Граница слоёв.** `SyncIntent`, `PackageDescription` и `SyncOperationStatus` — доменные типы
-без зависимостей от DTO и HTTP. `PackageDescription` — описательные сведения о препарате:
-название, форма, категория, производитель, страна и описание, с теми же инвариантами, что в D3.
-Личные срок, заметка и цена остаются в локальных сведениях упаковки и не дублируются в намерении
-отправки. Эти типы пока запланированы в PR 3.
+**Граница слоёв.** `SyncIntent`, его виды и `SyncOperationStatus` — доменные типы без
+зависимостей от DTO и HTTP. Описательные сведения, переходящие границу публикации, — это
+`PackageSharedFacts`, **часть** `PackageFacts` из D3, а не отдельный `PackageDescription` рядом с
+ней (решение PR 3): инварианты текста объявлены один раз, и «уезжает ли эта правка» отвечается
+структурой. Личные срок, заметка и цена остаются в локальных сведениях упаковки и в намерении
+отправки не появляются по типу.
+
+**Вид намерения — это тип, и виды лежат по файлам** — как виды движения остатка (D7). Суффикс, а
+не префикс: у намерения первым читается глагол (`ConsumeIntent`, `SetClaimIntent`). Видов
+двенадцать; `sequence` в них нет — номер принадлежит базе, которая его выдаёт, а домен получает
+намерения уже в порядке.
 
 ```kotlin
-// domain/model — смысл действия, не формат запроса
-data class PackageDescription(
-    val name: String,
-    val formId: Uuid?,
-    val category: String?,
-    val manufacturer: String?,
-    val country: String?,
-    val description: String?
-) // инварианты текста из D3; это значение, а не сетевой DTO
+// domain/model/sync — смысл действия, не формат запроса; по файлу на вид
+sealed interface SyncIntent
 
-sealed interface SyncIntent {
-    data class CreateMedKit(val medKitId: Uuid) : SyncIntent
-    data class DeleteMedKit(val medKitId: Uuid, val transferTo: Uuid?) : SyncIntent
-    data class LeaveMedKit(val medKitId: Uuid) : SyncIntent
-    data class CreatePackage(
-        val packageId: Uuid, val medKitId: Uuid,
-        val quantity: Quantity, val description: PackageDescription
-    ) : SyncIntent
-    data class DescribePackage(
-        val packageId: Uuid,
-        val before: PackageDescription, val after: PackageDescription
-    ) : SyncIntent
-    data class CorrectStock(val packageId: Uuid, val actual: Quantity) : SyncIntent
-    data class MovePackage(val packageId: Uuid, val targetMedKitId: Uuid) : SyncIntent
-    data class DeletePackage(val packageId: Uuid) : SyncIntent
-    data class Consume(
-        val packageId: Uuid, val amount: Quantity, val intakeId: Uuid,
-        val claimAfter: Quantity?
-    ) : SyncIntent
-    data class SetClaim(val packageId: Uuid, val amount: Quantity) : SyncIntent
-    data class ReleaseClaim(val packageId: Uuid) : SyncIntent
-    data class ReconcileStock(
-        val packageId: Uuid, val actual: Quantity,
-        val throughSequence: Long
-    ) : SyncIntent
-}
+data class CreateMedKitIntent(val medKitId: Uuid) : SyncIntent
+data class DeleteMedKitIntent(val medKitId: Uuid, val transferTo: Uuid? = null) : SyncIntent
+data class LeaveMedKitIntent(val medKitId: Uuid) : SyncIntent
+data class CreatePackageIntent(
+    val packageId: Uuid, val medKitId: Uuid,
+    val quantity: Quantity, val facts: PackageSharedFacts   // остаток строго положителен
+) : SyncIntent
+data class DescribePackageIntent(
+    val packageId: Uuid,
+    val before: PackageSharedFacts, val after: PackageSharedFacts  // before != after
+) : SyncIntent
+data class CorrectStockIntent(val packageId: Uuid, val actual: Quantity) : SyncIntent
+data class MovePackageIntent(val packageId: Uuid, val targetMedKitId: Uuid) : SyncIntent
+data class DeletePackageIntent(val packageId: Uuid) : SyncIntent
+data class ConsumeIntent(
+    val packageId: Uuid, val amount: Quantity, val intakeId: Uuid,
+    val claimAfter: Quantity? = null
+) : SyncIntent
+data class SetClaimIntent(val packageId: Uuid, val amount: Quantity) : SyncIntent  // не ноль
+data class ReleaseClaimIntent(val packageId: Uuid) : SyncIntent
+data class ReconcileStockIntent(
+    val packageId: Uuid, val actual: Quantity,
+    val throughSequence: Long
+) : SyncIntent
 
 // data/sync — технический запрос, недоступный доменным вычислителям
 data class PreparedRequest(
@@ -1325,7 +1411,7 @@ data class PreparedRequest(
     val preparedAt: Instant
 )
 
-// domain/model — состояние исхода, нужное проекциям
+// domain/model/sync — состояние исхода, нужное проекциям
 enum class SyncOperationStatus {
     PENDING,         // ожидает; prepared != null означает сохранённый запрос, который менять нельзя
     SENDING,         // запрос выполняется
@@ -1357,9 +1443,9 @@ data class SyncOperation(
 ```
 
 Сетевой маппер переводит доменное намерение в `PackagePostNetworkDTO` / `PackagePatchNetworkDTO`
-только при подготовке запроса. `DescribePackage.before/after` сохраняют исходное и желаемое
+только при подготовке запроса. `DescribePackageIntent.before/after` сохраняют исходное и желаемое
 описание: неизменённые поля не отправляются, очистка текста становится `""`, ограничение очистки
-формы не теряется. Проверка исходной версии и конфликт описания остаются по E3. `CorrectStock`
+формы не теряется. Проверка исходной версии и конфликт описания остаются по E3. `CorrectStockIntent`
 выражает абсолютный пересчёт; ноль переводится в DELETE. Создание требует положительного остатка
 и в доменном сценарии, и в DTO POST, включая записи `"0.0"` и `"000.000000"`.
 
@@ -1616,7 +1702,7 @@ sealed interface MedKitRemoval {
 | `course_times`                | `course_id` FK, `minutes_of_day`; UNIQUE(пара)                                                                                                                                    | Времена — список; уникальность пары не даёт завести одно время дважды                                                                                                                                                                                                                      |
 | `course_sources`              | `course_id` FK, `package_id` FK, `position`, `allocated_doses`; PK(`course_id`,`package_id`), UNIQUE(`course_id`,`position`)                                                      | Порядок = приоритет. Уникальность позиции ловит сбой перетаскивания                                                                                                                                                                                                                        |
 | `active_package_assignments`  | **`package_id` PRIMARY KEY**, `course_id` FK                                                                                                                                      | Это и есть механизм «одна пачка — один активный курс». Проверка «а нет ли уже» перед вставкой не годится: два экрана записали бы одновременно и оба увидели бы пусто. Строка появляется при `activate()`, исчезает при завершении, отмене и отвязке                                        |
-| `intakes`                     | поля `Intake`; UNIQUE(`course_id`,`scheduled_on`,`scheduled_time`); FK на плановую/фактическую `packages` **RESTRICT**, FK на `courses` **RESTRICT**                              | История не удаляется каскадом                                                                                                                                                                                                                                                              |
+| `intakes`                     | поля `Intake` **без колонок учёта**; `accounting`, `operation_id`, `reconciliation_id` — обвязка синхронизации (`IntakeSyncState`); UNIQUE(`course_id`,`scheduled_on`,`scheduled_time`); FK на плановую/фактическую `packages` **RESTRICT**, FK на `courses` **RESTRICT** | История не удаляется каскадом. Колонки учёта живут в той же строке, но доменная модель их не носит: их меняют только транзакционные сценарии F5, и правила о приёме их не читают (D6) |
 | `stock_adjustments`           | поля `StockAdjustment`; FK на `packages` **RESTRICT**                                                                                                                             | То же                                                                                                                                                                                                                                                                                      |
 | `sync_operations`             | поля `SyncOperation`; `sequence` UNIQUE, монотонен                                                                                                                                | Очередь                                                                                                                                                                                                                                                                                    |
 | `sync_operation_dependencies` | `operation_id` FK, `depends_on_id` FK; PK(пара)                                                                                                                                   | Зависимости отдельной таблицей, а не размазанными по payload                                                                                                                                                                                                                               |
@@ -1625,6 +1711,8 @@ sealed interface MedKitRemoval {
 ## F2. Ограничения в схеме, а не в коде
 
 - `packages.quantity >= 0`; `course_sources.allocated_doses >= 0`; `courses.dose_amount > 0`.
+- У `intakes` учёт `NOT_APPLICABLE` не сочетается с `TAKEN`, и наоборот: условие проверяется
+  транзакцией F5, потому что статус и учёт живут в разных типах домена и данных (D6).
 - Единица источника совпадает с единицей курса (проверяется при вставке, подкреплено тестом).
 - `active_package_assignments.package_id` — первичный ключ (одна пачка — один курс).
 - `UNIQUE(course_id, position)` в `course_sources`.
@@ -1756,8 +1844,8 @@ com.kert0n.medapp
 ├─ core/       result/, time/(Clock), text/
 ├─ di/         NetworkModule, DatabaseModule, RepositoryModule, WorkModule, DispatcherModule
 ├─ domain/
-│   ├─ model/      по понятиям: value/, medkit/, pack/, stock/, course/, intake/
-│   ├─ calc/       ScheduleCalculator, AllocationLimits, CoverageCalculator, ForecastCalculator
+│   ├─ model/      по понятиям: value/, medkit/, pack/, stock/, course/, intake/, sync/
+│   ├─ calc/       по вычислению: schedule/, allocation/, coverage/, forecast/ — чистые функции
 │   ├─ repository/ интерфейсы
 │   └─ usecase/    сценарии
 ├─ data/
@@ -1775,8 +1863,10 @@ com.kert0n.medapp
 
 **Внутри слоя каталог называет понятие, а не вид файла.** `domain/model/pack/`, `data/mapper/pack/`,
 `presentation/dto/pack/` — одно и то же деление повторяется на каждом слое, поэтому «где всё про
-упаковку» отвечается по имени каталога, а не поиском. Понятия добавляются по мере PR: `course/` и
-`intake/` появятся в PR 3, `stock/` в хранении — в PR 4.
+упаковку» отвечается по имени каталога, а не поиском. Понятия добавляются по мере PR: `course/`,
+`intake/` и `sync/` появились в PR 3, `stock/` в хранении — в PR 4. То же деление держит и
+`calc/`, только называет он не понятие, а вычисление: `schedule/`, `allocation/`, `coverage/`,
+`forecast/`.
 
 **Один публичный тип — один файл, названный по нему.** Исключение одно: перечисление причин отказа
 остаётся рядом со своим маппером, потому что вместе они и есть его контракт. Набор констант — это
@@ -1801,54 +1891,66 @@ DTO состояния не содержат сущностей; доменны�
 Числа при отображении сохранённого состояния нормализуются, чтобы `1` и `1.000000` не создавали
 ложных изменений. Несохранённый ввод остаётся как напечатан, без такой нормализации.
 
-Чистые вычислители получают все входы явно, без Room и системных часов:
+**Вычислители — чистые функции, а не интерфейсы** (решение PR 3). Они детерминированы и все
+входы получают явно, без Room и системных часов: подменять их в тестах нечем и незачем, а
+интерфейс с единственной реализацией — та же церемония, что фабрика поверх конструктора.
+Файл называется по функции, тип — по типу; правило «один публичный тип — один файл» это не
+отменяет.
 
 ```kotlin
+// domain/calc/schedule
 data class ScheduledOccurrence(val localDate: LocalDate, val localTime: LocalTime, val at: Instant)
+
+// Интервал [from, until), включительная дата конца CourseSchedule; правило DST — здесь.
+fun occurrences(
+    schedule: CourseSchedule, from: Instant, until: Instant
+): List<ScheduledOccurrence>
+
+// Потребность считается календарём, а не строками окна: resolved — по исходным дате и времени.
+fun countRemaining(
+    schedule: CourseSchedule, from: Instant, resolved: Set<Pair<LocalDate, LocalTime>>
+): Int
+
+// domain/calc/allocation
+fun maxDoses(
+    packageId: Uuid, course: Course, requiredDoses: Int, availability: Map<Uuid, Quantity>
+): Int
+fun clampAllocations(
+    course: Course, requiredDoses: Int, availability: Map<Uuid, Quantity>
+): List<CourseSource>
+fun trimToRequired(sources: List<CourseSource>, requiredDoses: Int): List<CourseSource>
+fun dosesAfterIntake(
+    allocatedDoses: Int, dose: Quantity, taken: Quantity, availableAfter: Quantity
+): Int
+
+// domain/calc/coverage
+// Оставшиеся пункты включают просроченные PLANNED и календарь за окном Room.
+// Вызывающий готовит их из расписания и ответов, не только из 60-дневного кэша.
+fun coverage(
+    course: Course, remaining: List<ScheduledOccurrence>, availability: Map<Uuid, Quantity>
+): CourseCoverage
+fun assignSources(
+    course: Course, upcoming: List<Intake>, availability: Map<Uuid, Quantity>
+): Map<Uuid, Uuid?>
+
+// domain/calc/forecast
 data class PackageForecast(
     val packageId: Uuid, val at: Instant, val remaining: Quantity?,
     val reservedByOthers: Quantity, val expired: Boolean,
     val requiresRecount: Boolean
 )
-interface ScheduleCalculator {
-    // Интервал [from, until), учитывает включительную дату конца CourseSchedule.
-    fun occurrences(
-        schedule: CourseSchedule,
-        from: Instant,
-        until: Instant
-    ): List<ScheduledOccurrence>
-    fun countRemaining(
-        schedule: CourseSchedule, from: Instant,
-        resolved: Set<Pair<LocalDate, LocalTime>>
-    ): Int
-}
-interface AllocationLimits {
-    fun maxDoses(
-        packageId: Uuid, course: Course, requiredDoses: Int,
-        availability: Map<Uuid, Quantity>
-    ): Int
-}
-interface CoverageCalculator {
-    // Оставшиеся пункты включают просроченные PLANNED и календарь за окном Room.
-    // Вызывающий готовит их из расписания и ответов, не только из 60-дневного кэша.
-    fun coverage(
-        course: Course, remaining: List<ScheduledOccurrence>,
-        availability: Map<Uuid, Quantity>
-    ): CourseCoverage
-    fun assignSources(
-        course: Course, upcoming: List<Intake>,
-        availability: Map<Uuid, Quantity>
-    ): Map<Uuid, Uuid?>
-}
-interface ForecastCalculator {
-    // Дата включительно в reportZone; горизонт не больше трёх календарных месяцев.
-    fun remainingOn(
-        date: LocalDate, reportZone: ZoneId, now: Instant,
-        packages: List<PackageStock>, courses: List<Course>,
-        resolved: List<Intake>
-    ): List<PackageForecast>
-}
+// Дата включительно в reportZone; горизонт не больше трёх календарных месяцев.
+fun remainingOn(
+    date: LocalDate, reportZone: ZoneId, now: Instant,
+    packages: List<PackageStock>, courses: List<Course>,
+    resolved: List<Intake>
+): List<PackageForecast>
 ```
+
+Во всех четырёх `availability` — это `availableToMe` по пачкам, и **отсутствие ключа значит
+«неизвестно», а не ноль**: при требуемой сверке выделение сохраняется, обеспечение помечается
+требующим проверки, а предел ползунка остаётся прежним. Один способ сказать «числа нет» на все
+вычисления.
 
 `Int` для числа пунктов не переполняется: размер расписания валидируется до материализации;
 слишком большой план отвергается с объяснением. Границы дат и политики DST определены в D5/F4.
@@ -2216,17 +2318,17 @@ enum class PackageSort { NAME, EXPIRY, ADDED_AT, QUANTITY }
 |----|----------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
 | 1  | `Курс начинается заметкой, а не расписанием`                   | `Course`, `CourseStatus`, `DRAFT`, `rename`                                                             |
 | 2  | `Расписание знает свой часовой пояс`                           | `CourseSchedule`, инварианты                                                                            |
-| 3  | `Переход на летнее время разрешается одним названным правилом` | `ScheduleCalculator`: несуществующее время вперёд, повторяющееся — первое вхождение                     |
+| 3  | `Переход на летнее время разрешается одним названным правилом` | `occurrences`: несуществующее время вперёд, повторяющееся — первое вхождение                             |
 | 4  | `Расписание строится окном, а не на год вперёд`                | окно 60 дней, достройка                                                                                 |
 | 5  | `Источник курса — значение со своим местом в стеке`            | `CourseSource`, `attach`/`detach`/`reorder`                                                             |
 | 6  | `Форму и единицу курса задаёт первый источник`                 | фиксация; `formId = null` несовместим ни с чем                                                          |
-| 7  | `Выделение измеряется приёмами, и тупика больше нет`           | `allocate` в дозах, `AllocationLimits.maxDoses`                                                         |
-| 8  | `Обеспечение вычисляется и называет первый непокрытый приём`   | `CoverageCalculator`, `CourseCoverage`                                                                  |
+| 7  | `Выделение измеряется приёмами, и тупика больше нет`           | `allocate` в дозах, `maxDoses`                                                                           |
+| 8  | `Обеспечение вычисляется и называет первый непокрытый приём`   | `coverage`, `CourseCoverage`                                                                             |
 | 9  | `Источники расходуются сверху вниз и сами не появляются`       | порядок стека, необеспеченный приём не записывается                                                     |
 | 10 | `Пропуск освобождает выделение, а не оставляет бронь`          | пересчёт при `SKIPPED`, `MISSED`, частичной дозе                                                        |
 | 11 | `Нехватка зажимает выделение, не трогая расписания`            | формула пересчёта и все события изменения её входов (D5, F5)                                            |
-| 12 | `Прогноз считается формулой, а не строками`                    | сигнатуры H1, `ForecastCalculator`                                                                      |
-| 13 | `Приём и его учёт имеют явные состояния`                       | `Intake`, `IntakeAccounting`, переходы D6; доменные `SyncIntent`, `PackageDescription`, `SyncOperationStatus`; запись очереди `SyncOperation` и `PreparedRequest` — data в PR 4 |
+| 12 | `Прогноз считается формулой, а не строками`                    | сигнатуры H1, `remainingOn`, `PackageStock`                                                              |
+| 13 | `Приём и его учёт имеют явные состояния`                       | `Intake`, `IntakeStatus`, переходы D6; `IntakeSyncState` — data; доменные `SyncIntent` с видами по файлам, `SyncOperationStatus`, `PackageSharedFacts`; запись очереди `SyncOperation` и `PreparedRequest` — data в PR 4 |
 
 **Тесты:** окно расписания через месяц и год; **несуществующее и повторяющееся время** в дни
 перехода — по названному правилу; пустая маска дней отвергнута; потребность 28 при выделении 5 и 4
@@ -2560,7 +2662,7 @@ HTTP сам не повторяет команды; `Retry-After` и backoff с�
 |---|---------------------------------------------------|----------------------------------|
 | 1 | `Сводка считает пачки, а не догадки`              | экран 26, сводка                 |
 | 2 | `Цена без цены не превращается в ноль`            | отдельный счётчик пачек без цены |
-| 3 | `Прогноз считается формулой на три месяца`        | `ForecastCalculator`             |
+| 3 | `Прогноз считается формулой на три месяца`        | `remainingOn`                    |
 | 4 | `Движение за период сходится`                     | баланс                           |
 | 5 | `Отчёт называет начало доступной истории`         | момент вступления в аптечку      |
 | 6 | `Неподтверждённый расход виден отдельной строкой` | `IntakeAccounting`               |
@@ -2692,7 +2794,7 @@ TalkBack; отсутствие связи при запуске уже наст�
 |         | **Приём**                                                           |                                         |            |           |                                            |           |
 | REQ-017 | Разовая доза как placeholder, переопределяемый                      | ТЗ 4.1.1.4; уточнение C1 от 2026-09-09  | H3 №10     | 10        | —                                          | —         |
 | REQ-018 | Разовый приём                                                       | ТЗ 4.1.1.4                              | D6         | 10        | списывает ровно один раз                   | —         |
-| REQ-019 | Курс: доза, даты, дни недели, времена в дне                         | ТЗ 4.1.1.4                              | D5         | 3, 9      | `ScheduleCalculator`                       | —         |
+| REQ-019 | Курс: доза, даты, дни недели, времена в дне                         | ТЗ 4.1.1.4                              | D5         | 3, 9      | `occurrences`, `countRemaining`             | —         |
 | REQ-020 | Валидация количества под курс                                       | ТЗ 4.1.1.4                              | D5, D4     | 3, 9      | **сокращается обеспечение, не курс** (C1)  | —         |
 | REQ-021 | Уведомление по достижении срока приёма                              | ТЗ 4.1.1.4                              | D8         | 11        | `AlarmManager`, деградация                 | —         |
 | REQ-022 | Опрос об успешности приёма, корректирующий количество               | ТЗ 4.1.1.4                              | D6, H3 №18 | 10, 11    | действия из шторки                         | —         |
@@ -2709,7 +2811,7 @@ TalkBack; отсутствие связи при запуске уже наст�
 | REQ-031 | **Порядок действий не влияет на результат**                         | ТЗ 4.1.1.6–9                            | H4         | 7         | тест перестановок                          | —         |
 | REQ-032 | Каждая пачка — отдельная единица                                    | ТЗ 4.1.1.6–9                            | C0         | 7         | две одноимённые остаются двумя             | —         |
 |         | **Личный кабинет**                                                  |                                         |            |           |                                            |           |
-| REQ-033 | Прогноз количества на дату, не далее трёх месяцев                   | ТЗ 4.1.1.10                             | H6         | 17        | `ForecastCalculator`                       | —         |
+| REQ-033 | Прогноз количества на дату, не далее трёх месяцев                   | ТЗ 4.1.1.10                             | H6         | 17        | `remainingOn`                              | —         |
 | REQ-034 | История израсходованного, не более года                             | ТЗ 4.1.1.10                             | H6         | 17        | баланс сходится                            | —         |
 | REQ-035 | Сводная статистика: категории, формы, общая цена                    | ТЗ 4.1.1.10                             | H6         | 17        | пачки без цены отдельно                    | —         |
 | REQ-036 | Сводный план лечения на дату                                        | ТЗ 4.1.1.10                             | H3 №12     | 10        | —                                          | —         |
