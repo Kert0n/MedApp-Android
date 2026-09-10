@@ -5,6 +5,7 @@ import com.kert0n.medapp.domain.calc.availability.availabilityOf
 import com.kert0n.medapp.domain.model.pack.ClaimOwnership
 import com.kert0n.medapp.domain.model.pack.Claims
 import com.kert0n.medapp.domain.model.pack.EffectiveAmount
+import com.kert0n.medapp.domain.model.pack.ExpiryDate
 import com.kert0n.medapp.domain.model.pack.Package
 import com.kert0n.medapp.domain.model.pack.PackageAccess
 import com.kert0n.medapp.domain.model.pack.PackageFacts
@@ -37,7 +38,7 @@ fun pack(
     manufacturer: String? = null,
     country: String? = null,
     description: String? = null,
-    expiresOn: LocalDate? = null,
+    expiresOn: ExpiryDate? = null,
     defaultIntakeAmount: Quantity? = null,
     note: String? = null,
     price: Money? = null,
@@ -99,7 +100,7 @@ fun packAvailability(
     id: Uuid = PACK,
     quantity: Quantity = tablets("20"),
     claims: Claims? = null,
-    expiresOn: LocalDate? = null,
+    expiresOn: ExpiryDate? = null,
     unresolvedOperationIds: List<Uuid> = emptyList(),
     myAllocation: Quantity = Quantity.zero(quantity.unitId),
     claimOwnership: ClaimOwnership = ClaimOwnership.NoKnownOwner
@@ -110,3 +111,6 @@ fun packAvailability(
     myAllocation = myAllocation,
     claimOwnership = claimOwnership
 )
+
+/** Срок годности из записи «2027-03-31»: в тестах читается как на упаковке. */
+fun expiry(lastDay: String): ExpiryDate = ExpiryDate(LocalDate.parse(lastDay))

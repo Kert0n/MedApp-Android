@@ -33,24 +33,27 @@ private fun strictFormat(pattern: String): DateTimeFormatter =
  *
  * Здесь **только распознавание записи**: какие шаблоны бывают на упаковке и что человек мог
  * напечатать. Продуктовое правило — что месяц означает его последний день — живёт в домене
- * ([ExpiryDate.lastDayOf]), потому что это решение о годности, а не о форме ввода. Разделение
- * ровно такое: «03.2027» распознаёт маппер, последним днём марта его делает домен.
+ * ([ExpiryDate.of]), потому что это решение о годности, а не о форме ввода. Разделение ровно
+ * такое: «03.2027» распознаёт маппер, последним днём марта его делает домен.
+ *
+ * Домену отдаётся готовый [ExpiryDate], а не дата: тип уже говорит, что записан последний годный
+ * день, и вопрос «включительно ли» до домена не доезжает (PLAN C1 «Разбор ввода»).
  *
  * Прошедшая дата принимается: ТЗ 4.1.2 прямо требует принимать «реалистично некорректные» данные
  * и отрабатывать их.
  */
 fun ExpiryDatePresentationDTO.toDomain():
-    PresentationMapping<LocalDate, ExpiryDatePresentationError> {
+    PresentationMapping<ExpiryDate, ExpiryDatePresentationError> {
     val trimmed = text.trim()
     if (trimmed.isEmpty()) return PresentationMapping.Rejected(ExpiryDatePresentationError.EMPTY)
 
     for (format in MONTH_FORMATS) {
         if (!matchesShape(trimmed, format)) continue
-        return resolve { ExpiryDate.lastDayOf(YearMonth.parse(trimmed, format)) }
+        return resolve { ExpiryDate.of(YearMonth.parse(trimmed, format)) }
     }
     for (format in DAY_FORMATS) {
         if (!matchesShape(trimmed, format)) continue
-        return resolve { LocalDate.parse(trimmed, format) }
+        return resolve { ExpiryDate(LocalDate.parse(trimmed, format)) }
     }
     return PresentationMapping.Rejected(ExpiryDatePresentationError.UNKNOWN_FORMAT)
 }
@@ -69,8 +72,8 @@ private fun matchesShape(text: String, format: DateTimeFormatter): Boolean {
 }
 
 private fun resolve(
-    parse: () -> LocalDate
-): PresentationMapping<LocalDate, ExpiryDatePresentationError> = runCatching(parse).fold(
+    parse: () -> ExpiryDate
+): PresentationMapping<ExpiryDate, ExpiryDatePresentationError> = runCatching(parse).fold(
     onSuccess = { PresentationMapping.Mapped(it) },
     onFailure = { PresentationMapping.Rejected(ExpiryDatePresentationError.IMPOSSIBLE_DATE) }
 )

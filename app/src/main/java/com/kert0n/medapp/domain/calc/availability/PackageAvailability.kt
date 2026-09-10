@@ -20,15 +20,16 @@ import kotlin.uuid.Uuid
  * Производные числа — геттеры, а не поля: все входы их арифметики лежат рядом, и рукописный
  * конструктор не сможет записать «свободно 5» там, где остаток ноль.
  *
- * Дата не хранится: годность спрашивают датой ([isExpiredOn]), потому что прогнозу нужна дата
- * отчёта, а списку — сегодняшняя. Хранимое `today` устаревало бы молча.
+ * Сегодняшний день не хранится: годность спрашивают датой ([isExpiredOn]), потому что прогнозу
+ * нужна дата отчёта, а списку — сегодняшняя. Хранимое `today` устаревало бы молча. Сам срок
+ * лежит здесь величиной [ExpiryDate] — пачки у проекции нет, а правило годности одно на обоих.
  *
  * Не путать с `PackageAccess.AVAILABLE`: тот отвечает, видим ли мы пачку вообще, а это — сколько
  * из неё доступно.
  */
 data class PackageAvailability(
     val packageId: Uuid,
-    val expiresOn: LocalDate?,
+    val expiresOn: ExpiryDate?,
     val amount: EffectiveAmount,
     val reservedByOthers: Quantity,
     val orphanClaim: Quantity,
@@ -58,8 +59,8 @@ data class PackageAvailability(
     val requiresRecount: Boolean get() = amount is EffectiveAmount.NeedsRecount
 
     /** Просрочка ничего не делает сама: количество не списывается, пачка остаётся источником. */
-    fun isExpiredOn(date: LocalDate): Boolean = ExpiryDate.isExpired(expiresOn, date)
+    fun isExpiredOn(date: LocalDate): Boolean = expiresOn?.isExpiredOn(date) == true
 
     fun expiresSoonOn(date: LocalDate): Boolean =
-        ExpiryDate.expiresWithin(expiresOn, date, PACKAGE_EXPIRES_SOON_DAYS)
+        expiresOn?.expiresWithin(date, PACKAGE_EXPIRES_SOON_DAYS) == true
 }

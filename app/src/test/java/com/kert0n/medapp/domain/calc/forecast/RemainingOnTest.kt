@@ -1,6 +1,7 @@
 package com.kert0n.medapp.domain.calc.forecast
 
 import com.kert0n.medapp.domain.model.pack.Claims
+import com.kert0n.medapp.domain.model.pack.ExpiryDate
 import com.kert0n.medapp.fixture.FIRST_SCHEDULED_ON
 import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.INTAKE
@@ -41,7 +42,7 @@ class RemainingOnTest {
         quantity: String = "20",
         claims: Claims? = null,
         unresolved: List<Uuid> = emptyList(),
-        expiresOn: LocalDate? = null
+        expiresOn: ExpiryDate? = null
     ) = packAvailability(
         id = id,
         quantity = tablets(quantity),
@@ -169,7 +170,7 @@ class RemainingOnTest {
             date = today.plusDays(6),
             reportZone = MOSCOW,
             now = now,
-            packages = listOf(stockOf(expiresOn = today.plusDays(3))),
+            packages = listOf(stockOf(expiresOn = ExpiryDate(today.plusDays(3)))),
             courses = listOf(course),
             resolved = emptyList()
         )

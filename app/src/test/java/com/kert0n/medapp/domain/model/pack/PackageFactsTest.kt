@@ -3,6 +3,7 @@ package com.kert0n.medapp.domain.model.pack
 import com.kert0n.medapp.domain.model.value.Money
 
 import com.kert0n.medapp.fixture.TABLET_FORM
+import com.kert0n.medapp.fixture.expiry
 import com.kert0n.medapp.fixture.factsOf
 import com.kert0n.medapp.fixture.withShared
 import com.kert0n.medapp.fixture.pack
@@ -31,7 +32,7 @@ class PackageFactsTest {
                 country = "Украина",
                 description = "по одной при температуре"
             ),
-            expiresOn = LocalDate.of(2027, 3, 31),
+            expiresOn = expiry("2027-03-31"),
             defaultIntakeAmount = tablets("1"),
             note = "в машине",
             price = Money(BigDecimal("120.00")),

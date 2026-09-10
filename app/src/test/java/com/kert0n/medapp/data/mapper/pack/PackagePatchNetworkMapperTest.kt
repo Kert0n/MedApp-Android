@@ -8,11 +8,11 @@ import com.kert0n.medapp.fixture.CAPSULE_FORM
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.factsOf
+import com.kert0n.medapp.fixture.expiry
 import com.kert0n.medapp.fixture.withShared
 import com.kert0n.medapp.fixture.pack
 
 import java.math.BigDecimal
-import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -53,7 +53,7 @@ class PackagePatchNetworkMapperTest {
     fun localOnlyEditIsAnsweredByTheComposition() {
         // «Правка была только локальной?» — это вопрос к структуре сведений, а не сравнение шести
         // полей россыпью, где седьмое забудут (PLAN E2, D3).
-        val localEdit = factsOf(onServer).copy(note = "в машине", expiresOn = LocalDate.of(2027, 3, 31))
+        val localEdit = factsOf(onServer).copy(note = "в машине", expiresOn = expiry("2027-03-31"))
         assertEquals(factsOf(onServer).shared, localEdit.shared)
         assertNull(localEdit.toPatchNetworkMapping(onServer, synced).dto)
     }

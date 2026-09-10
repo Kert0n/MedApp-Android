@@ -1,5 +1,6 @@
 package com.kert0n.medapp.presentation.mapper.value
 
+import com.kert0n.medapp.domain.model.pack.ExpiryDate
 import com.kert0n.medapp.presentation.dto.value.ExpiryDatePresentationDTO
 
 import java.time.LocalDate
@@ -13,47 +14,47 @@ class ExpiryDatePresentationMapperTest {
     fun printedMonthBecomesItsLastDay() {
         // На упаковках печатают «03.2027». Первое марта было бы потерей почти целого месяца
         // годности, и человек видит развёрнутую дату до сохранения.
-        assertEquals(LocalDate.of(2027, 3, 31), requireNotNull(mapped("03.2027").valueOrNull))
+        assertEquals(ExpiryDate(LocalDate.of(2027, 3, 31)), expiryOf("03.2027"))
     }
 
     @Test
     fun leapFebruaryGetsItsTwentyNinth() {
-        assertEquals(LocalDate.of(2028, 2, 29), requireNotNull(mapped("02.2028").valueOrNull))
-        assertEquals(LocalDate.of(2027, 2, 28), requireNotNull(mapped("02.2027").valueOrNull))
+        assertEquals(ExpiryDate(LocalDate.of(2028, 2, 29)), expiryOf("02.2028"))
+        assertEquals(ExpiryDate(LocalDate.of(2027, 2, 28)), expiryOf("02.2027"))
     }
 
     @Test
     fun fullDatesAreTakenAsTheyAre() {
-        val expected = LocalDate.of(2027, 3, 31)
-        assertEquals(expected, requireNotNull(mapped("31.03.2027").valueOrNull))
-        assertEquals(expected, requireNotNull(mapped("31/03/2027").valueOrNull))
-        assertEquals(expected, requireNotNull(mapped("2027-03-31").valueOrNull))
+        val expected = ExpiryDate(LocalDate.of(2027, 3, 31))
+        assertEquals(expected, expiryOf("31.03.2027"))
+        assertEquals(expected, expiryOf("31/03/2027"))
+        assertEquals(expected, expiryOf("2027-03-31"))
     }
 
     @Test
     fun singleDigitMonthAndDayAreAccepted() {
         // На упаковках печатают и «3.2027», и «03.2027».
-        assertEquals(LocalDate.of(2027, 3, 31), requireNotNull(mapped("3.2027").valueOrNull))
-        assertEquals(LocalDate.of(2027, 3, 1), requireNotNull(mapped("1.3.2027").valueOrNull))
+        assertEquals(ExpiryDate(LocalDate.of(2027, 3, 31)), expiryOf("3.2027"))
+        assertEquals(ExpiryDate(LocalDate.of(2027, 3, 1)), expiryOf("1.3.2027"))
     }
 
     @Test
     fun leapYearRulesComeFromTheCalendarAndNotFromUs() {
         // 2000 — високосный, 1900 — нет, хотя оба делятся на четыре и на сто.
-        assertEquals(LocalDate.of(2000, 2, 29), requireNotNull(mapped("02.2000").valueOrNull))
-        assertEquals(LocalDate.of(1900, 2, 28), requireNotNull(mapped("02.1900").valueOrNull))
+        assertEquals(ExpiryDate(LocalDate.of(2000, 2, 29)), expiryOf("02.2000"))
+        assertEquals(ExpiryDate(LocalDate.of(1900, 2, 28)), expiryOf("02.1900"))
         assertEquals(ExpiryDatePresentationError.IMPOSSIBLE_DATE, errorOf("29.02.1900"))
     }
 
     @Test
     fun isoMonthIsAlsoAMonth() {
-        assertEquals(LocalDate.of(2027, 3, 31), requireNotNull(mapped("2027-03").valueOrNull))
+        assertEquals(ExpiryDate(LocalDate.of(2027, 3, 31)), expiryOf("2027-03"))
     }
 
     @Test
     fun alreadyExpiredInputIsAccepted() {
         // ТЗ 4.1.2: «реалистично некорректные» данные принимаются и отрабатываются.
-        assertEquals(LocalDate.of(2001, 1, 31), requireNotNull(mapped("01.2001").valueOrNull))
+        assertEquals(ExpiryDate(LocalDate.of(2001, 1, 31)), expiryOf("01.2001"))
     }
 
     @Test
@@ -76,6 +77,9 @@ class ExpiryDatePresentationMapperTest {
     }
 
     private fun mapped(input: String) = ExpiryDatePresentationDTO(input).toDomain()
+
+    /** Маппер отдаёт домену готовый срок, поэтому и ожидание здесь — срок, а не дата. */
+    private fun expiryOf(input: String): ExpiryDate = requireNotNull(mapped(input).valueOrNull)
 
     private fun errorOf(input: String): ExpiryDatePresentationError {
         val error = mapped(input).errorOrNull

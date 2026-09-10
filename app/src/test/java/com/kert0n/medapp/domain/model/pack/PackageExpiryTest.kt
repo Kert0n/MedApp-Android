@@ -1,12 +1,15 @@
 package com.kert0n.medapp.domain.model.pack
 
+import com.kert0n.medapp.fixture.expiry
 import com.kert0n.medapp.fixture.millilitres
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.tablets
 
 import java.time.LocalDate
+import java.time.YearMonth
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -16,7 +19,7 @@ import org.junit.Test
  */
 class PackageExpiryTest {
 
-    private val until31March = pack(expiresOn = LocalDate.of(2027, 3, 31))
+    private val until31March = pack(expiresOn = expiry("2027-03-31"))
 
     @Test
     fun goodUntilTheThirtyFirstMeansTheThirtyFirstIsStillGood() {
@@ -65,18 +68,30 @@ class PackageExpiryTest {
 
     @Test
     fun theRuleAnswersTheSameWithoutAPack() {
-        // Проекция доступного несёт одну дату и никакой пачки (PLAN D4), и ответ обязан совпадать:
+        // Проекция доступного несёт один срок и никакой пачки (PLAN D4), и ответ обязан совпадать:
         // два `isBefore` в двух местах — это два знака, которые разойдутся.
-        val expires = LocalDate.of(2027, 3, 31)
+        val expires = expiry("2027-03-31")
         listOf(
             LocalDate.of(2027, 3, 27),
             LocalDate.of(2027, 3, 31),
             LocalDate.of(2027, 4, 1)
         ).forEach { on ->
-            assertEquals(until31March.isExpiredOn(on), ExpiryDate.isExpired(expires, on))
-            assertEquals(until31March.expiresWithin(on, 3), ExpiryDate.expiresWithin(expires, on, 3))
+            assertEquals(until31March.isExpiredOn(on), expires.isExpiredOn(on))
+            assertEquals(until31March.expiresWithin(on, 3), expires.expiresWithin(on, 3))
         }
-        assertFalse(ExpiryDate.isExpired(expiresOn = null, on = LocalDate.of(2999, 1, 1)))
+    }
+
+    @Test
+    fun namedMonthIsGoodUntilItsLastDay() {
+        // «03.2027» — не первое марта: иначе у пачки отняли бы почти месяц годности (PLAN D3).
+        assertEquals(expiry("2027-03-31"), ExpiryDate.of(YearMonth.of(2027, 3)))
+    }
+
+    @Test
+    fun twoDifferentTermsAreDifferentValues() {
+        // Величина, а не сущность: сравнивается содержимым, и это то, на что смотрит экран.
+        assertEquals(expiry("2027-03-31"), expiry("2027-03-31"))
+        assertNotEquals(expiry("2027-03-31"), expiry("2027-04-01"))
     }
 
     @Test(expected = IllegalArgumentException::class)

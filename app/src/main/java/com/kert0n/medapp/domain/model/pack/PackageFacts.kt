@@ -25,7 +25,7 @@ import kotlin.uuid.Uuid
  */
 data class PackageFacts(
     val shared: PackageSharedFacts,
-    val expiresOn: LocalDate? = null,
+    val expiresOn: ExpiryDate? = null,
     val defaultIntakeAmount: Quantity? = null,
     val note: String? = null,
     val price: Money? = null,
@@ -46,13 +46,13 @@ data class PackageFacts(
     /**
      * Дата передаётся, а не берётся из часов: иначе свойство непроверяемо тестом.
      *
-     * Само правило — в [ExpiryDate]: его спрашивает не только пачка, но и проекция доступного,
-     * у которой на руках лежит одна дата и никакой пачки (PLAN D4). Одно правило — одно место,
-     * иначе знак сравнения разойдётся при первом же рефакторинге.
+     * Считает не пачка: у [ExpiryDate] спрашивают и здесь, и в проекции доступного, у которой на
+     * руках лежит один срок и никакой пачки (PLAN D4). Пачке остаётся ответить за отсутствующий
+     * срок — про него мы не знаем ничего, и просроченным он не бывает.
      */
-    fun isExpiredOn(date: LocalDate): Boolean = ExpiryDate.isExpired(expiresOn, date)
+    fun isExpiredOn(date: LocalDate): Boolean = expiresOn?.isExpiredOn(date) == true
 
     /** Истекает ли срок не позже чем через [days] дней, считая [date] включительно (D8). */
     fun expiresWithin(date: LocalDate, days: Long): Boolean =
-        ExpiryDate.expiresWithin(expiresOn, date, days)
+        expiresOn?.expiresWithin(date, days) == true
 }

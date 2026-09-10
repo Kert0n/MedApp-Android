@@ -5,12 +5,12 @@ import com.kert0n.medapp.domain.model.value.Money
 import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.SHARED_KIT
 import com.kert0n.medapp.fixture.factsOf
+import com.kert0n.medapp.fixture.expiry
 import com.kert0n.medapp.fixture.withShared
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.tablets
 
 import java.math.BigDecimal
-import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -42,21 +42,21 @@ class PackageStateTransitionsTest {
             factsOf(pack())
                 .withShared(name = "Парацетамол-Дарница", category = "жаропонижающие")
                 .copy(
-                    expiresOn = LocalDate.of(2027, 3, 31),
+                    expiresOn = expiry("2027-03-31"),
                     note = "в машине",
                     price = Money(BigDecimal("120.00"))
                 )
         )
         assertEquals("Парацетамол-Дарница", described.name)
         assertEquals("жаропонижающие", described.facts.category)
-        assertEquals(LocalDate.of(2027, 3, 31), described.facts.expiresOn)
+        assertEquals(expiry("2027-03-31"), described.facts.expiresOn)
         assertEquals("в машине", described.facts.note)
         assertEquals(Money(BigDecimal("120.00")), described.facts.price)
     }
 
     @Test
     fun editClearsWhatWasCleared() {
-        val filled = pack(category = "жаропонижающие", expiresOn = LocalDate.of(2027, 3, 31))
+        val filled = pack(category = "жаропонижающие", expiresOn = expiry("2027-03-31"))
         val cleared = filled.describe(factsOf(filled).withShared(category = null).copy(expiresOn = null))
         assertNull(cleared.facts.category)
         assertNull(cleared.facts.expiresOn)

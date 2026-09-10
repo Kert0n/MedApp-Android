@@ -4,6 +4,7 @@ import com.kert0n.medapp.domain.model.course.CourseBrief
 import com.kert0n.medapp.domain.model.pack.Claims
 import com.kert0n.medapp.domain.model.pack.ClaimOwnership
 import com.kert0n.medapp.domain.model.pack.EffectiveAmount
+import com.kert0n.medapp.domain.model.pack.ExpiryDate
 import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.INTAKE
 import com.kert0n.medapp.fixture.millilitres
@@ -136,7 +137,7 @@ class AvailabilityOfTest {
     @Test
     fun expiryIsAskedByDateAndOnlyMarks() {
         val expiring = availabilityOf(
-            pkg = pack(quantity = tablets("20"), expiresOn = today.plusDays(2)),
+            pkg = pack(quantity = tablets("20"), expiresOn = ExpiryDate(today.plusDays(2))),
             amount = EffectiveAmount.Known(tablets("20"))
         )
         assertFalse(expiring.isExpiredOn(today))

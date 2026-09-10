@@ -1,5 +1,6 @@
 package com.kert0n.medapp.presentation.dto.pack
 
+import com.kert0n.medapp.domain.model.pack.ExpiryDate
 import com.kert0n.medapp.domain.model.pack.PackageAccess
 import com.kert0n.medapp.domain.model.pack.PackageLifecycle
 import com.kert0n.medapp.presentation.dto.value.MoneyPresentationDTO
@@ -18,6 +19,10 @@ import kotlin.uuid.Uuid
  *
  * Версии предусловия здесь нет: человеку она ничего не говорит, а экрану состояния синхронизации
  * нужен момент последней сверки, который маппер получает аргументом.
+ *
+ * expiresOn — величина ExpiryDate, а не дата: «годен до» остаётся включительным до самого экрана.
+ * Соседние purchasedOn и openedOn — обычные даты, потому что за ними нет правила. Величины
+ * Money и Quantity, наоборот, заменены своими DTO: им нужен формат, а сроку — нет.
  */
 data class PackagePresentationDTO(
     val id: Uuid,
@@ -29,7 +34,7 @@ data class PackagePresentationDTO(
     val manufacturer: String?,
     val country: String?,
     val description: String?,
-    val expiresOn: LocalDate?,
+    val expiresOn: ExpiryDate?,
     val defaultIntakeAmount: QuantityPresentationDTO?,
     val note: String?,
     val price: MoneyPresentationDTO?,
