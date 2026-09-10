@@ -1,9 +1,11 @@
 package com.kert0n.medapp.storage.pack
 
+import com.kert0n.medapp.domain.course.Course
 import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageAvailability
 import com.kert0n.medapp.network.pack.PackageSyncState
+import com.kert0n.medapp.storage.server.QueuedCommand
 import java.time.Instant
 import java.time.LocalDate
 import kotlin.uuid.Uuid
@@ -40,10 +42,20 @@ interface PackageStorageRepository {
     suspend fun saveClaims(packageId: Uuid, claims: Claims?)
 
     /**
-     * Пересчёт, утилизация, архивирование и перенос: движение и новое состояние пачки ложатся
-     * одной транзакцией вместе с пересчитанными выделениями и исходящей командой (PLAN F5).
+     * Пересчёт, утилизация и перенос: движение и новое состояние пачки ложатся одной транзакцией
+     * вместе с пересчитанными выделениями [course] и исходящей командой [command] (PLAN F5).
      *
-     * Откат не оставляет ни движения без остатка, ни остатка без следа в истории.
+     * Переход применяется к нынешнему состоянию пачки, прочитанному в той же транзакции, поэтому
+     * «было» в истории — настоящее «было». Обвязка синхронизации при этом не трогается: версии и
+     * время сверки принадлежат снимку сервера, а не действию человека (PLAN E4).
+     *
+     * Откат не оставляет ни движения без остатка, ни остатка без следа в истории. `false` —
+     * пачки больше нет: писать переход некуда.
      */
-    suspend fun adjust(adjustment: PackageAdjustment, at: Instant)
+    suspend fun adjust(
+        adjustment: PackageAdjustment,
+        course: Course? = null,
+        command: QueuedCommand? = null,
+        at: Instant
+    ): Boolean
 }

@@ -1,6 +1,7 @@
 package com.kert0n.medapp.storage.pack
 
 import androidx.room.withTransaction
+import com.kert0n.medapp.domain.course.Course
 import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.pack.EffectiveAmount
 import com.kert0n.medapp.domain.pack.Package
@@ -14,6 +15,7 @@ import com.kert0n.medapp.storage.course.CourseDao
 import com.kert0n.medapp.storage.course.toSourceStorageEntities
 import com.kert0n.medapp.storage.course.toStorageEntity as toCourseStorageEntity
 import com.kert0n.medapp.storage.database.MedAppDatabase
+import com.kert0n.medapp.storage.server.QueuedCommand
 import com.kert0n.medapp.storage.server.StoredSyncOperation
 import com.kert0n.medapp.storage.server.SyncOperationDao
 import com.kert0n.medapp.storage.server.SyncOperationStorageRow
@@ -59,28 +61,37 @@ class PackageRoomRepository @Inject constructor(
         else packages.upsertClaims(claims.toStorageEntity(packageId))
     }
 
-    override suspend fun adjust(adjustment: PackageAdjustment, at: Instant) =
-        database.withTransaction {
-            val pack = adjustment.pack
-            packages.save(pack.toStorageEntity(adjustment.sync), pack.toDetailsStorageEntity())
-            movements.insert(adjustment.movement.toMovementStorageEntity())
-            adjustment.course?.let {
-                courses.updateAllocations(
-                    it.toCourseStorageEntity(),
-                    it.medicine.toSourceStorageEntities(it.id)
-                )
-            }
-            adjustment.command?.let {
-                queue.enqueue(
-                    id = it.id,
-                    command = it.command,
-                    createdAt = at,
-                    groupId = it.groupId,
-                    dependsOn = it.dependsOn
-                )
-            }
-            Unit
+    override suspend fun adjust(
+        adjustment: PackageAdjustment,
+        course: Course?,
+        command: QueuedCommand?,
+        at: Instant
+    ): Boolean = database.withTransaction {
+        val stored = packages.find(adjustment.packageId) ?: return@withTransaction false
+        val applied = adjustment.applyTo(stored.toDomain(), at)
+        // Версии и время сверки остаются те, что записал снимок сервера: их двигает сеть (E4).
+        packages.save(
+            applied.pack.toStorageEntity(stored.pack.syncState()),
+            applied.pack.toDetailsStorageEntity()
+        )
+        movements.insert(applied.movement.toMovementStorageEntity())
+        course?.let {
+            courses.updateAllocations(
+                it.toCourseStorageEntity(),
+                it.medicine.toSourceStorageEntities(it.id)
+            )
         }
+        command?.let {
+            queue.enqueue(
+                id = it.id,
+                command = it.command,
+                createdAt = at,
+                groupId = it.groupId,
+                dependsOn = it.dependsOn
+            )
+        }
+        true
+    }
 
     /**
      * Проекция читается одним снимком: поток лишь уведомляет, что база изменилась, а

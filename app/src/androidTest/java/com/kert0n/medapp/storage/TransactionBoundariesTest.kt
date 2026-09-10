@@ -66,6 +66,7 @@ class TransactionBoundariesTest {
 
     private val operation: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000091")
     private val movementId: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000081")
+    private val otherMovementId: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000082")
     private val at: Instant = Instant.parse("2026-09-10T12:00:00Z")
 
     private val paracetamol = pack(quantity = tablets("20"))
@@ -309,13 +310,8 @@ class TransactionBoundariesTest {
         )
 
         packages.adjust(
-            PackageAdjustment(
-                pack = paracetamol.correctTo(tablets("17")),
-                movement = StockMovement.Recount(
-                    movementId, PACK, tablets("20"), tablets("17"), HOME_KIT, LATER, LATER
-                ),
-                course = activation.course
-            ),
+            PackageAdjustment.Recount(PACK, tablets("17"), movementId),
+            course = activation.course,
             at = LATER
         )
 
@@ -345,29 +341,40 @@ class TransactionBoundariesTest {
 
     @Test
     fun recountWritesMovementAndStockTogether() = runTest {
-        packages.adjust(
-            PackageAdjustment(
-                pack = paracetamol.correctTo(tablets("17")),
-                movement = StockMovement.Recount(
-                    movementId, PACK, tablets("20"), tablets("17"), HOME_KIT, LATER, LATER
-                )
-            ),
-            at = LATER
-        )
+        packages.adjust(PackageAdjustment.Recount(PACK, tablets("17"), movementId), at = LATER)
 
         assertEquals(tablets("17"), requireNotNull(packages.find(PACK)).quantity)
-        assertEquals(1, database.stockMovements().ofPackage(PACK).size)
+        val recount = database.stockMovements().ofPackage(PACK).single().toDomain()
+        assertEquals(tablets("20"), (recount as StockMovement.Recount).before)
+        assertEquals(tablets("17"), recount.after)
+    }
+
+    /**
+     * След пересчёта берёт «было» из базы, а не из снимка, с которым пришёл вызывающий: экран мог
+     * прочитать пачку до чужой записи, и тогда история назвала бы неверное число.
+     */
+    @Test
+    fun recountRecordsTheAmountThatWasActuallyThere() = runTest {
+        packages.adjust(PackageAdjustment.Recount(PACK, tablets("18"), movementId), at = LATER)
+
+        packages.adjust(PackageAdjustment.Recount(PACK, tablets("15"), otherMovementId), at = LATER)
+
+        val second = database.stockMovements().ofPackage(PACK)
+            .map { it.toDomain() }
+            .filterIsInstance<StockMovement.Recount>()
+            .single { it.id == otherMovementId }
+        assertEquals(tablets("18"), second.before)
+        assertEquals(tablets("15"), requireNotNull(packages.find(PACK)).quantity)
     }
 
     @Test
     fun disposalToZeroArchivesAndKeepsTheTrace() = runTest {
         packages.adjust(
-            PackageAdjustment(
-                pack = paracetamol.correctTo(tablets("0")),
-                movement = StockMovement.Disposal(
-                    movementId, PACK, tablets("20"),
-                    StockMovement.Disposal.Reason.EXPIRED, HOME_KIT, LATER, LATER
-                )
+            PackageAdjustment.Disposal(
+                PACK,
+                tablets("20"),
+                StockMovement.Disposal.Reason.EXPIRED,
+                movementId
             ),
             at = LATER
         )
@@ -380,12 +387,7 @@ class TransactionBoundariesTest {
     @Test
     fun transferMovesThePackageAndRecordsBothEnds() = runTest {
         packages.adjust(
-            PackageAdjustment(
-                pack = paracetamol.moveTo(medKit(id = SHARED_KIT, name = "Дача")),
-                movement = StockMovement.Transfer(
-                    movementId, PACK, tablets("20"), HOME_KIT, SHARED_KIT, LATER, LATER
-                )
-            ),
+            PackageAdjustment.Transfer(PACK, medKit(id = SHARED_KIT, name = "Дача"), movementId),
             at = LATER
         )
 
@@ -401,16 +403,8 @@ class TransactionBoundariesTest {
 
         val failure = runCatching {
             packages.adjust(
-                PackageAdjustment(
-                    pack = paracetamol.correctTo(tablets("4")),
-                    movement = StockMovement.Recount(
-                        movementId, PACK, tablets("20"), tablets("4"), HOME_KIT, LATER, LATER
-                    ),
-                    command = QueuedCommand(
-                        operation,
-                        PackageSyncCommand.CorrectStock(PACK, tablets("4"))
-                    )
-                ),
+                PackageAdjustment.Recount(PACK, tablets("4"), movementId),
+                command = QueuedCommand(operation, PackageSyncCommand.CorrectStock(PACK, tablets("4"))),
                 at = LATER
             )
         }.exceptionOrNull()
