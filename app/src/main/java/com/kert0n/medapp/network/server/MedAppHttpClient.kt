@@ -13,6 +13,7 @@ import io.ktor.client.plugins.logging.Logger
 import io.ktor.client.plugins.logging.Logging
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
+import io.ktor.http.URLProtocol
 import io.ktor.http.Url
 import io.ktor.serialization.kotlinx.json.json
 import kotlin.coroutines.cancellation.CancellationException
@@ -29,6 +30,9 @@ import kotlin.coroutines.cancellation.CancellationException
  * Перенаправлениям клиент не следует: в контракте их нет, и ответ 3xx — такой же ответ вне
  * контракта, как и любой другой незаявленный статус. Это второе ограничение поверх привязки
  * пропуска к адресу: политика, возвращённая по недосмотру, не должна оживлять утечку.
+ *
+ * Адрес — только `https`: клиент несёт то ключ учётки, то пропуск, то регистрационный токен, и
+ * отдавать их открытым текстом нельзя ни в какой конфигурации (PLAN G3).
  */
 fun medAppHttpClient(
     engine: HttpClientEngine,
@@ -37,12 +41,17 @@ fun medAppHttpClient(
     tokens: AccessTokens? = null,
     retryDelay: HttpRequestRetryConfig.() -> Unit = { exponentialDelay(randomizationMs = 500) }
 ): HttpClient = HttpClient(engine) {
+    val origin = Url(baseUrl)
+    // Открытым текстом здесь не ходит ничего: этот клиент несёт то ключ учётки в Basic, то
+    // пропуск, то регистрационный токен сборки. Отладка против локального сервера по HTTP
+    // (PLAN H2) потребует снять это ограничение осознанно, а не получить её умолчанием.
+    require(origin.protocol == URLProtocol.HTTPS) { "адрес сервера MedApp — только https" }
     expectSuccess = false
     followRedirects = false
     if (tokens != null) {
         install(MedAppAuth) {
             this.tokens = tokens
-            origin = Url(baseUrl)
+            this.origin = origin
         }
     }
     if (logger != null) {

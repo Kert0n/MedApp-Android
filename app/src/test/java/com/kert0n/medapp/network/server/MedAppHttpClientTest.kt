@@ -12,6 +12,7 @@ import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -92,4 +93,18 @@ class MedAppHttpClientTest {
 
         assertEquals("medapp.test", host)
     }
+
+    /**
+     * Открытым текстом клиент не ходит: он несёт то ключ учётки в Basic, то пропуск, то
+     * регистрационный токен сборки.
+     */
+    @Test
+    fun aPlaintextAddressIsRefused() {
+        val refusal = runCatching {
+            medAppHttpClient(MockEngine { respond("", HttpStatusCode.OK) }, "http://medapp.test")
+        }.exceptionOrNull()
+
+        assertTrue("$refusal", refusal is IllegalArgumentException)
+    }
+
 }
