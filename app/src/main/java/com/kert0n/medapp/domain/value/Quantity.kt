@@ -1,0 +1,101 @@
+package com.kert0n.medapp.domain.value
+
+import java.math.BigDecimal
+import kotlin.uuid.Uuid
+
+/** Потолок числа доз: расписание такого размера отвергается задолго до этого (PLAN H1). */
+private val MAX_DOSES = BigDecimal(Int.MAX_VALUE)
+
+/**
+ * Количество вместе с единицей: величины в разных единицах вместе не считаются. Ноль допустим —
+ * остаток бывает нулевым, а строгая положительность — правило операции. Равенство по значению:
+ * сервер отвечает шестью знаками, и `1` равно `1.000000` (PLAN B2).
+ */
+data class Quantity(val amount: BigDecimal, val unitId: Uuid) {
+
+    init {
+        requireNonNegativeDecimal(
+            amount = amount,
+            field = "количество",
+            maxScale = SCALE,
+            maxIntegerDigits = MAX_INTEGER_DIGITS
+        )
+    }
+
+    val isZero: Boolean get() = amount.signum() == 0
+
+    operator fun plus(other: Quantity): Quantity {
+        requireSameUnit(other)
+        return Quantity(amount + other.amount, unitId)
+    }
+
+    /**
+     * Бросает при нехватке: приём пяти таблеток из остатка в три не должен выглядеть успешным,
+     * а списание в минус запрещено (PLAN D1, D5).
+     */
+    operator fun minus(other: Quantity): Quantity {
+        requireSameUnit(other)
+        require(amount >= other.amount) { "нехватка: $this меньше $other" }
+        return Quantity(amount - other.amount, unitId)
+    }
+
+    /** Для показа доступности, где отрицательное просто не показывается (PLAN D4). */
+    fun minusOrZero(other: Quantity): Quantity {
+        requireSameUnit(other)
+        return if (amount >= other.amount) Quantity(amount - other.amount, unitId) else zero(unitId)
+    }
+
+    /**
+     * Умножение только на счётчик приёмов: количество умножается на [Doses], а не на другую
+     * величину — произведение таблеток на таблетки смысла не имеет. Неотрицательность проверять
+     * не нужно: её обеспечивает сам счётчик.
+     */
+    operator fun times(doses: Doses): Quantity =
+        Quantity(amount * doses.count.toBigDecimal(), unitId)
+
+    fun covers(dose: Dose): Boolean {
+        requireSameUnit(dose.quantity)
+        return amount >= dose.quantity.amount
+    }
+
+    /**
+     * Сколько целых доз помещается. Именно целых: доза берётся из одной упаковки и между пачками
+     * не делится, поэтому по одной таблетке в двух пачках при дозе в две таблетки дают ноль доз,
+     * а не одну (PLAN D5). Делить на ноль здесь нечем: [Dose] нулём не бывает.
+     */
+    fun dosesIn(dose: Dose): Doses {
+        requireSameUnit(dose.quantity)
+        val whole = amount.divideToIntegralValue(dose.quantity.amount)
+        return Doses(if (whole > MAX_DOSES) Int.MAX_VALUE else whole.toInt())
+    }
+
+    private fun requireSameUnit(other: Quantity) {
+        require(unitId == other.unitId) {
+            "величины в разных единицах не считаются вместе: $unitId и ${other.unitId}"
+        }
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is Quantity) return false
+        return unitId == other.unitId && amount.compareTo(other.amount) == 0
+    }
+
+    /**
+     * По значению, а не по масштабу: `BigDecimal.hashCode` учитывает `scale`, и `1` с `1.000000`
+     * получили бы разные хеши при равных значениях — одна и та же пачка терялась бы в `Map`.
+     */
+    override fun hashCode(): Int = 31 * unitId.hashCode() + amount.stripTrailingZeros().hashCode()
+
+    override fun toString(): String = "${amount.toPlainString()} @$unitId"
+
+    companion object {
+        /** Разрядность серверного `numeric(19, 6)`: шесть знаков — деление таблетки и капли. */
+        const val SCALE = 6
+
+        /** Предел целой части — серверный, принят как продуктовый (C1). */
+        const val MAX_INTEGER_DIGITS = 13
+
+        fun zero(unitId: Uuid): Quantity = Quantity(BigDecimal.ZERO, unitId)
+    }
+}
