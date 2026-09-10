@@ -74,6 +74,7 @@ class PackagePostNetworkMapperTest {
     @Test(expected = IllegalArgumentException::class)
     fun amountOutsideTheContractIsRejectedByTheRequest() {
         PackagePostNetworkDTO(
+            id = PACK,
             name = "Парацетамол",
             amount = "1E+3",
             unitId = TABLETS,
@@ -88,6 +89,7 @@ class PackagePostNetworkMapperTest {
     @Test(expected = IllegalArgumentException::class)
     fun networkFieldsRefuseAnOverlongDescription() {
         PackagePostNetworkDTO(
+            id = PACK,
             name = "Парацетамол",
             amount = "20",
             unitId = TABLETS,

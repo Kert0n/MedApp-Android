@@ -10,6 +10,7 @@ import com.kert0n.medapp.domain.pack.Package
  * на устройстве, потому что взять это на проводе просто негде.
  */
 fun Package.toPostNetworkDTO(): PackagePostNetworkDTO = PackagePostNetworkDTO(
+    id = id,
     name = facts.name,
     amount = quantity.toNetworkAmount(),
     unitId = quantity.unitId,

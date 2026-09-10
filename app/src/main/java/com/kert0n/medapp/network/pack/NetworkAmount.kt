@@ -11,6 +11,18 @@ internal fun requireNetworkAmount(amount: String, field: String) {
 }
 
 /**
+ * Строго положительное количество B2 — приём, бронь, начальный остаток. Ноль отвергается в
+ * любом написании: `"0"`, `"0.0"` и `"000.000000"` для сервера одно и то же число.
+ */
+private val POSITIVE_NETWORK_AMOUNT = Regex("""^(?!0+(\.0+)?$)\d{1,13}(\.\d{1,6})?$""")
+
+internal fun requirePositiveNetworkAmount(amount: String, field: String) {
+    require(POSITIVE_NETWORK_AMOUNT.matches(amount)) {
+        "$field: не строго положительная строка контракта B2"
+    }
+}
+
+/**
  * Пустая строка законна только в PATCH — это очистка, и потому у него своя проверка, а не
  * доменная: `requireText` пустую строку отвергает, потому что в домене она не значит ничего.
  * Пробелы не значат ни того, ни другого ни там, ни здесь.
