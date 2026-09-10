@@ -52,6 +52,15 @@ class CourseScheduleTest {
         schedule(times = listOf(LocalTime.of(9, 0), LocalTime.of(9, 0)))
     }
 
+    /**
+     * Секунды в назначении не значат ничего, а хранение держит минуты: допустив 09:00:10 и
+     * 09:00:50, расписание называло бы разными два описания одного приёма.
+     */
+    @Test(expected = IllegalArgumentException::class)
+    fun timeWithSecondsIsRejected() {
+        schedule(times = listOf(LocalTime.of(9, 0, 10)))
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun unsortedTimesAreRejected() {
         schedule(times = listOf(LocalTime.of(21, 0), LocalTime.of(9, 0)))
