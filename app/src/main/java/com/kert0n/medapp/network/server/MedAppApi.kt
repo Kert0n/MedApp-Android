@@ -2,6 +2,7 @@ package com.kert0n.medapp.network.server
 
 import com.kert0n.medapp.di.MedAppHttp
 import com.kert0n.medapp.network.account.AccessTokenNetworkDTO
+import com.kert0n.medapp.network.account.AccessTokenThrottled
 import com.kert0n.medapp.network.account.AccessTokenUnavailable
 import com.kert0n.medapp.network.account.AccountCredentials
 import com.kert0n.medapp.network.account.AccountRegisteredNetworkDTO
@@ -32,7 +33,6 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
@@ -40,8 +40,6 @@ import io.ktor.http.isSuccess
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.ListSerializer
@@ -214,6 +212,8 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
                     broken(command, "успех ${response.status.value} вместо ${success.value}")
                 else -> ApiResult.Failure(refusal(response, command, path))
             }
+        } catch (cause: AccessTokenThrottled) {
+            ApiResult.Failure(ApiFailure.TooManyRequests(cause.retryAfter))
         } catch (_: AccessTokenUnavailable) {
             ApiResult.Failure(ApiFailure.Unavailable)
         } catch (_: IOException) {
@@ -235,7 +235,7 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
             409 -> ApiFailure.Conflict
             412 -> ApiFailure.PreconditionFailed
             428 -> ApiFailure.PreconditionRequired
-            429 -> ApiFailure.TooManyRequests(retryAfter(response))
+            429 -> ApiFailure.TooManyRequests(response.retryAfter())
             in 500..599 -> if (command) ApiFailure.OutcomeUnknown else ApiFailure.Unavailable
             else -> ApiFailure.Protocol("отказ ${response.status.value} вне контракта")
         }
@@ -245,10 +245,6 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
     } catch (_: IllegalArgumentException) {
         ProblemNetworkDTO()
     }
-
-    /** `Retry-After` в секундах; дату и прочее вызывающий заменяет своим backoff (PLAN B5). */
-    private fun retryAfter(response: HttpResponse): Duration? =
-        response.headers[HttpHeaders.RetryAfter]?.trim()?.toLongOrNull()?.takeIf { it >= 0 }?.seconds
 
     private fun <T> required(serializer: KSerializer<T>): Reader<T> = { response, command ->
         val text = response.bodyAsText()

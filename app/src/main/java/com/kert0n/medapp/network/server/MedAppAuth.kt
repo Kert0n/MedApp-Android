@@ -1,6 +1,8 @@
 package com.kert0n.medapp.network.server
 
+import com.kert0n.medapp.network.account.AccessTokenIssue
 import com.kert0n.medapp.network.account.AccessTokenNetworkDTO
+import com.kert0n.medapp.network.account.AccessTokenThrottled
 import com.kert0n.medapp.network.account.AccessTokenUnavailable
 import com.kert0n.medapp.network.account.AccessTokens
 import com.kert0n.medapp.network.account.AccountCredentials
@@ -24,42 +26,55 @@ class MedAppAuthConfig {
  * 401 значит, что сервер её не принял к исполнению. Второй 401 возвращается как есть — по кругу
  * пропуск не просят.
  *
- * Выдача, которая не удалась по сети или отказу сервера, — [AccessTokenUnavailable], а не 401:
- * учётка может быть в порядке, а запрос ещё не ушёл.
+ * Выдача отвечает исходом, а не строкой с исключением наперевес: отказ учётки, лимит выдачи и
+ * недоступность — разные решения вызывающего, и различает их [AccessTokenIssue], а не то, чем
+ * кончился разбор ответа.
  */
 val MedAppAuth = createClientPlugin("MedAppAuth", ::MedAppAuthConfig) {
     val tokens = pluginConfig.tokens
     val http = client
 
-    suspend fun issue(account: AccountCredentials): String? {
+    suspend fun issue(account: AccountCredentials): AccessTokenIssue {
         val response = try {
             http.post(TOKEN_PATH) { basicAuth(account.login.toString(), account.key) }
         } catch (cause: CancellationException) {
             throw cause
-        } catch (cause: Exception) {
-            throw AccessTokenUnavailable("пропуск не выдан: нет связи", cause)
+        } catch (_: Exception) {
+            return AccessTokenIssue.Unavailable("нет связи")
         }
         return when (response.status) {
             HttpStatusCode.OK -> try {
-                response.body<AccessTokenNetworkDTO>().accessToken
-            } catch (cause: Exception) {
-                throw AccessTokenUnavailable("пропуск не выдан: ответ не по контракту", cause)
+                AccessTokenIssue.Issued(response.body<AccessTokenNetworkDTO>().accessToken)
+            } catch (cause: CancellationException) {
+                throw cause
+            } catch (_: Exception) {
+                AccessTokenIssue.Unavailable("ответ не по контракту")
             }
-            HttpStatusCode.Unauthorized -> null
-            else -> throw AccessTokenUnavailable("пропуск не выдан: ${response.status.value}")
+            HttpStatusCode.Unauthorized -> AccessTokenIssue.Rejected
+            HttpStatusCode.TooManyRequests -> AccessTokenIssue.Throttled(response.retryAfter())
+            else -> AccessTokenIssue.Unavailable("отказ ${response.status.value}")
         }
     }
+
+    /** `null` — пропуска нет и взять его не по чему; запрос идёт без заголовка и получит 401. */
+    suspend fun token(stale: String?): String? =
+        when (val outcome = tokens.renew(stale) { issue(it) }) {
+            is AccessTokenIssue.Issued -> outcome.token
+            AccessTokenIssue.Rejected -> null
+            is AccessTokenIssue.Throttled -> throw AccessTokenThrottled(outcome.retryAfter)
+            is AccessTokenIssue.Unavailable ->
+                throw AccessTokenUnavailable("пропуск не выдан: ${outcome.reason}")
+        }
 
     on(Send) { request ->
         if (request.url.encodedPath.startsWith(AUTH_PATH)) return@on proceed(request)
 
-        val token = tokens.current ?: tokens.renew(null) { issue(it) }
-            ?: return@on proceed(request)
+        val token = tokens.current ?: token(null) ?: return@on proceed(request)
         request.headers[HttpHeaders.Authorization] = "Bearer $token"
         val call = proceed(request)
         if (call.response.status != HttpStatusCode.Unauthorized) return@on call
 
-        val renewed = tokens.renew(token) { issue(it) } ?: return@on call
+        val renewed = token(token) ?: return@on call
         request.headers[HttpHeaders.Authorization] = "Bearer $renewed"
         proceed(request)
     }

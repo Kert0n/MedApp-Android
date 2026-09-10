@@ -1,5 +1,6 @@
 package com.kert0n.medapp.network.server
 
+import com.kert0n.medapp.network.account.AccessTokenThrottled
 import com.kert0n.medapp.network.account.AccessTokenUnavailable
 import com.kert0n.medapp.network.account.AccessTokens
 import com.kert0n.medapp.network.account.AccountCredentials
@@ -16,11 +17,17 @@ import io.ktor.client.request.post
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import io.ktor.utils.io.ByteChannel
 import java.util.Base64
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration.Companion.seconds
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.uuid.Uuid
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -55,9 +62,10 @@ class MedAppAuthTest {
     private fun client(
         stored: StoredAccount = StoredAccount.Present(account),
         tokenStatus: HttpStatusCode = HttpStatusCode.OK,
+        retryAfter: String? = null,
         accepts: (String?) -> Boolean = { it == "Bearer t${tokenCalls.get()}" }
     ) = medAppHttpClient(
-        MockEngine { request -> answer(request, tokenStatus, accepts) },
+        MockEngine { request -> answer(request, tokenStatus, retryAfter, accepts) },
         "https://medapp.test",
         tokens = AccessTokens(Stored(stored)),
         retryDelay = { delayMillis(false) { 0L } }
@@ -66,6 +74,7 @@ class MedAppAuthTest {
     private fun MockRequestHandleScope.answer(
         request: HttpRequestData,
         tokenStatus: HttpStatusCode,
+        retryAfter: String?,
         accepts: (String?) -> Boolean
     ): HttpResponseData {
         val authorization = request.headers[HttpHeaders.Authorization]
@@ -77,7 +86,7 @@ class MedAppAuthTest {
             return if (tokenStatus == HttpStatusCode.OK) {
                 respond("""{"accessToken":"t$number"}""", HttpStatusCode.OK, json)
             } else {
-                respond("", tokenStatus)
+                respond("", tokenStatus, retryAfter?.let { headersOf(HttpHeaders.RetryAfter, it) } ?: headersOf())
             }
         }
         resourceCalls.incrementAndGet()
@@ -171,6 +180,73 @@ class MedAppAuthTest {
 
         assertTrue(failure is AccessTokenUnavailable)
         assertEquals(0, resourceCalls.get())
+    }
+
+    /**
+     * Учётку сервер не принял — по тому же ключу пропуск больше не просят: иначе каждый запрос
+     * добавлял бы к ресурсу лишнюю выдачу и выжигал лимит по адресу (PLAN B5).
+     */
+    @Test
+    fun rejectedAccountIsNotAskedForATokenAgain() = runTest {
+        val client = client(tokenStatus = HttpStatusCode.Unauthorized)
+        client.get("/v1/users/me")
+        client.get("/v1/med-kits")
+
+        assertEquals(1, tokenCalls.get())
+        assertEquals(listOf<String?>(null, null), seenAuthorization)
+    }
+
+    /** Лимит выдачи — отдельный случай: срок ожидания называет сервер, и он доходит до операции. */
+    @Test
+    fun throttledIssueCarriesRetryAfter() = runTest {
+        val client = client(tokenStatus = HttpStatusCode.TooManyRequests, retryAfter = "30")
+
+        val failure = runCatching { client.get("/v1/users/me") }.exceptionOrNull()
+
+        assertEquals(30.seconds, (failure as? AccessTokenThrottled)?.retryAfter)
+        assertEquals(0, resourceCalls.get())
+    }
+
+    /** Ждавшие одну выдачу берут её результат, даже когда она не удалась. */
+    @Test
+    fun parallelRequestsShareOneFailedIssue() = runTest {
+        val client = client(tokenStatus = HttpStatusCode.ServiceUnavailable)
+
+        val failures = (1..8)
+            .map { async { runCatching { client.get("/v1/users/me") }.exceptionOrNull() } }
+            .awaitAll()
+
+        assertTrue(failures.all { it is AccessTokenUnavailable })
+        assertEquals(1, tokenCalls.get())
+    }
+
+    /**
+     * Отмена — не отказ выдачи. Иначе брошенный экран оставлял бы в общем пропуске «выдать не
+     * удалось», и следующий запрос получил бы это вместо своей попытки.
+     */
+    @Test
+    fun cancellationDuringIssuePassesThrough() = runTest {
+        val stalled = ByteChannel(autoFlush = true)
+        val client = medAppHttpClient(
+            MockEngine { request ->
+                if (request.url.encodedPath == "/v1/auth/token") {
+                    tokenCalls.incrementAndGet()
+                    respond(stalled, HttpStatusCode.OK, json)
+                } else {
+                    respond("", HttpStatusCode.OK)
+                }
+            },
+            "https://medapp.test",
+            tokens = AccessTokens(Stored(StoredAccount.Present(account)))
+        )
+
+        var caught: Throwable? = null
+        val request = launch(start = CoroutineStart.UNDISPATCHED) {
+            caught = runCatching { client.get("/v1/users/me") }.exceptionOrNull()
+        }
+        request.cancelAndJoin()
+
+        assertTrue("отмена прошла насквозь, а не стала отказом: $caught", caught is CancellationException)
     }
 
     @Test

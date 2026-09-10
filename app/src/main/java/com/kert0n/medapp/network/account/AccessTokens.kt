@@ -9,29 +9,50 @@ import kotlinx.coroutines.sync.withLock
  * Пропуск MedApp: живёт только в памяти процесса и выдаётся по учётке (PLAN B1, G2).
  *
  * Выдача одна на всех: запросы, одновременно получившие 401 со старым пропуском, ждут одну
- * выдачу и берут её результат, а не просят каждый свою — иначе лимит выдачи по адресу сгорел бы
- * на одном всплеске. `null` значит, что пропуска нет и взять его не по чему: учётки нет, она
- * нечитаема или сервер её не принял.
+ * выдачу и берут её результат — **любой**, а не только удачный, — иначе лимит выдачи по адресу
+ * сгорел бы на одном всплеске. [AccessTokenIssue.Rejected] от сервера запоминается на время
+ * процесса: учётка не принята, и по тому же ключу пропуск просить нечего.
+ *
+ * Отсутствие учётки [AccessTokenIssue.Rejected] тоже, но оно не запоминается: регистрация
+ * заводит учётку в том же процессе, и после неё пропуск должен выдаваться.
  */
 @Singleton
 class AccessTokens @Inject constructor(private val credentials: CredentialSource) {
 
     private val mutex = Mutex()
 
+    /** Сколько выдач уже состоялось. По нему видно, что выдача прошла, пока мы ждали очереди. */
     @Volatile
-    private var token: String? = null
+    private var issues: Long = 0
 
-    val current: String? get() = token
+    @Volatile
+    private var last: AccessTokenIssue? = null
+
+    val current: String? get() = (last as? AccessTokenIssue.Issued)?.token
 
     /**
-     * Новый пропуск вместо [stale]. Если его уже заменил другой запрос, возвращается замена, и
-     * второй выдачи не происходит.
+     * Новый пропуск вместо [stale]. Если его уже заменил другой запрос — или другой запрос уже
+     * получил отказ, — возвращается тот результат, и второй выдачи не происходит.
      */
-    suspend fun renew(stale: String?, issue: suspend (AccountCredentials) -> String?): String? =
-        mutex.withLock {
-            token?.takeIf { it != stale }?.let { return@withLock it }
+    suspend fun renew(
+        stale: String?,
+        issue: suspend (AccountCredentials) -> AccessTokenIssue
+    ): AccessTokenIssue {
+        val awaited = issues
+        return mutex.withLock {
+            val known = last
+            if (issues != awaited) known?.let { return@withLock it }
+            when (known) {
+                is AccessTokenIssue.Issued -> if (known.token != stale) return@withLock known
+                AccessTokenIssue.Rejected -> return@withLock known
+                else -> Unit
+            }
             val account = (credentials.read() as? StoredAccount.Present)?.credentials
-                ?: return@withLock null
-            issue(account).also { token = it }
+                ?: return@withLock AccessTokenIssue.Rejected
+            issue(account).also {
+                last = it
+                issues++
+            }
         }
+    }
 }
