@@ -125,9 +125,7 @@ class IntakeTest {
 
     @Test
     fun unplannedIntakeHasNoPlanAtAll() {
-        // Планировать разовый приём нечем: ни курса, ни расписания, которое его породило. Раньше
-        // это утверждал `require` над сочетанием четырёх `null`, теперь — тип: полей плана у
-        // внепланового факта нет, и статуса, кроме TAKEN, у него не бывает.
+        // У внепланового факта по типу нет полей курса и расписания; единственный статус — TAKEN.
         val fact = unplannedIntake()
         assertEquals(IntakeStatus.TAKEN, fact.status)
         assertEquals(PACK, fact.taken.packageId)

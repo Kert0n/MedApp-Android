@@ -31,8 +31,8 @@ class MoneyPresentationMapperTest {
 
     @Test
     fun exponentIsRejectedInBothCases() {
-        // `DecimalFormat` читает экспоненту независимо от шаблона, и разделитель по умолчанию
-        // заглавный: «1E3» разбирался в тысячу, пока грамматику не проверял маппер.
+        // `DecimalFormat` читает экспоненту независимо от шаблона, поэтому грамматика формы
+        // отвергает её до разбора как пользовательскую десятичную запись.
         assertEquals(MoneyPresentationError.NOT_A_DECIMAL, errorOf("1E3"))
         assertEquals(MoneyPresentationError.NOT_A_DECIMAL, errorOf("1e3"))
         assertEquals(MoneyPresentationError.NOT_A_DECIMAL, errorOf("1E-2"))

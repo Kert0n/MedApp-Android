@@ -1,6 +1,5 @@
 package com.kert0n.medapp.domain.course
 
-import com.kert0n.medapp.domain.course.Revision
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.fixture.LATER
@@ -23,10 +22,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Источник — значение со своим местом в стеке: тождество даёт пара (курс, пачка), приоритет —
- * позиция (PLAN D5).
+ * Препарат курса хранит выбранные человеком пачки, их порядок и выделение. Источник — значение:
+ * тождество даёт пара (курс, пачка), приоритет — позиция (PLAN D5).
  */
-class CourseSourceStackTest {
+class CourseMedicineTest {
 
     private val home = pack(id = PACK, formId = TABLET_FORM, quantity = tablets("20"))
     private val dacha = pack(id = OTHER_PACK, formId = TABLET_FORM, quantity = tablets("12"))
