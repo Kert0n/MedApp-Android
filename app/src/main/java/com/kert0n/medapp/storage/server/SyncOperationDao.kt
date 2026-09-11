@@ -140,11 +140,14 @@ interface SyncOperationDao {
     )
     suspend fun defer(id: Uuid, lastError: String, at: Instant, notBefore: Instant): Int
 
-    /** Закрытие или возврат в ожидание стирает записанный ответ: он либо применён, либо будет получен заново. */
+    /**
+     * Закрытие или возврат в ожидание — только незакрытой: закрытая второй раз не закрывается.
+     * Записанный ответ стирается: он либо применён, либо будет получен заново.
+     */
     @Query(
         "UPDATE sync_operations SET status = :status, last_error = :lastError, " +
             "last_tried_at = :at, attempts = attempts + :attempted, answer_status = NULL, answer_body = NULL, " +
-            "not_before = :notBefore WHERE id = :id"
+            "not_before = :notBefore WHERE id = :id AND status IN ('PENDING', 'SENDING', 'ANSWERED')"
     )
     suspend fun settle(
         id: Uuid,
@@ -153,7 +156,7 @@ interface SyncOperationDao {
         at: Instant? = null,
         attempted: Int = 0,
         notBefore: Instant? = null
-    )
+    ): Int
 
     /**
      * Сбрасывает собранный запрос: версия устарела, и он готовится заново по свежему состоянию

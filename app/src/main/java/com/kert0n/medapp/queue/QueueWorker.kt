@@ -11,11 +11,14 @@ import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import java.time.Clock
 import java.time.Instant
 import javax.inject.Inject
+import javax.inject.Singleton
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
 import kotlin.uuid.Uuid
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Работник очереди: читает, что у сервера сейчас, готовит запрос по прочитанному, отправляет,
@@ -34,12 +37,19 @@ import kotlin.uuid.Uuid
  * `Retry-After`; строка, которую нечем прочитать, пропускается, а промах словаря дочитывается.
  * Задержка между повторами растёт с попытками — от двух секунд до пяти минут.
  */
+@Singleton
 class QueueWorker @Inject constructor(
     private val storage: QueueStorage,
     private val transport: QueueTransport,
     private val vocabulary: VocabularyResolver,
     private val clock: Clock
 ) {
+
+    /**
+     * Исполнитель один: два прохода разом отправили бы одну операцию дважды. Второй вызов ждёт
+     * первого, а не пропускается, — тот, кто позвал, хочет, чтобы очередь ушла.
+     */
+    private val single = Mutex()
 
     /**
      * Проход: пока в базе есть готовая операция — берётся первая по номеру, и так до тех пор,
@@ -50,7 +60,7 @@ class QueueWorker @Inject constructor(
      * пропуск, а не бесконечный круг. Переподготовка одной операции — не больше трёх раз
      * подряд: дальше она ждёт по обычной задержке.
      */
-    suspend fun drain(): Report {
+    suspend fun drain(): Report = single.withLock {
         val drain = Drain()
         var vocabularyRefreshable = true
         while (true) {
@@ -74,7 +84,7 @@ class QueueWorker @Inject constructor(
             }
             if (drain.record(operation, packageId, step)) break
         }
-        return drain.report()
+        drain.report()
     }
 
     /** Подготовка по свежему состоянию, отправка, запись ответа и его применение — одна операция. */

@@ -41,6 +41,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -693,6 +694,34 @@ class QueueWorkerTest {
 
         assertEquals(2, report.settled)
         assertEquals(listOf("PUT", "DELETE"), transport.sent.map { it.method })
+    }
+
+    /** Исполнитель один: два `drain` разом не отправляют одну операцию дважды. */
+    @Test
+    fun concurrentDrainsSendEachOperationOnce() = runTest {
+        val storage = Storage(listOf(operation()))
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val transport = object : QueueTransport {
+            val sent = java.util.concurrent.atomic.AtomicInteger()
+            override suspend fun send(request: PreparedRequest): ApiResult<RawResponse> {
+                sent.incrementAndGet()
+                gate.await()
+                return ApiResult.Success(RawResponse(200, snapshotJson))
+            }
+            override suspend fun packageSnapshot(packageId: Uuid): ApiResult<PackageSnapshotNetworkDTO> = ApiResult.Success(snapshot)
+        }
+        val worker = QueueWorker(storage, transport, resolver(true), clock)
+
+        val reports = kotlinx.coroutines.coroutineScope {
+            val first = async { worker.drain() }
+            val second = async { worker.drain() }
+            kotlinx.coroutines.yield()
+            gate.complete(Unit)
+            listOf(first.await(), second.await())
+        }
+
+        assertEquals(1, transport.sent.get())
+        assertEquals(1, reports.sumOf { it.settled })
     }
 
     @Test

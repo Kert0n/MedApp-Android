@@ -72,7 +72,9 @@ class SyncOperationRoomRepository @Inject constructor(
         lastError: String?,
         at: Instant?,
         attempted: Boolean
-    ) = queue.settle(id, status, lastError, at, if (attempted) 1 else 0)
+    ) {
+        queue.settle(id, status, lastError, at, if (attempted) 1 else 0)
+    }
 
     override suspend fun unreadable(): List<StoredSyncOperation.Unreadable> =
         queue.all().let { rows ->
@@ -125,7 +127,7 @@ class SyncOperationRoomRepository @Inject constructor(
                 else -> command.unknownRoot()
             }
             val columns = request.toStorageColumns()
-            queue.freeze(
+            val frozen = queue.freeze(
                 id = id,
                 method = columns.method,
                 path = columns.path,
@@ -138,8 +140,10 @@ class SyncOperationRoomRepository @Inject constructor(
                 unitId = columns.unitId,
                 preparedAt = columns.at
             )
+            // Ноль строк — операцию закрыли или взяли между чтением и взятием: не наша.
+            if (frozen == 0) return@withTransaction null
         } else {
-            queue.markSending(id)
+            if (queue.markSending(id) == 0) return@withTransaction null
         }
         (queue.find(id)?.toDomain(words) as? StoredSyncOperation.Readable)?.operation?.let { Take.Sending(it) }
     }
@@ -167,8 +171,10 @@ class SyncOperationRoomRepository @Inject constructor(
             "снимок пачки называет аптечку, которой нет: ${snapshot.pack.medKitId}"
         }.toDomain()
         val resolved = snapshot.toDomain(words, medKit, addedAt = at, observedAt = at)
-        packages.applyServerSnapshot(resolved.pack.toStorageEntity(resolved.sync), observedAt = at)
-        resolved.pack.claims?.let { packages.upsertClaims(it.toStorageEntity(snapshot.pack.id)) }
+        // Запоздалый снимок свежий не перекрывает — ни состояние, ни брони.
+        if (packages.applyServerSnapshot(resolved.pack.toStorageEntity(resolved.sync), observedAt = at)) {
+            resolved.pack.claims?.let { packages.upsertClaims(it.toStorageEntity(snapshot.pack.id)) }
+        }
     }
 
     /**
@@ -182,26 +188,32 @@ class SyncOperationRoomRepository @Inject constructor(
         val operation = (queue.find(id)?.toDomain(words) as? StoredSyncOperation.Readable)?.operation
             ?: return@withTransaction
         val command = operation.command as? PackageSyncCommand
+        // Закрытие одно: строка, которую уже закрыли, второй раз не закрывается, и следствий у
+        // второго закрытия нет — условие стоит в самом запросе.
         when (outcome) {
             is Delivery.Applied -> {
-                queue.settle(id, SyncOperationStatus.APPLIED, null, at, attempted = 1)
+                if (queue.settle(id, SyncOperationStatus.APPLIED, null, at, attempted = 1) == 0) return@withTransaction
                 intakes.markRemoteApplied(id)
                 command?.let { apply(outcome.state, it, words, at) }
             }
             is Delivery.Stale -> {
-                queue.reprepare(id, lastError = "устарело: ${outcome.snapshot.pack.version}", at = at, notBefore = outcome.notBefore)
+                if (queue.reprepare(id, lastError = "устарело: ${outcome.snapshot.pack.version}", at = at, notBefore = outcome.notBefore) == 0) {
+                    return@withTransaction
+                }
                 apply(outcome.snapshot, words, at)
             }
             is Delivery.Refused -> {
-                queue.settle(id, SyncOperationStatus.REFUSED, outcome.reason.name, at, attempted = 1)
+                if (queue.settle(id, SyncOperationStatus.REFUSED, outcome.reason.name, at, attempted = 1) == 0) return@withTransaction
                 intakes.markRemoteRefused(id)
                 command?.let { apply(outcome.state, it, words, at) }
                 cascade(id, SyncOperationStatus.REFUSED)
             }
-            is Delivery.Retry ->
+            is Delivery.Retry -> {
                 queue.settle(id, SyncOperationStatus.PENDING, outcome.error, at, attempted = 1, notBefore = outcome.notBefore)
+                Unit
+            }
             Delivery.AccessLost -> {
-                queue.settle(id, SyncOperationStatus.ACCESS_LOST, null, at, attempted = 1)
+                if (queue.settle(id, SyncOperationStatus.ACCESS_LOST, null, at, attempted = 1) == 0) return@withTransaction
                 intakes.markRemoteRefused(id)
                 command?.let {
                     val row = packages.find(it.packageId) ?: return@let

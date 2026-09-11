@@ -307,4 +307,37 @@ class QueueStorageTest {
         assertTrue(storage.ready(at.plusSeconds(10)).isEmpty())
         assertEquals(listOf(operation), storage.ready(at.plusSeconds(31)).map { it.id })
     }
+
+    /** Запоздалый снимок свежий не перекрывает: меньшая версия большую не откатывает (PLAN E1). */
+    @Test
+    fun anOlderSnapshotDoesNotOverwriteANewerOne() = runTest {
+        database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
+        storage.take(operation, null, at)
+        val older = medAppJson.decodeFromString(
+            PackageSnapshotNetworkDTO.serializer(),
+            snapshotJson.replace("\"version\":4", "\"version\":2").replace("17.000000", "19.000000")
+        )
+
+        storage.settle(operation, Delivery.Applied(PackageState.Present(older)), at.plusSeconds(1))
+
+        val row = requireNotNull(database.packages().find(PACK))
+        assertEquals(tablets("20"), row.toDomain(VOCABULARY).quantity)
+        assertEquals(ResourceVersion(3), row.pack.syncState().version)
+        assertEquals(SyncOperationStatus.APPLIED, (requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable).operation.status)
+    }
+
+    /** Закрытие одно: закрытую операцию второй исход не переписывает и следствий не оставляет. */
+    @Test
+    fun aClosedOperationIsNotClosedAgain() = runTest {
+        database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
+        storage.take(operation, null, at)
+        storage.settle(operation, Delivery.Applied(PackageState.Present(snapshot)), at.plusSeconds(1))
+
+        storage.settle(operation, Delivery.AccessLost, at.plusSeconds(2))
+
+        val stored = (requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable).operation
+        assertEquals(SyncOperationStatus.APPLIED, stored.status)
+        assertEquals(com.kert0n.medapp.domain.pack.Package.Access.AVAILABLE, requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY).access)
+        assertNull(storage.take(operation, null, at.plusSeconds(3)))
+    }
 }

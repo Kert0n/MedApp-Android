@@ -40,13 +40,22 @@ interface PackageDao {
     /**
      * Снимок переписывает серверную строку целиком и не касается личных сведений: они лежат в
      * другой таблице. Недостающая строка деталей создаётся моментом первого наблюдения —
-     * обязательное `addedAt` домена не бывает пустым (PLAN E4, F1).
+     * обязательное `addedAt` домена не бывает пустым (PLAN E4, F1). Меньшая версия большую не
+     * откатывает (PLAN E1): запоздалый снимок ложится, только если он не старее того, что есть.
+     * `false` — снимок старее и не применён.
      */
     @Transaction
-    suspend fun applyServerSnapshot(pack: PackageStorageEntity, observedAt: Instant) {
+    suspend fun applyServerSnapshot(pack: PackageStorageEntity, observedAt: Instant): Boolean {
+        val known = serverVersionOf(pack.id)
+        val incoming = pack.version
+        if (known != null && incoming != null && incoming < known) return false
         upsertServerPart(pack)
         insertDetailsIfMissing(observedPackageDetails(pack.id, observedAt))
+        return true
     }
+
+    @Query("SELECT version FROM packages WHERE id = :id")
+    suspend fun serverVersionOf(id: Uuid): Long?
 
 
     /**

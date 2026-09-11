@@ -84,7 +84,7 @@ class PackageRoomRepository @Inject constructor(
         pkg: Package,
         sync: PackageSyncState,
         observedAt: Instant
-    ) = packages.applyServerSnapshot(pkg.toStorageEntity(sync), observedAt)
+    ): Boolean = packages.applyServerSnapshot(pkg.toStorageEntity(sync), observedAt)
 
     override suspend fun saveClaims(packageId: Uuid, claims: Claims?) {
         if (claims == null) packages.deleteClaims(packageId)
