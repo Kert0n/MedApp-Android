@@ -136,8 +136,9 @@ class CourseDraft(
     }
 
     /**
-     * Активация: нужны расписание, доза, форма и число доз. Дальше их наличие обеспечивает тип
-     * [Course], а выделения становятся бронями (PLAN D5, F1).
+     * Активация: нужны расписание, доза, форма и число доз — и ничего сверх: лечение начинается
+     * и без лекарства на руках, необеспеченным, а пачка подключается, когда её купят. Дальше
+     * наличие назначения обеспечивает тип [Course], а выделения становятся бронями (PLAN D5, F1).
      *
      * Рождаются **двое**: план, которым пользуются, и запись, которая останется, когда план
      * уничтожится. Возвращаются они вместе, поэтому завести эпизод без записи невозможно — а
@@ -148,7 +149,6 @@ class CourseDraft(
         val dose = dose ?: return rejected(CourseRejected.Reason.DOSE_MISSING)
         val form = form ?: return rejected(CourseRejected.Reason.FORM_MISSING)
         val totalDoses = totalDoses ?: return rejected(CourseRejected.Reason.TOTAL_DOSES_MISSING)
-        if (medicine.isEmpty) return rejected(CourseRejected.Reason.SOURCES_MISSING)
         val prescription = Prescription(
             dose = dose,
             form = form,

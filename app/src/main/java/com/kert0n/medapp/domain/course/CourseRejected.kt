@@ -34,9 +34,6 @@ class CourseRejected(val reason: Reason) : IllegalStateException(reason.name) {
         FORM_MISSING,
 
         /** Активировать нельзя: не названо, сколько всего доз. */
-        TOTAL_DOSES_MISSING,
-
-        /** Активировать нельзя: нет ни одной пачки. */
-        SOURCES_MISSING
+        TOTAL_DOSES_MISSING
     }
 }

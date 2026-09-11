@@ -987,7 +987,7 @@ class CourseRecord(
 class CourseRejected(val reason: Reason) : IllegalStateException(reason.name) {
     enum class Reason {
         PACKAGE_UNUSABLE, ALREADY_ATTACHED, FORM_UNKNOWN, FORM_MISMATCH, UNIT_MISMATCH,
-        SCHEDULE_MISSING, DOSE_MISSING, SOURCES_MISSING
+        SCHEDULE_MISSING, DOSE_MISSING, FORM_MISSING, TOTAL_DOSES_MISSING
     }
 }
 

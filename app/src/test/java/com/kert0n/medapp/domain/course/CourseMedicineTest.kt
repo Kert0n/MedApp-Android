@@ -136,10 +136,24 @@ class CourseMedicineTest {
         val formed = dosed.setForm(TABLET_FORM, LATER).getOrThrow()
         assertEquals(CourseRejected.Reason.TOTAL_DOSES_MISSING, formed.activate(LATER).rejection())
         val counted = formed.setTotalDoses(7.doses, LATER)
-        assertEquals(CourseRejected.Reason.SOURCES_MISSING, counted.activate(LATER).rejection())
-        val sourced = counted.attach(home, doses = 5.doses, at = LATER).getOrThrow()
-        // Активация удалась — и повторить её нечем: у плана этого перехода нет.
-        assertTrue(sourced.activate(LATER).isSuccess)
+        // Пачки не нужно: лечение начинается и без лекарства на руках. Активация удалась — и
+        // повторить её нечем: у плана этого перехода нет.
+        assertTrue(counted.activate(LATER).isSuccess)
+    }
+
+    @Test
+    fun courseStartedWithoutPacksIsSimplyUnsupplied() {
+        // Записал у врача, куплю завтра: обеспечение «0 из N», а не отказ активировать.
+        val started = prescribedDraft(schedule = schedule(), totalDoses = 7).activate(LATER).getOrThrow()
+        assertTrue(started.course.medicine.isEmpty)
+        val remaining = started.course.schedule.occurrences(
+            from = schedule().start.atStartOfDay(schedule().zone).toInstant(),
+            until = schedule().endInclusive.plusDays(1).atStartOfDay(schedule().zone).toInstant()
+        )
+        val coverage = started.course.coverage(remaining, com.kert0n.medapp.domain.pack.Availability(emptyMap()))
+        assertEquals(7.doses, coverage.requiredDoses)
+        assertEquals(0.doses, coverage.coveredDoses)
+        assertEquals(remaining.first().at, coverage.firstUncoveredAt)
     }
 
     @Test
