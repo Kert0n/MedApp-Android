@@ -127,7 +127,7 @@ class QueueWorker @Inject constructor(
                 ApiFailure.Unauthorized, ApiFailure.RegistrationRefused -> Step.Unauthorized
                 is ApiFailure.TooManyRequests ->
                     Step.Settled(Delivery.Retry("429"), retryAfter = failure.retryAfter, stop = true)
-                ApiFailure.Unavailable -> Step.Settled(Delivery.Retry("связи нет"), stop = true)
+                ApiFailure.Unavailable -> Step.Settled(Delivery.Retry("связи нет", attempted = false), stop = true)
                 ApiFailure.OutcomeUnknown -> Step.Settled(Delivery.Retry("ответ потерян"))
                 is ApiFailure.Protocol -> Step.Settled(Delivery.Retry(failure.reason))
             }
@@ -245,7 +245,7 @@ class QueueWorker @Inject constructor(
             ApiFailure.NotFound -> Read.Failed(Delivery.AccessLost)
             ApiFailure.Unauthorized, ApiFailure.RegistrationRefused -> Read.Failed(Delivery.Retry("нет пропуска"), stop = true)
             is ApiFailure.TooManyRequests -> Read.Failed(Delivery.Retry("429"), stop = true)
-            ApiFailure.Unavailable -> Read.Failed(Delivery.Retry("связи нет"), stop = true)
+            ApiFailure.Unavailable -> Read.Failed(Delivery.Retry("связи нет", attempted = false), stop = true)
             else -> Read.Failed(Delivery.Retry("снимок не прочитан: $failure"))
         }
     }
@@ -305,7 +305,8 @@ class QueueWorker @Inject constructor(
                     val delivery = when (val delivery = step.delivery) {
                         // Срок повтора живёт в базе: следующий проход, процесс или второй
                         // `drain` его увидят, а операция раньше него готовой не будет.
-                        is Delivery.Retry -> delivery.copy(notBefore = later(operation, step.retryAfter))
+                        is Delivery.Retry ->
+                            delivery.copy(notBefore = later(operation, step.retryAfter ?: if (delivery.attempted) null else INITIAL_BACKOFF))
                         is Delivery.Stale -> {
                             val rounds = (reprepared[operation.id] ?: 0) + 1
                             reprepared[operation.id] = rounds

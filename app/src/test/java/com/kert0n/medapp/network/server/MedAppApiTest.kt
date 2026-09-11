@@ -289,6 +289,20 @@ class MedAppApiTest {
         assertEquals(ApiResult.Failure(ApiFailure.OutcomeUnknown), result)
     }
 
+    /** Адрес не разрешился, соединения нет, TLS не прошёл — запрос никуда не ушёл: связи нет, а не исход неизвестен. */
+    @Test
+    fun noConnectionAtAllIsUnavailableNotUnknownEvenForACommand() = runTest {
+        for (broken in listOf(
+            java.net.UnknownHostException("medapp.test"),
+            java.net.ConnectException("отказано"),
+            javax.net.ssl.SSLHandshakeException("рукопожатие")
+        )) {
+            val api = MedAppApi(medAppHttpClient(MockEngine { throw broken }, "https://medapp.test"))
+            assertEquals("$broken", ApiResult.Failure(ApiFailure.Unavailable), api.consume(pack, PackageConsumeNetworkDTO("2")))
+            assertEquals("$broken", ApiResult.Failure(ApiFailure.Unavailable), api.send("DELETE", "/v1/drugs/$pack", emptyMap(), null))
+        }
+    }
+
     /** Пропуска не получить — запрос ещё не ушёл, значит ничего не применено. */
     @Test
     fun missingTokenIsUnavailableNotUnknown() = runTest {

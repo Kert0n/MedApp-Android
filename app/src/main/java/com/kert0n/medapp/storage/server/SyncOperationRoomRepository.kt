@@ -209,7 +209,10 @@ class SyncOperationRoomRepository @Inject constructor(
                 cascade(id, SyncOperationStatus.REFUSED)
             }
             is Delivery.Retry -> {
-                queue.settle(id, SyncOperationStatus.PENDING, outcome.error, at, attempted = 1, notBefore = outcome.notBefore)
+                queue.settle(
+                    id, SyncOperationStatus.PENDING, outcome.error, at,
+                    attempted = if (outcome.attempted) 1 else 0, notBefore = outcome.notBefore
+                )
                 Unit
             }
             Delivery.AccessLost -> {

@@ -166,7 +166,7 @@ class QueueWorkerTest {
                         Delivery.AccessLost -> SyncOperationStatus.ACCESS_LOST
                         is Delivery.Stale -> error("разобрано выше")
                     },
-                    attempts = operation.attempts + 1,
+                    attempts = operation.attempts + (if ((outcome as? Delivery.Retry)?.attempted == false) 0 else 1),
                     lastTriedAt = at,
                     dropAnswer = true,
                     notBefore = (outcome as? Delivery.Retry)?.notBefore,
@@ -463,14 +463,19 @@ class QueueWorkerTest {
         assertEquals(1, storage.frozen)
     }
 
+    /** Без связи — одна попытка соединения на весь проход, и она не считается попыткой операции. */
     @Test
-    fun noConnectionStopsThePassAndKeepsTheOrder() = runTest {
-        val storage = Storage(listOf(operation(sequence = 0), operation(id = OTHER_PACK, sequence = 1)))
+    fun noConnectionStopsThePassAndIsNotAnAttempt() = runTest {
+        val storage = Storage(
+            (0 until 30).map { operation(PackageSyncCommand.Consume(PACK, dose("1"), Uuid.random()), id = Uuid.random(), sequence = it.toLong()) }
+        )
         val transport = transport { ApiResult.Failure(ApiFailure.Unavailable) }
 
         worker(storage, transport).drain()
 
         assertEquals(1, transport.sent.size)
+        assertTrue(storage.operations.values.all { it.attempts == 0 })
+        assertEquals(listOf(now.plusSeconds(2)), storage.operations.values.mapNotNull { it.notBefore })
     }
 
     @Test

@@ -37,7 +37,11 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import io.ktor.client.network.sockets.ConnectTimeoutException
 import java.io.IOException
+import java.net.ConnectException
+import java.net.UnknownHostException
+import javax.net.ssl.SSLHandshakeException
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.uuid.Uuid
@@ -223,8 +227,8 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
         ApiResult.Failure(ApiFailure.TooManyRequests(cause.retryAfter))
     } catch (_: AccessTokenUnavailable) {
         ApiResult.Failure(ApiFailure.Unavailable)
-    } catch (_: IOException) {
-        ApiResult.Failure(ApiFailure.OutcomeUnknown)
+    } catch (broken: IOException) {
+        ApiResult.Failure(broken.asFailure(command = true))
     }
 
     // Исполнение
@@ -257,9 +261,21 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
             ApiResult.Failure(ApiFailure.TooManyRequests(cause.retryAfter))
         } catch (_: AccessTokenUnavailable) {
             ApiResult.Failure(ApiFailure.Unavailable)
-        } catch (_: IOException) {
-            ApiResult.Failure(if (command) ApiFailure.OutcomeUnknown else ApiFailure.Unavailable)
+        } catch (broken: IOException) {
+            ApiResult.Failure(broken.asFailure(command))
         }
+    }
+
+    /**
+     * Обрыв до сервера — адрес не разрешился, соединение не установилось, рукопожатие TLS не
+     * прошло — не потерянный ответ: запрос никуда не ушёл, и у команды нет неизвестного исхода,
+     * есть отсутствие связи. Обрыв после — исход неизвестен (PLAN E3).
+     */
+    private fun IOException.asFailure(command: Boolean): ApiFailure = when {
+        !command -> ApiFailure.Unavailable
+        this is UnknownHostException || this is ConnectException ||
+            this is ConnectTimeoutException || this is SSLHandshakeException -> ApiFailure.Unavailable
+        else -> ApiFailure.OutcomeUnknown
     }
 
     /** Отказ сервера — решение по коду ответа (PLAN B5); тело добавляет только `errors[]` при 400. */
