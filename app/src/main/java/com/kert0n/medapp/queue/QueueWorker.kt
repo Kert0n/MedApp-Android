@@ -1,5 +1,7 @@
 package com.kert0n.medapp.queue
 
+import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
+import com.kert0n.medapp.network.pack.requireKnownIn
 import com.kert0n.medapp.network.server.ApiFailure
 import com.kert0n.medapp.network.server.ApiResult
 import com.kert0n.medapp.network.value.VocabularyResolver
@@ -16,10 +18,13 @@ import kotlin.time.toJavaDuration
 import kotlin.uuid.Uuid
 
 /**
- * Работник очереди: берёт готовое, отправляет замороженным запросом, читает исход и отпускает.
- * Сервер — истина по количеству; устройство доставляет случившееся и читает истину обратно.
- * Повтор безопасен не журналом идемпотентности, а предусловием, замороженным при первой
- * отправке: устаревшее сервер отвергнет, отказ закрывает операцию, а истину даёт снимок (PLAN E3).
+ * Работник очереди: читает, что у сервера сейчас, готовит запрос по прочитанному, отправляет,
+ * читает исход и отпускает. Сервер — истина по количеству; устройство доставляет случившееся
+ * поверх свежего состояния и читает истину обратно (PLAN E2, E3). Поэтому проход по пачке
+ * начинается с чтения её снимка, а следующие операции той же пачки готовятся по ответу
+ * предыдущей — он уже лёг в базу. Запрос, замороженный раньше, — повтор с неизвестным исходом
+ * либо отправка, пережившая смерть процесса, — уходит как есть: чтение перед ним ничего не
+ * меняет и не делается.
  *
  * Один проход — [drain]: пока есть связь, по одной операции в порядке очереди. Обрыв оставляет
  * операцию на повтор тем же запросом и останавливает проход; ограничение частоты соблюдает
@@ -46,6 +51,9 @@ class QueueWorker @Inject constructor(
         val skipped = ArrayList<StoredSyncOperation.Unreadable>()
         var retryAt: Instant? = null
         val heldPackages = HashSet<Uuid>()
+        // Пачки, чьё серверное состояние в этом проходе уже лежит в базе: прочитано перед первой
+        // подготовкой либо пришло ответом на предыдущую операцию.
+        val freshPackages = HashSet<Uuid>()
         for (entry in storage.ready()) {
             val operation = when (entry) {
                 is StoredSyncOperation.Readable -> entry.operation
@@ -66,7 +74,26 @@ class QueueWorker @Inject constructor(
                 retryAt = earliest(retryAt, notBefore)
                 continue
             }
-            val taken = storage.take(operation.id, now) ?: continue
+            val fresh = if (operation.prepared == null && packageId != null && packageId !in freshPackages &&
+                operation.command !is PackageSyncCommand.Create
+            ) {
+                when (val read = readFresh(packageId)) {
+                    is Fresh.Read -> read.snapshot
+                    is Fresh.Failed -> {
+                        storage.settle(operation.id, read.delivery, clock.instant())
+                        if (read.delivery is Delivery.Retry) {
+                            heldPackages += packageId
+                            retryAt = earliest(retryAt, clock.instant().plus(backoff(operation.attempts + 1).toJavaDuration()))
+                        }
+                        if (read.stop) return Report(sent, skipped, retryAt)
+                        continue
+                    }
+                }
+            } else {
+                null
+            }
+            val taken = storage.take(operation.id, fresh, now) ?: continue
+            packageId?.let(freshPackages::add)
             val request = checkNotNull(taken.prepared) { "взятая в отправку операция несёт запрос" }
             when (val step = deliver(taken, request)) {
                 is Step.Settled -> {
@@ -86,6 +113,31 @@ class QueueWorker @Inject constructor(
             }
         }
         return Report(sent, skipped, retryAt)
+    }
+
+    /**
+     * Что у сервера сейчас по этой пачке — перед первой подготовкой в проходе. Снимок ложится в
+     * базу только словами, которые словарь знает: промах дочитывается, а без связи операция ждёт.
+     * Пачки нет — доступа к ней нет, и отправлять нечего.
+     */
+    private suspend fun readFresh(packageId: Uuid): Fresh = when (val read = transport.packageSnapshot(packageId)) {
+        is ApiResult.Success -> when (val known = vocabulary.resolve { read.value.requireKnownIn(it) }) {
+            is VocabularyResolver.Resolution.Resolved -> Fresh.Read(read.value)
+            is VocabularyResolver.Resolution.Unresolved ->
+                Fresh.Failed(Delivery.Retry("словарь не знает ${known.miss.message}"), stop = known.failure != null)
+        }
+        is ApiResult.Failure -> when (val failure = read.failure) {
+            ApiFailure.NotFound -> Fresh.Failed(Delivery.AccessLost)
+            ApiFailure.Unauthorized, ApiFailure.RegistrationRefused -> Fresh.Failed(Delivery.Retry("нет пропуска"), stop = true)
+            is ApiFailure.TooManyRequests -> Fresh.Failed(Delivery.Retry("429"), stop = true)
+            ApiFailure.Unavailable -> Fresh.Failed(Delivery.Retry("связи нет"), stop = true)
+            else -> Fresh.Failed(Delivery.Retry("снимок не прочитан: $failure"))
+        }
+    }
+
+    private sealed interface Fresh {
+        data class Read(val snapshot: PackageSnapshotNetworkDTO) : Fresh
+        data class Failed(val delivery: Delivery, val stop: Boolean = false) : Fresh
     }
 
     /** Отправка одной операции и чтение исхода; отказы сервера — исходы, а не сбои. */

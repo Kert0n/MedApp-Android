@@ -65,12 +65,18 @@ class QueueWorkerTest {
     private val snapshot: PackageSnapshotNetworkDTO =
         medAppJson.decodeFromString(PackageSnapshotNetworkDTO.serializer(), snapshotJson)
 
-    /** Очередь в памяти: операции, их запросы и исходы — ровно то, что видит работник. */
+    /**
+     * Очередь в памяти: операции, их запросы и исходы — ровно то, что видит работник. Состояние
+     * пачки в «базе» — [known]: его переписывает свежий снимок при взятии и снимок из ответа при
+     * закрытии, и по нему готовится запрос.
+     */
     private class Storage(operations: List<SyncOperation>) : QueueStorage {
         val operations = operations.associateBy { it.id }.toMutableMap()
         val settled = mutableListOf<Pair<Uuid, Delivery>>()
         val unreadable = mutableListOf<StoredSyncOperation.Unreadable>()
         var frozen = 0
+        var known = PackageSyncState(PACK, ResourceVersion(3))
+        val takenWith = mutableListOf<PackageSnapshotNetworkDTO?>()
 
         override suspend fun ready(): List<StoredSyncOperation> =
             operations.values
@@ -78,12 +84,14 @@ class QueueWorkerTest {
                 .sortedBy { it.sequence }
                 .map<SyncOperation, StoredSyncOperation> { StoredSyncOperation.Readable(it) } + unreadable
 
-        override suspend fun take(id: Uuid, at: Instant): SyncOperation? {
+        override suspend fun take(id: Uuid, fresh: PackageSnapshotNetworkDTO?, at: Instant): SyncOperation? {
             val operation = operations[id] ?: return null
+            takenWith += fresh
+            fresh?.let { known = PackageSyncState(PACK, it.pack.version, it.claims.version) }
             val prepared = operation.prepared ?: run {
                 frozen++
                 (operation.command as PackageSyncCommand).toPreparedRequest(
-                    operation.id, PackageSyncState(PACK, ResourceVersion(3)), tablets("20"), null, at
+                    operation.id, known, tablets("20"), null, at
                 )
             }
             return operation.with(status = SyncOperationStatus.SENDING, prepared = prepared).also { operations[id] = it }
@@ -96,6 +104,9 @@ class QueueWorkerTest {
 
         override suspend fun settle(id: Uuid, outcome: Delivery, at: Instant) {
             settled += id to outcome
+            ((outcome as? Delivery.Done)?.state as? PackageState.Present)?.let {
+                known = PackageSyncState(PACK, it.snapshot.pack.version, it.snapshot.claims.version)
+            }
             val operation = operations.getValue(id)
             operations[id] = operation.with(
                 status = when (outcome) {
@@ -124,6 +135,8 @@ class QueueWorkerTest {
         val expected = mutableListOf<Expected>()
         var snapshots = 0
         var snapshotAnswer: ApiResult<PackageSnapshotNetworkDTO>? = null
+        /** Снимок для чтения перед подготовкой; `null` — в этом тесте такого чтения не ждут. */
+        var fresh: ApiResult<PackageSnapshotNetworkDTO>? = null
 
         override suspend fun send(request: PreparedRequest, expects: Expected): ApiResult<QueueAnswer> {
             sent += request
@@ -133,7 +146,7 @@ class QueueWorkerTest {
 
         override suspend fun packageSnapshot(packageId: Uuid): ApiResult<PackageSnapshotNetworkDTO> {
             snapshots++
-            return requireNotNull(snapshotAnswer) { "снимок в этом тесте не ожидался" }
+            return requireNotNull(fresh ?: snapshotAnswer) { "снимок в этом тесте не ожидался" }
         }
     }
 
@@ -166,11 +179,24 @@ class QueueWorkerTest {
         id: Uuid = INTAKE,
         sequence: Long = 0,
         attempts: Int = 0,
-        lastTriedAt: Instant? = null
+        lastTriedAt: Instant? = null,
+        status: SyncOperationStatus = SyncOperationStatus.PENDING,
+        prepared: PreparedRequest? = null
     ) = SyncOperation(
         id = id, command = command, sequence = sequence, createdAt = EARLIER, payloadVersion = 1,
-        attempts = attempts, lastTriedAt = lastTriedAt
+        prepared = prepared, status = status, attempts = attempts, lastTriedAt = lastTriedAt
     )
+
+    /** Снимок с другой версией пачки: то, что сервер знает сейчас, а устройство — ещё нет. */
+    private fun snapshotWithVersion(version: Long): PackageSnapshotNetworkDTO =
+        medAppJson.decodeFromString(
+            PackageSnapshotNetworkDTO.serializer(),
+            snapshotJson.replace("\"version\":4", "\"version\":$version")
+        )
+
+    /** Транспорт, у которого чтение перед подготовкой отвечает снимком [fresh]. */
+    private fun transport(fresh: PackageSnapshotNetworkDTO = snapshot, answer: (PreparedRequest) -> ApiResult<QueueAnswer>) =
+        Transport(answer).also { it.fresh = ApiResult.Success(fresh) }
 
     private fun worker(storage: Storage, transport: Transport, online: Boolean = true) =
         QueueWorker(storage, transport, resolver(online), clock)
@@ -178,7 +204,7 @@ class QueueWorkerTest {
     @Test
     fun pendingOperationIsSentAndSettledDoneWithTheSnapshot() = runTest {
         val storage = Storage(listOf(operation()))
-        val transport = Transport { ApiResult.Success(QueueAnswer.Snapshot(snapshot)) }
+        val transport = transport { ApiResult.Success(QueueAnswer.Snapshot(snapshot)) }
 
         val report = worker(storage, transport).drain()
 
@@ -191,17 +217,73 @@ class QueueWorkerTest {
         assertNull(report.retryAt)
     }
 
+    /** Предусловие — то, что у сервера сейчас, а не то, что устройство видело когда-то (PLAN E2, E3). */
+    @Test
+    fun requestIsPreparedFromTheStateJustReadNotFromTheStoredRow() = runTest {
+        val storage = Storage(listOf(operation()))
+        val transport = transport(fresh = snapshotWithVersion(7)) { ApiResult.Success(QueueAnswer.Snapshot(snapshot)) }
+
+        worker(storage, transport).drain()
+
+        assertEquals(1, transport.snapshots)
+        assertEquals(ResourceVersion(7), transport.sent.single().drugVersion)
+        assertTrue(transport.sent.single().body!!.contains("\"version\":7"))
+        assertEquals(snapshotWithVersion(7), storage.takenWith.single())
+    }
+
+    /** Ответ на первую операцию пачки уже лёг в базу — вторая готовится по нему, без второго чтения. */
+    @Test
+    fun theNextOperationOfThePackageIsPreparedFromTheAnswerOfThePrevious() = runTest {
+        val second = PackageSyncCommand.Consume(PACK, dose("1"), OTHER_PACK)
+        val storage = Storage(listOf(operation(sequence = 0), operation(second, id = OTHER_PACK, sequence = 1)))
+        val transport = transport(fresh = snapshotWithVersion(7)) { ApiResult.Success(QueueAnswer.Snapshot(snapshotWithVersion(8))) }
+
+        val report = worker(storage, transport).drain()
+
+        assertEquals(2, report.settled)
+        assertEquals(1, transport.snapshots)
+        assertEquals(listOf(ResourceVersion(7), ResourceVersion(8)), transport.sent.map { it.drugVersion })
+        assertEquals(listOf(snapshotWithVersion(7), null), storage.takenWith)
+    }
+
+    /** Отправка, пережившая смерть процесса: исход неизвестен, запрос уже заморожен — уходит как есть. */
+    @Test
+    fun aSendingSurvivorGoesOutAsItWasWithoutReadingFirst() = runTest {
+        val frozen = consume.toPreparedRequest(INTAKE, PackageSyncState(PACK, ResourceVersion(3)), tablets("20"), null, EARLIER)
+        val storage = Storage(listOf(operation(status = SyncOperationStatus.SENDING, prepared = frozen)))
+        val transport = Transport { ApiResult.Success(QueueAnswer.Snapshot(snapshot)) }
+
+        worker(storage, transport).drain()
+
+        assertEquals(0, transport.snapshots)
+        assertSame(frozen, transport.sent.single())
+        assertEquals(SyncOperationStatus.DONE, storage.operations.getValue(INTAKE).status)
+    }
+
+    /** Пачки на сервере нет уже при чтении: доступа к ней нет, и отправлять нечего. */
+    @Test
+    fun packageGoneBeforeTheReadClosesAsAccessLostWithoutSending() = runTest {
+        val storage = Storage(listOf(operation()))
+        val transport = Transport { ApiResult.Success(QueueAnswer.Snapshot(snapshot)) }
+        transport.fresh = ApiResult.Failure(ApiFailure.NotFound)
+
+        worker(storage, transport).drain()
+
+        assertTrue(transport.sent.isEmpty())
+        assertEquals(Delivery.AccessLost, storage.settled.single().second)
+    }
+
     @Test
     fun conflictOnSyncReadsTheSnapshotAndCloses() = runTest {
         // 409 у `sync` — «уже применено»: штатный исход, истина читается снимком (PLAN B4).
         val storage = Storage(listOf(operation(sync)))
-        val transport = Transport { ApiResult.Failure(ApiFailure.Conflict) }
+        val transport = transport { ApiResult.Failure(ApiFailure.Conflict) }
         transport.snapshotAnswer = ApiResult.Success(snapshot)
 
         val report = worker(storage, transport).drain()
 
         assertEquals(1, report.settled)
-        assertEquals(1, transport.snapshots)
+        assertEquals(2, transport.snapshots) // чтение перед подготовкой и чтение истины после отказа
         assertEquals(Delivery.Done(PackageState.Present(snapshot), refusal = null), storage.settled.single().second)
         assertTrue(transport.sent.single().path.endsWith("/sync/$INTAKE"))
     }
@@ -209,7 +291,7 @@ class QueueWorkerTest {
     @Test
     fun refusalByPreconditionClosesWithTheRefusalNamedAndTheTruthRead() = runTest {
         val storage = Storage(listOf(operation()))
-        val transport = Transport { ApiResult.Failure(ApiFailure.PreconditionFailed) }
+        val transport = transport { ApiResult.Failure(ApiFailure.PreconditionFailed) }
         transport.snapshotAnswer = ApiResult.Success(snapshot)
 
         worker(storage, transport).drain()
@@ -222,7 +304,7 @@ class QueueWorkerTest {
     @Test
     fun retryAfterIsHonouredAndNothingElseIsSentInThatPass() = runTest {
         val storage = Storage(listOf(operation(sequence = 0), operation(id = OTHER_PACK, sequence = 1)))
-        val transport = Transport { ApiResult.Failure(ApiFailure.TooManyRequests(30.seconds)) }
+        val transport = transport { ApiResult.Failure(ApiFailure.TooManyRequests(30.seconds)) }
 
         val report = worker(storage, transport).drain()
 
@@ -238,7 +320,7 @@ class QueueWorkerTest {
         // версия пачки с тех пор изменилась бы (PLAN E2, E3).
         val storage = Storage(listOf(operation()))
         var broken = true
-        val transport = Transport { if (broken) ApiResult.Failure(ApiFailure.OutcomeUnknown) else ApiResult.Success(QueueAnswer.Snapshot(snapshot)) }
+        val transport = transport { if (broken) ApiResult.Failure(ApiFailure.OutcomeUnknown) else ApiResult.Success(QueueAnswer.Snapshot(snapshot)) }
 
         val first = worker(storage, transport).drain()
         assertEquals(0, first.settled)
@@ -259,7 +341,7 @@ class QueueWorkerTest {
     @Test
     fun noConnectionStopsThePassAndKeepsTheOrder() = runTest {
         val storage = Storage(listOf(operation(sequence = 0), operation(id = OTHER_PACK, sequence = 1)))
-        val transport = Transport { ApiResult.Failure(ApiFailure.Unavailable) }
+        val transport = transport { ApiResult.Failure(ApiFailure.Unavailable) }
 
         worker(storage, transport).drain()
 
@@ -271,7 +353,7 @@ class QueueWorkerTest {
         val storage = Storage(emptyList())
         val broken = StoredSyncOperation.Unreadable(OTHER_PACK, StoredSyncOperation.Reason.Format("payload не разбирается"))
         storage.unreadable += broken
-        val transport = Transport { ApiResult.Success(QueueAnswer.Snapshot(snapshot)) }
+        val transport = transport { ApiResult.Success(QueueAnswer.Snapshot(snapshot)) }
 
         val report = worker(storage, transport).drain()
 
@@ -284,7 +366,7 @@ class QueueWorkerTest {
         val storage = Storage(emptyList())
         val miss = VocabularyMiss(VocabularyMiss.Kind.UNIT, MILLILITRES.id)
         storage.unreadable += StoredSyncOperation.Unreadable(OTHER_PACK, StoredSyncOperation.Reason.VocabularyStale(miss))
-        val transport = Transport { ApiResult.Success(QueueAnswer.Snapshot(snapshot)) }
+        val transport = transport { ApiResult.Success(QueueAnswer.Snapshot(snapshot)) }
 
         val report = worker(storage, transport, online = true).drain()
 
@@ -297,7 +379,7 @@ class QueueWorkerTest {
     @Test
     fun answerOutOfShapeIsRetriedAndNothingIsApplied() = runTest {
         val storage = Storage(listOf(operation()))
-        val transport = Transport { ApiResult.Failure(ApiFailure.Protocol("пустое тело там, где контракт обещает снимок")) }
+        val transport = transport { ApiResult.Failure(ApiFailure.Protocol("пустое тело там, где контракт обещает снимок")) }
 
         val report = worker(storage, transport).drain()
 
@@ -309,7 +391,7 @@ class QueueWorkerTest {
     @Test
     fun lostPackageClosesAsAccessLost() = runTest {
         val storage = Storage(listOf(operation()))
-        val transport = Transport { ApiResult.Failure(ApiFailure.NotFound) }
+        val transport = transport { ApiResult.Failure(ApiFailure.NotFound) }
 
         worker(storage, transport).drain()
 

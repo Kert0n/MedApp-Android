@@ -11,6 +11,7 @@ import com.kert0n.medapp.fixture.inMemoryDatabase
 import com.kert0n.medapp.fixture.medKit
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.unplannedIntake
+import com.kert0n.medapp.fixture.packageRepository
 import com.kert0n.medapp.fixture.queueRepository
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.network.intake.IntakeAccounting
@@ -82,7 +83,7 @@ class QueueStorageTest {
     fun takingFreezesTheRequestWithThePackagesPreconditionsAndMarksSending() = runTest {
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
 
-        val taken = requireNotNull(storage.take(operation, at))
+        val taken = requireNotNull(storage.take(operation, null, at))
 
         val request = requireNotNull(taken.prepared)
         assertEquals(SyncOperationStatus.SENDING, taken.status)
@@ -92,17 +93,32 @@ class QueueStorageTest {
         assertEquals(listOf(taken.id), storage.ready().map { it.id })
     }
 
+    /** Свежее состояние ложится первым, и запрос везёт его версию и остаток, а не те, что лежали в строке. */
+    @Test
+    fun takingWithAFreshSnapshotAppliesItAndFreezesItsPreconditions() = runTest {
+        database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
+
+        val taken = requireNotNull(storage.take(operation, snapshot, at))
+
+        val request = requireNotNull(taken.prepared)
+        assertEquals(ResourceVersion(4), request.drugVersion)
+        assertEquals(ResourceVersion(2), request.claimsVersion)
+        assertEquals(tablets("17"), request.quantityBefore)
+        assertEquals(tablets("4"), request.mineBefore)
+        assertEquals(tablets("17"), requireNotNull(database.packageRepository().find(PACK)).quantity)
+    }
+
     @Test
     fun takingAgainDoesNotRebuildTheRequest() = runTest {
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
-        val first = requireNotNull(storage.take(operation, at)).prepared
+        val first = requireNotNull(storage.take(operation, null, at)).prepared
         // Версия пачки ушла вперёд — а замороженный запрос остался с прежней (PLAN E2).
         val moved = pack(quantity = tablets("20"), form = TABLET_FORM)
         database.packages().applyServerSnapshot(
             moved.toStorageEntity(PackageSyncState(PACK, ResourceVersion(9), ResourceVersion(1), at)), at
         )
 
-        val second = requireNotNull(storage.take(operation, at.plusSeconds(60))).prepared
+        val second = requireNotNull(storage.take(operation, null, at.plusSeconds(60))).prepared
 
         assertEquals(first, second)
         assertEquals(ResourceVersion(3), second!!.drugVersion)
@@ -116,7 +132,7 @@ class QueueStorageTest {
             )
         )
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
-        storage.take(operation, at)
+        storage.take(operation, null, at)
 
         storage.settle(operation, Delivery.Done(PackageState.Present(snapshot)), at.plusSeconds(1))
 
@@ -137,7 +153,7 @@ class QueueStorageTest {
     @Test
     fun settlingRetryKeepsTheOperationPendingWithTheError() = runTest {
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
-        storage.take(operation, at)
+        storage.take(operation, null, at)
 
         storage.settle(operation, Delivery.Retry("обрыв"), at.plusSeconds(1))
 
@@ -150,7 +166,7 @@ class QueueStorageTest {
     @Test
     fun packageGoneFromTheServerIsArchivedLocally() = runTest {
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("20"), INTAKE), at)
-        storage.take(operation, at)
+        storage.take(operation, null, at)
 
         storage.settle(operation, Delivery.Done(PackageState.Gone), at.plusSeconds(1))
 
@@ -162,7 +178,7 @@ class QueueStorageTest {
     @Test
     fun accessLostMarksThePackageAndClosesTheOperation() = runTest {
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
-        storage.take(operation, at)
+        storage.take(operation, null, at)
 
         storage.settle(operation, Delivery.AccessLost, at.plusSeconds(1))
 
@@ -179,7 +195,7 @@ class QueueStorageTest {
         database.syncOperations().enqueue(release, PackageSyncCommand.ReleaseClaim(PACK), at, dependsOn = setOf(operation))
 
         assertEquals(listOf(operation), storage.ready().map { it.id })
-        storage.take(operation, at)
+        storage.take(operation, null, at)
         storage.settle(operation, Delivery.Done(PackageState.Present(snapshot)), at)
         assertEquals(listOf(release), storage.ready().map { it.id })
     }

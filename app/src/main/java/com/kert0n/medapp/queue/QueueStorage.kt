@@ -1,5 +1,6 @@
 package com.kert0n.medapp.queue
 
+import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
 import java.time.Instant
 import kotlin.uuid.Uuid
 
@@ -19,11 +20,14 @@ interface QueueStorage {
     suspend fun ready(): List<StoredSyncOperation>
 
     /**
-     * Берёт операцию в отправку: замораживает запрос, если он ещё не собран, — с теми
-     * предусловиями, что у пачки сейчас, — и переводит в `SENDING`. Собранный запрос не
-     * пересобирается никогда (PLAN E2). `null` — операции нет или она уже закрыта.
+     * Берёт операцию в отправку: применяет [fresh] — только что прочитанное состояние пачки,
+     * если работник его читал, — замораживает запрос по нему, если он ещё не собран, и переводит
+     * в `SENDING` одной транзакцией. Так запрос везёт предусловия, которые у сервера **сейчас**,
+     * а не те, что устройство видело когда-то (PLAN E2, E3). Собранный запрос не
+     * пересобирается: повтор с неизвестным исходом идёт тем же. `null` — операции нет или она
+     * уже закрыта.
      */
-    suspend fun take(id: Uuid, at: Instant): SyncOperation?
+    suspend fun take(id: Uuid, fresh: PackageSnapshotNetworkDTO?, at: Instant): SyncOperation?
 
     /** Отпускает операцию с исходом; что исход значит для строк, решает хранилище. */
     suspend fun settle(id: Uuid, outcome: Delivery, at: Instant)
