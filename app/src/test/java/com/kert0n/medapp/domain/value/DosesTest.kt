@@ -1,10 +1,8 @@
 package com.kert0n.medapp.domain.value
 
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import com.kert0n.medapp.domain.value.doses
 
 /**
  * Правило «доз не бывает отрицательное число» проверяется здесь — на самом типе, а не девять раз
@@ -26,16 +24,17 @@ class DosesTest {
 
     @Test
     fun clampedSubtractionIsAskedForByName() {
-        assertEquals(0.doses, 3.doses.minusOrNone(4.doses))
-        assertEquals(1.doses, 4.doses.minusOrNone(3.doses))
+        assertTrue(3.doses.minusOrNone(4.doses) == 0.doses)
+        assertTrue(4.doses.minusOrNone(3.doses) == 1.doses)
     }
 
     @Test
     fun dosesAddUpAndCompare() {
-        assertEquals(9.doses, 5.doses + 4.doses)
-        assertEquals(4.doses, minOf(5.doses, 4.doses))
+        assertTrue(5.doses + 4.doses == 9.doses)
+        assertTrue(3.doses - 1.doses == 2.doses)
+        assertTrue(minOf(5.doses, 4.doses) == 4.doses)
+        assertTrue(1.doses > 0.doses)
         assertTrue(0.doses.isNone)
-        assertTrue(3.doses-1.doses==2.doses)
     }
 
     @Test
@@ -43,8 +42,8 @@ class DosesTest {
         // По одной таблетке в двух пачках при дозе в две таблетки дают ноль доз, а не одну.
         val unitId = TABLETS_FOR_TEST
         val dose = Dose(Quantity(java.math.BigDecimal("2"), unitId))
-        assertEquals(0.doses, Quantity(java.math.BigDecimal("1"), unitId).dosesIn(dose))
-        assertEquals(3.doses, Quantity(java.math.BigDecimal("7"), unitId).dosesIn(dose))
+        assertTrue(Quantity(java.math.BigDecimal("1"), unitId).dosesIn(dose) == 0.doses)
+        assertTrue(Quantity(java.math.BigDecimal("7"), unitId).dosesIn(dose) == 3.doses)
     }
 
     private companion object {
