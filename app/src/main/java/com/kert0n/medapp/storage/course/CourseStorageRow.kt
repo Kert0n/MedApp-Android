@@ -6,7 +6,6 @@ import com.kert0n.medapp.domain.course.Course
 import com.kert0n.medapp.domain.course.CourseDraft
 import com.kert0n.medapp.domain.course.CourseMedicine
 import com.kert0n.medapp.domain.course.CourseSchedule
-import com.kert0n.medapp.domain.course.CourseSource
 import com.kert0n.medapp.domain.course.Prescription
 import com.kert0n.medapp.domain.course.Revision
 import com.kert0n.medapp.domain.value.Doses
@@ -26,8 +25,8 @@ class CourseStorageRow(
     @Embedded val course: CourseStorageEntity,
     @Relation(parentColumn = "id", entityColumn = "course_id")
     val times: List<CourseTimeStorageEntity> = emptyList(),
-    @Relation(parentColumn = "id", entityColumn = "course_id")
-    val sources: List<CourseSourceStorageEntity> = emptyList()
+    @Relation(entity = CourseSourceStorageEntity::class, parentColumn = "id", entityColumn = "course_id")
+    val sources: List<CourseSourceStorageRow> = emptyList()
 ) {
     /** Лечение ещё не начато: имя обязательно, назначение — нет. */
     val isDraft: Boolean get() = course.title != null
@@ -44,7 +43,7 @@ class CourseStorageRow(
         form = course.formId?.let(vocabulary::storedForm),
         schedule = schedule(),
         totalDoses = course.totalDoses?.let(::Doses),
-        medicine = medicine(),
+        medicine = medicine(vocabulary),
         revision = Revision(course.revision),
         createdAt = course.createdAt,
         updatedAt = course.updatedAt
@@ -65,7 +64,7 @@ class CourseStorageRow(
             schedule = requireNotNull(schedule()) { "у начатого лечения расписание назначено" },
             totalDoses = Doses(requireNotNull(course.totalDoses) { "у начатого лечения названо число доз" })
         ),
-        medicine = medicine(),
+        medicine = medicine(vocabulary),
         takenOffPlan = Doses(course.takenOffPlan),
         revision = Revision(course.revision),
         createdAt = course.createdAt,
@@ -85,9 +84,6 @@ class CourseStorageRow(
         )
     }
 
-    private fun medicine(): CourseMedicine = CourseMedicine(
-        sources = sources.sortedBy { it.position }.map {
-            CourseSource(packageId = it.packageId, allocatedDoses = Doses(it.allocatedDoses))
-        }
-    )
+    private fun medicine(vocabulary: Vocabulary): CourseMedicine =
+        CourseMedicine(sources.sortedBy { it.source.position }.map { it.toDomain(vocabulary) })
 }

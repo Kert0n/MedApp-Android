@@ -69,9 +69,7 @@ sealed interface PackageAdjustment {
         return when (this) {
             is Recount -> Applied(
                 pack.correctTo(actual),
-                StockMovement.Recount(
-                    movementId, packageId, pack.quantity, actual, pack.medKitId, at, at, note
-                )
+                StockMovement.Recount(movementId, pack, pack.quantity, actual, pack.medKit, at, at, note)
             )
             is Disposal -> {
                 // В минус пачка не уходит, поэтому «выбросил больше, чем было» списывает остаток
@@ -81,15 +79,13 @@ sealed interface PackageAdjustment {
                 Applied(
                     pack.correctTo(left),
                     StockMovement.Disposal(
-                        movementId, packageId, pack.quantity - left, reason, pack.medKitId, at, at, note
+                        movementId, pack, pack.quantity - left, reason, pack.medKit, at, at, note
                     )
                 )
             }
             is Transfer -> Applied(
                 pack.moveTo(target),
-                StockMovement.Transfer(
-                    movementId, packageId, pack.quantity, pack.medKitId, target.id, at, at, note
-                )
+                StockMovement.Transfer(movementId, pack, pack.quantity, pack.medKit, target, at, at, note)
             )
         }
     }

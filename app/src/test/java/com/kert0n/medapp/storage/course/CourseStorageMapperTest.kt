@@ -28,6 +28,8 @@ import com.kert0n.medapp.domain.value.doses
 import com.kert0n.medapp.fixture.LATER
 import com.kert0n.medapp.fixture.availability
 import com.kert0n.medapp.fixture.tablets
+import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.fixture.toStorageRow
 
 /**
  * Курс, его времена и его источники собираются обратно тем же самым, а черновик и живой план
@@ -35,7 +37,13 @@ import com.kert0n.medapp.fixture.tablets
  */
 class CourseStorageMapperTest {
 
-    private fun rowOf(entity: CourseStorageEntity, times: List<LocalTime>, sources: List<CourseSourceStorageEntity> = emptyList()) =
+    /** Строки источников с пачками — так их собрала бы база связью. */
+    private fun rowsOf(sources: List<CourseSourceStorageEntity>, packs: List<Package>) =
+        sources.map { source ->
+            CourseSourceStorageRow(source, packs.single { it.id == source.packageId }.toStorageRow())
+        }
+
+    private fun rowOf(entity: CourseStorageEntity, times: List<LocalTime>, sources: List<CourseSourceStorageRow> = emptyList()) =
         CourseStorageRow(
             course = entity,
             times = times.map { CourseTimeStorageEntity(entity.id, it) },
@@ -94,7 +102,7 @@ class CourseStorageMapperTest {
         val restored = rowOf(
             plan.toStorageEntity(),
             weekdays.times,
-            plan.medicine.toSourceStorageEntities(COURSE)
+            rowsOf(plan.medicine.toSourceStorageEntities(COURSE), plan.sources.map { it.pkg })
         ).toPlan(VOCABULARY)
 
         assertEquals(plan.dose, restored.dose)
@@ -112,9 +120,10 @@ class CourseStorageMapperTest {
     fun sourcesComeBackInTheOrderOfTheirPositions() {
         val plan = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 4)))
         val shuffled = plan.medicine.toSourceStorageEntities(COURSE).reversed()
+        val packs = plan.sources.map { it.pkg }
 
-        val restored = rowOf(plan.toStorageEntity(), plan.schedule.times, shuffled).toPlan(VOCABULARY)
-        assertEquals(listOf(PACK, OTHER_PACK), restored.sources.map { it.packageId })
+        val restored = rowOf(plan.toStorageEntity(), plan.schedule.times, rowsOf(shuffled, packs)).toPlan(VOCABULARY)
+        assertEquals(listOf(PACK, OTHER_PACK), restored.sources.map { it.pkg.id })
         assertEquals(plan.sources, restored.sources)
     }
 
@@ -125,7 +134,7 @@ class CourseStorageMapperTest {
         val restored = rowOf(
             plan.toStorageEntity(),
             listOf(LocalTime.of(21, 0), LocalTime.of(9, 0)),
-            plan.medicine.toSourceStorageEntities(COURSE)
+            rowsOf(plan.medicine.toSourceStorageEntities(COURSE), plan.sources.map { it.pkg })
         ).toPlan(VOCABULARY)
         assertEquals(evening.times, restored.schedule.times)
     }
@@ -183,7 +192,7 @@ class CourseStorageMapperTest {
         val restored = rowOf(
             corrected.toStorageEntity(),
             times = corrected.schedule.times,
-            sources = corrected.medicine.toSourceStorageEntities(corrected.id)
+            sources = rowsOf(corrected.medicine.toSourceStorageEntities(corrected.id), corrected.sources.map { it.pkg })
         ).toPlan(VOCABULARY)
         assertEquals(2.doses, restored.takenOffPlan)
         assertEquals(listOf(3.doses), restored.sources.map { it.allocatedDoses })

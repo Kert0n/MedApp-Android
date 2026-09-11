@@ -128,8 +128,8 @@ class QueueStorageTest {
         val stored = requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable
         assertEquals(SyncOperationStatus.DONE, stored.operation.status)
         assertEquals(1, stored.operation.attempts)
-        assertEquals(IntakeAccounting.REMOTE_APPLIED, requireNotNull(database.intakes().find(INTAKE)).accounting)
-        assertEquals(IntakeStatus.TAKEN, requireNotNull(database.intakes().find(INTAKE)).status)
+        assertEquals(IntakeAccounting.REMOTE_APPLIED, requireNotNull(database.intakes().findEntity(INTAKE)).accounting)
+        assertEquals(IntakeStatus.TAKEN, requireNotNull(database.intakes().findEntity(INTAKE)).status)
         assertTrue(storage.ready().isEmpty())
     }
 

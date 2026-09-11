@@ -17,6 +17,7 @@ import com.kert0n.medapp.queue.SyncOperation
 import com.kert0n.medapp.queue.SyncOperationStatus
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.storage.intake.IntakeDao
+import com.kert0n.medapp.storage.medkit.MedKitDao
 import com.kert0n.medapp.storage.pack.PackageDao
 import com.kert0n.medapp.storage.pack.toDetailsStorageEntity
 import com.kert0n.medapp.storage.pack.toStorageEntity
@@ -35,6 +36,7 @@ class SyncOperationRoomRepository @Inject constructor(
     private val queue: SyncOperationDao,
     private val packages: PackageDao,
     private val intakes: IntakeDao,
+    private val medKits: MedKitDao,
     private val vocabulary: VocabularyDao
 ) : SyncOperationStorageRepository, QueueStorage {
 
@@ -144,7 +146,12 @@ class SyncOperationRoomRepository @Inject constructor(
                 val command = operation.command as? PackageSyncCommand ?: return@withTransaction
                 val snapshot = outcome.snapshot
                 if (snapshot != null) {
-                    val resolved = snapshot.toDomain(words, addedAt = at, observedAt = at)
+                    // Аптечка снимка — объектом из базы; перенос мог сменить её, и берётся та,
+                    // которую называет снимок.
+                    val medKit = requireNotNull(medKits.find(snapshot.pack.medKitId)) {
+                        "снимок пачки называет аптечку, которой нет: ${snapshot.pack.medKitId}"
+                    }.toDomain()
+                    val resolved = snapshot.toDomain(words, medKit, addedAt = at, observedAt = at)
                     packages.applyServerSnapshot(resolved.pack.toStorageEntity(resolved.sync), observedAt = at)
                     resolved.pack.claims?.let { packages.upsertClaims(it.toStorageEntity(command.packageId)) }
                 } else {

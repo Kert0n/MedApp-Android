@@ -126,6 +126,6 @@ class CourseShortageTest {
     @Test
     fun orderAndPackagesAreUntouched() {
         val clamped = twoPacks.clamped(6.doses, plenty, LATER)
-        assertEquals(listOf(PACK, OTHER_PACK), clamped.medicine.sources.map { it.packageId })
+        assertEquals(listOf(PACK, OTHER_PACK), clamped.medicine.sources.map { it.pkg.id })
     }
 }

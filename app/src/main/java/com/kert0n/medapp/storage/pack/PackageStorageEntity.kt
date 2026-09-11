@@ -73,7 +73,7 @@ fun Package.toStorageEntity(sync: PackageSyncState = PackageSyncState(id)): Pack
     require(sync.packageId == id) { "обвязка синхронизации принадлежит своей пачке" }
     return PackageStorageEntity(
         id = id,
-        medKitId = medKitId,
+        medKitId = medKit.id,
         name = facts.name,
         nameSearch = facts.name.lowercase(),
         quantity = quantity.toStorageAmount(),

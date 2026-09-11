@@ -18,11 +18,11 @@ class Availability(availableToMe: Map<Uuid, Quantity>) {
      */
     private val availableToMe: Map<Uuid, Quantity> = availableToMe.toMap()
 
-    fun of(packageId: Uuid): Quantity =
-        requireNotNull(availableToMe[packageId]) { "расклад не называет пачку $packageId" }
+    fun of(pkg: Package): Quantity =
+        requireNotNull(availableToMe[pkg.id]) { "расклад не называет пачку ${pkg.id}" }
 
     /** Сколько целых доз даёт пачка. */
-    fun dosesOf(packageId: Uuid, dose: Dose): Doses = of(packageId).dosesIn(dose)
+    fun dosesOf(pkg: Package, dose: Dose): Doses = of(pkg).dosesIn(dose)
 
     companion object {
 

@@ -72,7 +72,7 @@ class CourseDaoTest {
         )
 
         val restored = requireNotNull(courses.findPlan(COURSE)).toPlan(VOCABULARY)
-        assertEquals(listOf(PACK, OTHER_PACK), restored.sources.map { it.packageId })
+        assertEquals(listOf(PACK, OTHER_PACK), restored.sources.map { it.pkg.id })
         assertEquals(plan.sources, restored.sources)
     }
 
@@ -134,7 +134,7 @@ class CourseDaoTest {
 
         val restored = requireNotNull(courses.findPlan(COURSE)).toPlan(VOCABULARY)
         assertEquals(listOf(LocalTime.of(12, 0)), restored.schedule.times)
-        assertEquals(listOf(OTHER_PACK), restored.sources.map { it.packageId })
+        assertEquals(listOf(OTHER_PACK), restored.sources.map { it.pkg.id })
     }
 
     /**

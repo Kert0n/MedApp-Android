@@ -3,6 +3,7 @@ package com.kert0n.medapp.fixture
 import androidx.room.Room
 import androidx.test.platform.app.InstrumentationRegistry
 import com.kert0n.medapp.storage.database.MedAppDatabase
+import com.kert0n.medapp.storage.medkit.toStorageEntity as toMedKitStorageEntity
 import com.kert0n.medapp.storage.value.toStorageEntity
 import kotlinx.coroutines.runBlocking
 
@@ -10,8 +11,8 @@ import kotlinx.coroutines.runBlocking
  * База для проверки в памяти: прогон не оставляет файла и не зависит от прошлого прогона.
  * Ограничения внешних ключей включены явно — без них `RESTRICT` не проверяется вовсе.
  *
- * Словарь засеян фикстурами: строки держат идентификаторы единиц и форм, а собираются в домен по
- * снимку словаря, и без него ни одна пачка из базы не читается.
+ * Словарь и две аптечки фикстур засеяны: строки держат идентификаторы единиц, форм и аптечек, а
+ * собираются в домен по словарю и связям, и без них ни одна пачка из базы не читается.
  */
 fun inMemoryDatabase(): MedAppDatabase {
     val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -24,6 +25,8 @@ private fun MedAppDatabase.seeded(): MedAppDatabase = apply {
             units = listOf(TABLETS, MILLILITRES).map { it.toStorageEntity() },
             forms = listOf(TABLET_FORM, CAPSULE_FORM).map { it.toStorageEntity() }
         )
+        medKits().insertIfMissing(medKit(id = HOME_KIT).toMedKitStorageEntity())
+        medKits().insertIfMissing(medKit(id = SHARED_KIT, name = "Дача").toMedKitStorageEntity())
     }
 }
 
@@ -69,5 +72,5 @@ fun MedAppDatabase.intakeRepository() = com.kert0n.medapp.storage.intake.IntakeR
 )
 
 fun MedAppDatabase.queueRepository() = com.kert0n.medapp.storage.server.SyncOperationRoomRepository(
-    this, syncOperations(), packages(), intakes(), vocabulary()
+    this, syncOperations(), packages(), intakes(), medKits(), vocabulary()
 )

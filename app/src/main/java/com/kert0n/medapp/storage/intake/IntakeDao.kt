@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Upsert
 import com.kert0n.medapp.domain.intake.IntakeStatus
 import com.kert0n.medapp.network.intake.IntakeAccounting
@@ -14,17 +15,24 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface IntakeDao {
 
+    @Transaction
     @Query("SELECT * FROM intakes WHERE id = :id")
-    suspend fun find(id: Uuid): IntakeStorageEntity?
+    suspend fun find(id: Uuid): IntakeStorageRow?
 
+    /** Строка без связей — для проверок обвязки, где пачки не нужны. */
+    @Query("SELECT * FROM intakes WHERE id = :id")
+    suspend fun findEntity(id: Uuid): IntakeStorageEntity?
+
+    @Transaction
     @Query("SELECT * FROM intakes WHERE course_id = :courseId ORDER BY scheduled_at")
-    fun observeOfCourse(courseId: Uuid): Flow<List<IntakeStorageEntity>>
+    fun observeOfCourse(courseId: Uuid): Flow<List<IntakeStorageRow>>
 
+    @Transaction
     @Query(
         "SELECT * FROM intakes WHERE status = 'PLANNED' AND scheduled_at < :until " +
             "ORDER BY scheduled_at"
     )
-    suspend fun plannedBefore(until: Instant): List<IntakeStorageEntity>
+    suspend fun plannedBefore(until: Instant): List<IntakeStorageRow>
 
     @Upsert
     suspend fun upsert(intake: IntakeStorageEntity)
@@ -60,7 +68,7 @@ interface IntakeDao {
      */
     @Query(
         "UPDATE intakes SET status = :to, answered_at = :at, " +
-            "taken_package_id = :packageId, taken_med_kit_id = :medKitId, " +
+            "taken_package_id = :packageId, " +
             "taken_amount = :amount, unit_id = :unitId, accounting = :accounting, " +
             "operation_id = :operationId " +
             "WHERE id = :id AND status IN (:from)"
@@ -71,7 +79,6 @@ interface IntakeDao {
         to: IntakeStatus,
         at: Instant,
         packageId: Uuid?,
-        medKitId: Uuid?,
         amount: String?,
         unitId: Uuid,
         accounting: IntakeAccounting,

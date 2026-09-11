@@ -1,10 +1,10 @@
 package com.kert0n.medapp.domain.course
 
+import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.Quantity
 import java.time.Instant
 import java.util.Objects
-import kotlin.uuid.Uuid
 
 /**
  * Обеспечение курса: сколько из оставшихся приёмов покрывают пачки препарата и с какого приёма
@@ -53,7 +53,7 @@ class CourseCoverage(
      * [leftover] — остаток меньше дозы, не переливающийся в следующую пачку.
      */
     data class Source(
-        val packageId: Uuid,
+        val pkg: Package,
         val allocatedDoses: Doses,
         val coveredDoses: Doses,
         val leftover: Quantity

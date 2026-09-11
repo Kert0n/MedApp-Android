@@ -100,7 +100,7 @@ class CourseRoomRepository @Inject constructor(
             sources = plan.medicine.toSourceStorageEntities(plan.id)
         )
         for (source in plan.sources) {
-            courses.assignPackage(ActivePackageAssignmentStorageEntity(source.packageId, plan.id))
+            courses.assignPackage(ActivePackageAssignmentStorageEntity(source.pkg.id, plan.id))
         }
         intakes.insertPlannedIfMissing(planned.map { it.toIntakeStorageEntity() })
         Unit

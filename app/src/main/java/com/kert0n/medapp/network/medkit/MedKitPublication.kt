@@ -22,7 +22,7 @@ import javax.inject.Inject
 class MedKitPublication @Inject constructor(private val api: MedAppApi) {
 
     suspend fun publish(medKit: MedKit, packages: List<Package>): Outcome {
-        require(packages.all { it.medKitId == medKit.id }) { "публикуются пачки этой аптечки" }
+        require(packages.all { it.medKit == medKit }) { "публикуются пачки этой аптечки" }
         val published = medKit.publish()
         when (val created = api.createMedKit(MedKitPostNetworkDTO(medKit.id))) {
             is ApiResult.Failure -> return Outcome.Refused(created.failure, rolledBack = true)

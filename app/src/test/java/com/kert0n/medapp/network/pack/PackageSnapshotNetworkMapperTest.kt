@@ -9,6 +9,7 @@ import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.VOCABULARY
+import com.kert0n.medapp.fixture.medKit
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.network.value.VocabularyMiss
@@ -37,7 +38,7 @@ class PackageSnapshotNetworkMapperTest {
 
     @Test
     fun serverStateBecomesAPackageWithItsSyncState() {
-        val found = snapshot().toDomain(VOCABULARY, addedAt = EARLIER, observedAt = LATER)
+        val found = snapshot().toDomain(VOCABULARY, medKit(), addedAt = EARLIER, observedAt = LATER)
         assertEquals(PACK, found.pack.id)
         assertEquals(tablets("20"), found.pack.quantity)
         assertEquals(TABLET_FORM, found.pack.facts.form)
@@ -54,7 +55,7 @@ class PackageSnapshotNetworkMapperTest {
     fun aUnitOutsideTheSnapshotIsAMissThatNamesItself() {
         val stale = Vocabulary(listOf(TABLETS), listOf(TABLET_FORM))
         val miss = assertThrows(VocabularyMiss::class.java) {
-            snapshot(unitId = MILLILITRES.id).toDomain(stale, EARLIER, LATER)
+            snapshot(unitId = MILLILITRES.id).toDomain(stale, medKit(), EARLIER, LATER)
         }
         assertEquals(MILLILITRES.id, miss.id)
         assertEquals(VocabularyMiss.Kind.UNIT, miss.kind)

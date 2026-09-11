@@ -25,9 +25,10 @@ class CourseSpendOrderTest {
     /** Пять ближайших доз — столько пунктов сценарий и отдаст на раскладку. */
     private val ahead = 5.doses
 
+    /** Порядок расхода — пачками; тест сравнивает по их номерам, чтобы читаться. */
     private fun order(vararg allocations: Pair<Uuid, Int>) =
         activeCourse(sources = allocations.map { source(it.first, it.second) })
-            .spendOrder(ahead, availability)
+            .spendOrder(ahead, availability).map { it?.id }
 
     @Test
     fun packsAreSpentTopDown() {
@@ -64,7 +65,7 @@ class CourseSpendOrderTest {
         // По одной таблетке в двух пачках при дозе в две: обеспеченных доз ноль, а не одна.
         val singles = availability(PACK to tablets("1"), OTHER_PACK to tablets("1"))
         val found = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 5)))
-            .spendOrder(ahead, singles)
+            .spendOrder(ahead, singles).map { it?.id }
         assertEquals(List(5) { null }, found)
     }
 
@@ -73,7 +74,7 @@ class CourseSpendOrderTest {
         // Выделено пять доз, а свободно четыре таблетки — две дозы: дальше идёт вторая пачка.
         val shrunk = availability(PACK to tablets("4"), OTHER_PACK to tablets("12"))
         val found = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 5)))
-            .spendOrder(ahead, shrunk)
+            .spendOrder(ahead, shrunk).map { it?.id }
         assertEquals(listOf(PACK, PACK, OTHER_PACK, OTHER_PACK, OTHER_PACK), found)
     }
 
@@ -82,7 +83,7 @@ class CourseSpendOrderTest {
         // Третья пачка того же лекарства лежит рядом и доступна, но в препарат не встаёт сама.
         val elsewhere = Uuid.parse("00000000-0000-4000-8000-000000000023")
         val found = activeCourse(sources = listOf(source(PACK, 2)))
-            .spendOrder(ahead, availability(PACK to tablets("20"), elsewhere to tablets("50")))
+            .spendOrder(ahead, availability(PACK to tablets("20"), elsewhere to tablets("50"))).map { it?.id }
         assertEquals(listOf(PACK, PACK, null, null, null), found)
     }
 
@@ -111,6 +112,6 @@ class CourseSpendOrderTest {
         }
         val course = activeCourse(sources = listOf(source(PACK, 2)))
         val assigned = plan.zip(course.spendOrder(plan.size.doses, availability)).toMap()
-        assertEquals(listOf(PACK, PACK, null, null, null), plan.map { assigned[it] })
+        assertEquals(listOf(PACK, PACK, null, null, null), plan.map { assigned[it]?.id })
     }
 }

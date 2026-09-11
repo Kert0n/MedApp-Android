@@ -38,6 +38,7 @@ import org.junit.Before
 import org.junit.Test
 import com.kert0n.medapp.fixture.VOCABULARY
 import com.kert0n.medapp.fixture.TABLETS_ID
+import com.kert0n.medapp.fixture.medKit
 
 /**
  * История не удаляется вместе с упаковкой: приёмы и движения держат её ключами `RESTRICT`,
@@ -102,7 +103,6 @@ class HistoryDaoTest {
             to = IntakeStatus.TAKEN,
             at = LATER,
             packageId = PACK,
-            medKitId = HOME_KIT,
             amount = "2",
             unitId = TABLETS_ID,
             accounting = IntakeAccounting.LOCAL_APPLIED,
@@ -114,7 +114,6 @@ class HistoryDaoTest {
             to = IntakeStatus.MISSED,
             at = LATER.plusSeconds(60),
             packageId = null,
-            medKitId = null,
             amount = null,
             unitId = TABLETS_ID,
             accounting = IntakeAccounting.NOT_APPLICABLE,
@@ -123,7 +122,7 @@ class HistoryDaoTest {
 
         assertEquals(1, first)
         assertEquals(0, second)
-        val stored = requireNotNull(intakes.find(INTAKE))
+        val stored = requireNotNull(intakes.findEntity(INTAKE))
         assertEquals(IntakeStatus.TAKEN, stored.status)
         assertEquals(IntakeAccounting.LOCAL_APPLIED, stored.accounting)
     }
@@ -138,7 +137,7 @@ class HistoryDaoTest {
     @Test
     fun packageWithAMovementCannotBeDeleted() = runTest {
         movements.insert(
-            StockMovement.Receipt(movementId, PACK, tablets("20"), HOME_KIT, Instant.EPOCH, LATER)
+            StockMovement.Receipt(movementId, pack(), tablets("20"), medKit(), Instant.EPOCH, LATER)
                 .toMovementStorageEntity()
         )
         val refusal = rejectedByDatabase { database.packages().delete(PACK) }
@@ -151,7 +150,7 @@ class HistoryDaoTest {
         intakes.upsert(plannedIntake().confirm(pack(), dose("2"), LATER).toStorageEntity())
         intakes.upsert(unplannedIntake(id = OTHER_INTAKE).toStorageEntity())
         movements.insert(
-            StockMovement.Receipt(movementId, PACK, tablets("20"), HOME_KIT, Instant.EPOCH, LATER)
+            StockMovement.Receipt(movementId, pack(), tablets("20"), medKit(), Instant.EPOCH, LATER)
                 .toMovementStorageEntity()
         )
 
@@ -183,10 +182,10 @@ class HistoryDaoTest {
 
     @Test
     fun movementsOfAPackageComeBackInTimeOrder() = runTest {
-        val first = StockMovement.Receipt(movementId, PACK, tablets("20"), HOME_KIT, Instant.EPOCH, Instant.EPOCH)
+        val first = StockMovement.Receipt(movementId, pack(), tablets("20"), medKit(), Instant.EPOCH, Instant.EPOCH)
         val second = StockMovement.Recount(
             Uuid.parse("00000000-0000-4000-8000-000000000082"),
-            PACK, tablets("20"), tablets("18"), HOME_KIT, FIRST_PLANNED_AT, FIRST_PLANNED_AT
+            pack(), tablets("20"), tablets("18"), medKit(), FIRST_PLANNED_AT, FIRST_PLANNED_AT
         )
         movements.insert(second.toMovementStorageEntity())
         movements.insert(first.toMovementStorageEntity())

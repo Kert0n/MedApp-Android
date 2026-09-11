@@ -21,10 +21,10 @@ import kotlin.uuid.Uuid
  * Курс владеет тем, сколько осталось: назначенное число доз за вычетом принятых по плану и
  * [takenOffPlan] — принятых мимо него. Пропущенная доза никуда не исчезает — лечение
  * растягивается, а ожидаемый конец сдвигается сам; закончить раньше человек может, сократив
- * число доз рукой. Все вопросы о лечении задаются курсу —
- * обеспечение, предел ползунка, зажим при нехватке, пересчёт после приёма, порядок расхода, —
- * потому что он один владеет и дозой, и препаратом. На входе пачка, на выходе её идентификатор:
- * подставить вместо пачки форму или единицу нечем, а самих пачек курс не хранит.
+ * число доз рукой. Все вопросы о лечении задаются курсу — обеспечение, предел ползунка, зажим
+ * при нехватке, пересчёт после приёма, порядок расхода, — потому что он один владеет и дозой, и
+ * препаратом. Пачки — объектами: подставить вместо пачки форму или единицу нечем, а прочитанный
+ * курс держит пачки такими, какими они были при чтении.
  */
 class Course(
     val id: Uuid,
@@ -106,7 +106,7 @@ class Course(
      * целевой объём равен `allocatedDoses × dose` (PLAN D5). `null` — пачка не в препарате курса.
      */
     fun allocatedOf(pkg: Package): Quantity? =
-        medicine.allocatedTo(pkg.id)?.let { dose * it }
+        medicine.allocatedTo(pkg)?.let { dose * it }
 
     /**
      * Пачки действующего курса менять можно: это не изменение дозы или календаря (PLAN D5).
@@ -118,7 +118,7 @@ class Course(
 
     /** Отвязка последней пачки лечения не отменяет: курс просто становится необеспеченным. */
     fun detach(pkg: Package, at: Instant): Course = changed(
-        medicine = medicine.detach(pkg.id),
+        medicine = medicine.detach(pkg),
         revision = revision.next(),
         updatedAt = at
     )
@@ -130,7 +130,7 @@ class Course(
     }
 
     fun allocate(pkg: Package, doses: Doses, at: Instant): Course = changed(
-        medicine = medicine.allocate(pkg.id, doses),
+        medicine = medicine.allocate(pkg, doses),
         revision = revision.next(),
         updatedAt = at
     )
@@ -147,7 +147,7 @@ class Course(
      * потребность оставляет сверх выделенного остальным (PLAN D5).
      */
     fun maxDoses(pkg: Package, required: Doses, availability: Availability): Doses =
-        medicine.maxDoses(pkg.id, dose, required, availability)
+        medicine.maxDoses(pkg, dose, required, availability)
 
     /**
      * Курс с выделениями, зажатыми под нехватку и оставшуюся потребность. Доза, расписание и даты
@@ -167,7 +167,7 @@ class Course(
      * выделенного за вычетом расхода и не больше того, что в пачке осталось (PLAN D5).
      */
     fun dosesAfterIntake(pkg: Package, taken: Dose, availableAfter: Quantity): Doses =
-        medicine.dosesAfterIntake(pkg.id, dose, taken, availableAfter)
+        medicine.dosesAfterIntake(pkg, dose, taken, availableAfter)
 
     /**
      * Из каких пачек уйдут следующие [doses] доз — по одной пачке на дозу, в порядке расходования:
@@ -179,9 +179,9 @@ class Course(
      * порядке — его знание, а курс отвечает, из чего они возьмутся. Спрашивать у курса список
      * приёмов значило бы тянуть в него чужой агрегат ради двух проверок.
      */
-    fun spendOrder(doses: Doses, availability: Availability): List<Uuid?> {
+    fun spendOrder(doses: Doses, availability: Availability): List<Package?> {
         val fromPacks = medicine.spend(dose, doses, availability)
-            .flatMap { (packageId, taken) -> List(taken.count) { packageId } }
+            .flatMap { (pkg, taken) -> List(taken.count) { pkg } }
         return List(doses.count) { fromPacks.getOrNull(it) }
     }
 
@@ -189,7 +189,7 @@ class Course(
      * Сколько уйдёт из каждой пачки на следующие [doses] доз. Пачек, из которых не уходит ничего,
      * в ответе нет; это тот же расход, что и [spendOrder], только величинами.
      */
-    fun spending(doses: Doses, availability: Availability): Map<Uuid, Quantity> =
+    fun spending(doses: Doses, availability: Availability): Map<Package, Quantity> =
         medicine.spend(dose, doses, availability).mapValues { (_, taken) -> dose * taken }
 
     private fun changed(

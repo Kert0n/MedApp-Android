@@ -36,7 +36,7 @@ class IntakeRoomRepository @Inject constructor(
 
     override suspend fun find(id: Uuid): Intake? = intakes.find(id)?.toDomain(vocabulary.snapshot())
 
-    override suspend fun syncStateOf(id: Uuid): IntakeSyncState? = intakes.find(id)?.syncState()
+    override suspend fun syncStateOf(id: Uuid): IntakeSyncState? = intakes.findEntity(id)?.syncState()
 
     override suspend fun save(recorded: RecordedIntake) =
         intakes.upsert(recorded.intake.toStorageEntity(recorded.sync))
@@ -57,7 +57,7 @@ class IntakeRoomRepository @Inject constructor(
         // приём разошёлся бы с остатком.
         val source = if (outcome.spendsLocally) {
             val taken = requireNotNull(outcome.taken) { "локальный расход называет свою пачку" }
-            packages.find(taken.packageId) ?: return@withTransaction false
+            packages.find(taken.pkg.id) ?: return@withTransaction false
         } else {
             null
         }
@@ -70,8 +70,7 @@ class IntakeRoomRepository @Inject constructor(
                 from = outcome.expected.toList(),
                 to = intake.status,
                 at = outcome.answeredAt,
-                packageId = taken?.packageId,
-                medKitId = taken?.medKitId,
+                packageId = taken?.pkg?.id,
                 amount = taken?.amount?.quantity?.toStorageAmount(),
                 unitId = intake.unit.id,
                 accounting = outcome.sync.accounting,

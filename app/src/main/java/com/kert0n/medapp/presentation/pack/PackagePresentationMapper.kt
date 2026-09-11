@@ -15,7 +15,7 @@ import java.time.Instant
 fun Package.toPresentationDTO(syncedAt: Instant? = null): PackagePresentationDTO =
     PackagePresentationDTO(
         id = id,
-        medKitId = medKitId,
+        medKitId = medKit.id,
         name = facts.name,
         quantity = quantity.toPresentationDTO(),
         form = facts.form,

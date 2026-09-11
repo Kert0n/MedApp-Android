@@ -338,7 +338,7 @@ class TransactionBoundariesTest {
     @Test
     fun anIntakeFromAPackageThatIsGoneIsNotRecorded() = runTest {
         val outcome = IntakeOutcome(
-            intake = unplannedIntake(takenPackageId = OTHER_PACK, takenAmount = dose("2")),
+            intake = unplannedIntake(taken = pack(id = OTHER_PACK), takenAmount = dose("2")),
             expected = emptySet(),
             sync = IntakeSyncState(INTAKE, IntakeAccounting.LOCAL_APPLIED)
         )
@@ -534,7 +534,7 @@ class TransactionBoundariesTest {
             at = LATER
         )
 
-        assertEquals(SHARED_KIT, requireNotNull(packages.find(PACK)).medKitId)
+        assertEquals(SHARED_KIT, requireNotNull(packages.find(PACK)).medKit.id)
         val transfer = database.stockMovements().ofPackage(PACK).single().toDomain(VOCABULARY)
         assertEquals(StockMovement.Transfer::class, transfer::class)
     }

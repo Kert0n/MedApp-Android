@@ -11,11 +11,15 @@ import kotlin.uuid.Uuid
  * Упаковка — конкретная пачка или флакон; одинаковые названия пачки не объединяют (PLAN C0).
  * Сущность: пачка, из которой приняли таблетку, — та же пачка, равенство по [id], состояние
  * меняют переходы. [quantity] — подтверждённый остаток (E1); обвязка синхронизации живёт в
- * `PackageSyncState` слоя данных.
+ * `PackageSyncState` слоя данных. Аптечку пачка держит объектом: где она лежит и опубликована
+ * ли, спрашивают у неё, а не ищут по номеру.
+ *
+ * Объект действителен в пределах транзакции, которая его прочитала: пачка на руках после
+ * первого же приёма — пачка с прежним остатком, если её не перечитать.
  */
 class Package(
     val id: Uuid,                 // придуман клиентом; он же серверный
-    val medKitId: Uuid,
+    val medKit: MedKit,
     val facts: PackageFacts,
     val quantity: Quantity,
     val addedAt: Instant,         // для чужой пачки — момент ПЕРВОГО НАБЛЮДЕНИЯ
@@ -86,8 +90,8 @@ class Package(
      */
     fun moveTo(target: MedKit): Package {
         requireUsable("перенос")
-        require(target.id != medKitId) { "пачка уже лежит в этой аптечке" }
-        return changed(medKitId = target.id)
+        require(target != medKit) { "пачка уже лежит в этой аптечке" }
+        return changed(medKit = target)
     }
 
     /**
@@ -129,7 +133,7 @@ class Package(
      * непереданный аргумент их сохраняет.
      */
     private fun changed(
-        medKitId: Uuid = this.medKitId,
+        medKit: MedKit = this.medKit,
         facts: PackageFacts = this.facts,
         quantity: Quantity = this.quantity,
         templateId: Uuid? = this.templateId,
@@ -138,7 +142,7 @@ class Package(
         access: Access = this.access
     ): Package = Package(
         id = id,
-        medKitId = medKitId,
+        medKit = medKit,
         facts = facts,
         quantity = quantity,
         addedAt = addedAt,

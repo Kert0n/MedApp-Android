@@ -12,6 +12,7 @@ import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.SHARED_KIT
 import com.kert0n.medapp.fixture.millilitres
+import com.kert0n.medapp.fixture.medKit
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.plannedIntake
 import com.kert0n.medapp.fixture.dose
@@ -46,16 +47,16 @@ class IntakeTest {
     fun answerDoesNotRewriteThePlan() {
         // Пункт порождён редакцией расписания, и ответ не переписывает ни назначенное время,
         // ни плановую дозу, ни плановую пачку.
-        val fromDacha = pack(id = OTHER_PACK, medKitId = SHARED_KIT)
+        val fromDacha = pack(id = OTHER_PACK, medKit = medKit(id = SHARED_KIT, name = "Дача"))
         val taken = plannedIntake().confirm(fromDacha, dose("1"), LATER)
         assertEquals(FIRST_PLANNED_AT, taken.plannedAt)
         assertEquals(FIRST_SCHEDULED_ON, taken.slot.localDate)
         assertEquals(FIRST_SCHEDULED_TIME, taken.slot.localTime)
         assertEquals(dose("2"), taken.plannedAmount)
-        assertEquals(PACK, taken.plannedPackageId)
-        // А фактические пачка, аптечка и количество — те, что назвал человек.
-        assertEquals(OTHER_PACK, taken.taken?.packageId)
-        assertEquals(SHARED_KIT, taken.taken?.medKitId)
+        assertEquals(PACK, taken.plannedPackage?.id)
+        // А фактические пачка — с её аптечкой — и количество те, что назвал человек.
+        assertEquals(OTHER_PACK, taken.taken?.pkg?.id)
+        assertEquals(SHARED_KIT, taken.taken?.pkg?.medKit?.id)
         assertEquals(dose("1"), taken.taken?.amount)
     }
 
@@ -119,15 +120,15 @@ class IntakeTest {
     @Test
     fun unsuppliedIntakeIsPlannedWithoutAPackage() {
         // План без источников всё равно порождает пункты, и они честно необеспечены (PLAN H1).
-        val unsupplied = plannedIntake(plannedPackageId = null)
+        val unsupplied = plannedIntake(plannedPackage = null)
         assertFalse(unsupplied.isSupplied)
-        assertNull(unsupplied.plannedPackageId)
+        assertNull(unsupplied.plannedPackage)
         // Подтвердить его можно, назвав пачку: списать «неизвестно откуда» нельзя, а осознанно
         // выбранная пачка — обычный ответ человека. Плановой пачки у пункта так и не появится:
         // прошлое не переписывается ответом.
         val answered = unsupplied.confirm(pack(), dose("2"), LATER)
         assertFalse(answered.isSupplied)
-        assertEquals(PACK, answered.taken?.packageId)
+        assertEquals(PACK, answered.taken?.pkg?.id)
     }
 
     @Test
@@ -135,7 +136,7 @@ class IntakeTest {
         // У внепланового факта по типу нет полей курса и расписания; единственный статус — TAKEN.
         val fact = unplannedIntake()
         assertEquals(IntakeStatus.TAKEN, fact.status)
-        assertEquals(PACK, fact.taken.packageId)
+        assertEquals(PACK, fact.taken.pkg.id)
         assertEquals(dose("1"), fact.taken.amount)
     }
 

@@ -21,6 +21,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.kert0n.medapp.fixture.VOCABULARY
+import com.kert0n.medapp.fixture.medKit
+import com.kert0n.medapp.fixture.toStorageRow
 
 /**
  * Плановый пункт и внеплановый факт лежат в одной таблице и различаются наличием курса.
@@ -31,40 +33,40 @@ class IntakeStorageMapperTest {
     @Test
     fun plannedIntakeComesBackPlanned() {
         val planned = plannedIntake()
-        val restored = planned.toStorageEntity().toDomain(VOCABULARY) as CourseIntake
+        val restored = planned.toStorageRow().toDomain(VOCABULARY) as CourseIntake
 
         assertEquals(planned.id, restored.id)
         assertEquals(planned.courseId, restored.courseId)
         assertEquals(planned.courseRevision, restored.courseRevision)
         assertEquals(planned.slot, restored.slot)
         assertEquals(planned.plannedAmount, restored.plannedAmount)
-        assertEquals(planned.plannedPackageId, restored.plannedPackageId)
+        assertEquals(planned.plannedPackage, restored.plannedPackage)
         assertEquals(IntakeStatus.PLANNED, restored.status)
         assertNull(restored.answer)
     }
 
     @Test
     fun unsuppliedIntakeStaysUnsupplied() {
-        val restored = plannedIntake(plannedPackageId = null).toStorageEntity().toDomain(VOCABULARY) as CourseIntake
-        assertNull(restored.plannedPackageId)
+        val restored = plannedIntake(plannedPackage = null).toStorageRow().toDomain(VOCABULARY) as CourseIntake
+        assertNull(restored.plannedPackage)
         assertEquals(false, restored.isSupplied)
     }
 
-    /** Пачка факта может отличаться от плановой, и аптечка пишется на момент события. */
+    /** Пачка факта может отличаться от плановой, и аптечка — у пачки. */
     @Test
     fun confirmedIntakeKeepsWhereTheDoseCameFrom() {
         val taken = plannedIntake().confirm(
-            pkg = pack(id = OTHER_PACK, medKitId = SHARED_KIT),
+            pkg = pack(id = OTHER_PACK, medKit = medKit(id = SHARED_KIT, name = "Дача")),
             amount = dose("1.5"),
             at = LATER
         )
-        val restored = taken.toStorageEntity().toDomain(VOCABULARY) as CourseIntake
+        val restored = taken.toStorageRow().toDomain(VOCABULARY) as CourseIntake
 
         assertEquals(IntakeStatus.TAKEN, restored.status)
         assertEquals(taken.taken, restored.taken)
-        assertEquals(OTHER_PACK, restored.taken?.packageId)
-        assertEquals(SHARED_KIT, restored.taken?.medKitId)
-        assertEquals(PACK, restored.plannedPackageId)
+        assertEquals(OTHER_PACK, restored.taken?.pkg?.id)
+        assertEquals(SHARED_KIT, restored.taken?.pkg?.medKit?.id)
+        assertEquals(PACK, restored.plannedPackage?.id)
     }
 
     @Test
@@ -73,7 +75,7 @@ class IntakeStorageMapperTest {
         val cancelled = plannedIntake().cancel(LATER)
 
         for (answered in listOf(missed, cancelled)) {
-            val restored = answered.toStorageEntity().toDomain(VOCABULARY) as CourseIntake
+            val restored = answered.toStorageRow().toDomain(VOCABULARY) as CourseIntake
             assertEquals(answered.status, restored.status)
             assertEquals(answered.answer, restored.answer)
             assertNull(restored.taken)
@@ -87,7 +89,7 @@ class IntakeStorageMapperTest {
         assertNull(stored.courseId)
         assertNull(stored.plannedAmount)
 
-        val restored = stored.toDomain(VOCABULARY)
+        val restored = unplanned.toStorageRow().toDomain(VOCABULARY)
         assertTrue(restored is UnplannedIntake)
         assertEquals(IntakeStatus.TAKEN, restored.status)
         assertEquals(unplanned.dose, (restored as UnplannedIntake).dose)
@@ -102,10 +104,11 @@ class IntakeStorageMapperTest {
             accounting = IntakeAccounting.PENDING,
             operationId = operation
         )
-        val stored = plannedIntake().confirm(pack(), dose("2"), LATER).toStorageEntity(sync)
+        val confirmed = plannedIntake().confirm(pack(), dose("2"), LATER)
+        val stored = confirmed.toStorageEntity(sync)
 
         assertEquals(sync, stored.syncState())
-        assertEquals(IntakeStatus.TAKEN, stored.toDomain(VOCABULARY).status)
+        assertEquals(IntakeStatus.TAKEN, confirmed.toStorageRow(sync).toDomain(VOCABULARY).status)
     }
 
     @Test

@@ -53,7 +53,7 @@ class CourseDraft(
 
     /** Выделение пачки в единицах пачки; `null` — пачка не выбрана. */
     fun allocatedOf(pkg: Package): Quantity? {
-        val allocated = medicine.allocatedTo(pkg.id) ?: return null
+        val allocated = medicine.allocatedTo(pkg) ?: return null
         return dose?.times(allocated)
     }
 
@@ -109,7 +109,7 @@ class CourseDraft(
 
     /** Отвязка пачки назначения не касается: доза и форма заданы словарём, а не пачкой. */
     fun detach(pkg: Package, at: Instant): CourseDraft = changed(
-        medicine = medicine.detach(pkg.id),
+        medicine = medicine.detach(pkg),
         revision = revision.next(),
         updatedAt = at
     )
@@ -121,7 +121,7 @@ class CourseDraft(
     }
 
     fun allocate(pkg: Package, doses: Doses, at: Instant): CourseDraft = changed(
-        medicine = medicine.allocate(pkg.id, doses),
+        medicine = medicine.allocate(pkg, doses),
         revision = revision.next(),
         updatedAt = at
     )
@@ -132,7 +132,7 @@ class CourseDraft(
      */
     fun maxDoses(pkg: Package, required: Doses, availability: Availability): Doses {
         val dose = dose ?: return 0.doses
-        return medicine.maxDoses(pkg.id, dose, required, availability)
+        return medicine.maxDoses(pkg, dose, required, availability)
     }
 
     /**

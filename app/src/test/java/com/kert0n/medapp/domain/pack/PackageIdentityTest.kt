@@ -7,6 +7,7 @@ import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.TABLET_FORM
+import com.kert0n.medapp.fixture.medKit
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.tablets
@@ -44,7 +45,7 @@ class PackageIdentityTest {
         // Фабрики нет: когда пачку позволено завести — правило сценария добавления, а не модели.
         val built = Package(
             id = PACK,
-            medKitId = HOME_KIT,
+            medKit = medKit(id = HOME_KIT),
             facts = PackageFacts(PackageSharedFacts(name = "Парацетамол", form = TABLET_FORM)),
             quantity = tablets("20"),
             addedAt = Instant.EPOCH

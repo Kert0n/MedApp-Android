@@ -9,11 +9,12 @@ import java.time.Instant
 import kotlin.uuid.Uuid
 
 /**
- * Пункт курса вместе с ответом на него. План — [slot], [plannedAmount], [plannedPackageId] — ответ
+ * Пункт курса вместе с ответом на него. План — [slot], [plannedAmount], [plannedPackage] — ответ
  * не переписывает, переходы меняют только [answer]. [slot] вместе с [courseRevision] — тождество
- * пункта при повторной материализации (PLAN F4). [plannedPackageId] — пачка, из которой пункт
+ * пункта при повторной материализации (PLAN F4). [plannedPackage] — пачка, из которой пункт
  * обеспечен, `null` у необеспеченного; фактическая пачка подтверждённого лежит в [TakenDose] и
- * может быть другой пачкой курса (D6).
+ * может быть другой пачкой курса (D6). [courseId] — тождество эпизода, а не ссылка на вещь:
+ * запись эпизода вечна, и приём называет её номером, как называют его самого.
  */
 class CourseIntake(
     override val id: Uuid,
@@ -21,7 +22,7 @@ class CourseIntake(
     val courseRevision: Revision,
     val slot: ScheduledOccurrence,
     val plannedAmount: Dose,
-    val plannedPackageId: Uuid? = null,
+    val plannedPackage: Package? = null,
     val answer: IntakeAnswer? = null
 ) : Intake {
 
@@ -52,7 +53,7 @@ class CourseIntake(
     val plannedAt: Instant get() = slot.at
 
     /** Обеспечен ли пункт: источник с целой дозой под него найден (PLAN D5). */
-    val isSupplied: Boolean get() = plannedPackageId != null
+    val isSupplied: Boolean get() = plannedPackage != null
 
     /**
      * Подтверждение: фактические количество и пачка могут отличаться от плана, расход равен факту
@@ -90,7 +91,7 @@ class CourseIntake(
         courseRevision = courseRevision,
         slot = slot,
         plannedAmount = plannedAmount,
-        plannedPackageId = plannedPackageId,
+        plannedPackage = plannedPackage,
         answer = answer
     )
 

@@ -8,6 +8,7 @@ import com.kert0n.medapp.domain.course.CourseSchedule
 import com.kert0n.medapp.domain.course.CourseSource
 import com.kert0n.medapp.domain.course.Prescription
 import com.kert0n.medapp.domain.course.Revision
+import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.value.DosageForm
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Doses
@@ -152,8 +153,11 @@ fun courseRecord(
     closedAt = closedAt
 )
 
-/** Источник: пачка и её выделение в целых дозах. */
-fun source(packageId: Uuid, doses: Int) = CourseSource(packageId, Doses(doses))
+/** Источник: пачка и её выделение в целых дозах. Пачка — объектом, как её держит домен. */
+fun source(pkg: Package, doses: Int) = CourseSource(pkg, Doses(doses))
+
+/** Источник по номеру пачки: пачка собирается фикстурой с этим номером и двадцатью таблетками. */
+fun source(packageId: Uuid, doses: Int) = source(pack(id = packageId), doses)
 
 /** Препарат курса: пачки в порядке расходования, каждая со своим выделением. */
 fun medicine(vararg sources: CourseSource) = CourseMedicine(sources = sources.toList())

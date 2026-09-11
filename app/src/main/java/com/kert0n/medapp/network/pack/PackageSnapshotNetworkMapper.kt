@@ -1,5 +1,6 @@
 package com.kert0n.medapp.network.pack
 
+import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageFacts
@@ -19,18 +20,20 @@ class PackageSnapshot(val pack: Package, val sync: PackageSyncState)
 
 /**
  * Провод → домен. Единица и форма приходят идентификаторами и разрешаются по снимку словаря;
- * промах — `VocabularyMiss`, и решает его резолвер, а не этот маппер. Личных сведений в снимке
+ * промах — `VocabularyMiss`, и решает его резолвер, а не этот маппер. Аптечку приносит вызывающий:
+ * снимок называет её номером, а объект есть у того, кто читает базу. Личных сведений в снимке
  * нет по контракту: [addedAt] — момент первого наблюдения чужой пачки, свою вызывающий заводит
  * сам. Пачка на сервере жива по определению — нулевой остаток сервер уничтожает.
  */
 fun PackageSnapshotNetworkDTO.toDomain(
     vocabulary: Vocabulary,
+    medKit: MedKit,
     addedAt: Instant,
     observedAt: Instant
 ): PackageSnapshot = PackageSnapshot(
     pack = Package(
         id = pack.id,
-        medKitId = pack.medKitId,
+        medKit = medKit.also { require(it.id == pack.medKitId) { "снимок пачки называет другую аптечку" } },
         facts = PackageFacts(
             shared = PackageSharedFacts(
                 name = pack.name,

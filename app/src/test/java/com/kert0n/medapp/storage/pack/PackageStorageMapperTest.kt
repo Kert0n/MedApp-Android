@@ -20,6 +20,9 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 import com.kert0n.medapp.fixture.VOCABULARY
 import com.kert0n.medapp.fixture.TABLETS_ID
+import com.kert0n.medapp.fixture.medKit
+import com.kert0n.medapp.fixture.toStorageRow
+import com.kert0n.medapp.storage.medkit.toStorageEntity as toMedKitStorageEntity
 
 /**
  * Круговое преобразование упаковки: серверная часть и личные сведения хранятся порознь, а
@@ -44,14 +47,13 @@ class PackageStorageMapperTest {
         templateId = TABLETS_ID
     )
 
-    private fun rowOf(pkg: Package, sync: PackageSyncState = PackageSyncState(pkg.id)) =
-        PackageStorageRow(pkg.toStorageEntity(sync), pkg.toDetailsStorageEntity())
+    private fun rowOf(pkg: Package, sync: PackageSyncState = PackageSyncState(pkg.id)) = pkg.toStorageRow(sync)
 
     @Test
     fun everyFactSurvivesTheRoundTrip() {
         val restored = rowOf(full).toDomain(VOCABULARY)
         assertEquals(full.id, restored.id)
-        assertEquals(full.medKitId, restored.medKitId)
+        assertEquals(full.medKit, restored.medKit)
         assertEquals(full.quantity, restored.quantity)
         assertEquals(full.addedAt, restored.addedAt)
         assertEquals(full.templateId, restored.templateId)
@@ -89,7 +91,11 @@ class PackageStorageMapperTest {
         )
         val stored = full.toStorageEntity(sync)
         assertEquals(sync, stored.syncState())
-        assertEquals(full.facts, PackageStorageRow(stored, full.toDetailsStorageEntity()).toDomain(VOCABULARY).facts)
+        assertEquals(
+            full.facts,
+            PackageStorageRow(stored, full.toDetailsStorageEntity(), medKit = medKit().toMedKitStorageEntity())
+                .toDomain(VOCABULARY).facts
+        )
     }
 
     @Test

@@ -42,7 +42,7 @@ class CourseMedicineTest {
         val withTwo = draftWithDose()
             .attach(home, doses = 5.doses, at = LATER).getOrThrow()
             .attach(dacha, doses = 4.doses, at = LATER).getOrThrow()
-        assertEquals(listOf(PACK, OTHER_PACK), withTwo.sources.map { it.packageId })
+        assertEquals(listOf(PACK, OTHER_PACK), withTwo.sources.map { it.pkg.id })
         assertEquals(listOf(5.doses, 4.doses), withTwo.sources.map { it.allocatedDoses })
         assertEquals(9.doses, withTwo.allocatedDosesTotal)
     }
@@ -53,7 +53,7 @@ class CourseMedicineTest {
         val chosen = mutableListOf(source(PACK, 5))
         val medicine = CourseMedicine(chosen)
         chosen += source(PACK, 1)
-        assertEquals(listOf(PACK), medicine.sources.map { it.packageId })
+        assertEquals(listOf(PACK), medicine.sources.map { it.pkg.id })
     }
 
     @Test
@@ -83,7 +83,7 @@ class CourseMedicineTest {
             .attach(home, doses = 5.doses, at = LATER).getOrThrow()
             .attach(dacha, doses = 4.doses, at = LATER).getOrThrow()
         val swapped = stack.reorder(from = 1, to = 0, at = LATER)
-        assertEquals(listOf(OTHER_PACK, PACK), swapped.sources.map { it.packageId })
+        assertEquals(listOf(OTHER_PACK, PACK), swapped.sources.map { it.pkg.id })
         assertEquals(listOf(4.doses, 5.doses), swapped.sources.map { it.allocatedDoses })
     }
 
@@ -161,7 +161,7 @@ class CourseMedicineTest {
     fun draftWithSourcesButNoScheduleIsRejectedForActivationNotForSaving() {
         // Черновик с выбранными пачками сохраняется: броней у него нет, упаковку он не занимает.
         val chosen = draftWithDose().attach(home, doses = 5.doses, at = LATER).getOrThrow()
-        assertEquals(listOf(PACK), chosen.sources.map { it.packageId })
+        assertEquals(listOf(PACK), chosen.sources.map { it.pkg.id })
         assertEquals(CourseRejected.Reason.SCHEDULE_MISSING, chosen.activate(LATER).rejection())
     }
 

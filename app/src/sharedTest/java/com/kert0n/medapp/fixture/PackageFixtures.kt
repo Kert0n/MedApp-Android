@@ -2,6 +2,7 @@ package com.kert0n.medapp.fixture
 
 import com.kert0n.medapp.domain.pack.PackageAvailability
 import com.kert0n.medapp.domain.pack.Claims
+import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.pack.ExpiryDate
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageFacts
@@ -27,7 +28,7 @@ val OTHER_PACK: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000022")
  */
 fun pack(
     id: Uuid = PACK,
-    medKitId: Uuid = HOME_KIT,
+    medKit: MedKit = medKit(id = HOME_KIT),
     name: String = "Парацетамол",
     quantity: Quantity = tablets("20"),
     form: DosageForm? = null,
@@ -47,7 +48,7 @@ fun pack(
     access: Package.Access = Package.Access.AVAILABLE
 ) = Package(
     id = id,
-    medKitId = medKitId,
+    medKit = medKit,
     facts = PackageFacts(
         shared = PackageSharedFacts(
             name = name,

@@ -85,8 +85,8 @@ class PackageForecastTest {
                 course.schedule.occurrences(from, until)
                     .count { Triple(course.id, it.localDate, it.localTime) !in answered }
             )
-            for ((packageId, amount) in course.spending(ahead, availability)) {
-                spent[packageId] = spent[packageId]?.plus(amount) ?: amount
+            for ((pkg, amount) in course.spending(ahead, availability)) {
+                spent[pkg.id] = spent[pkg.id]?.plus(amount) ?: amount
             }
         }
         return packages.map { it.forecastOn(date, reportZone, now, spent[it.packageId] ?: tablets("0")) }

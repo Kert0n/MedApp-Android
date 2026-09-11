@@ -25,7 +25,7 @@ class StockMovementRoomRepository @Inject constructor(
     override suspend fun observedBetween(from: Instant, until: Instant): List<StockMovement> =
         movements.observedBetween(from, until).toDomain()
 
-    private suspend fun List<StockMovementStorageEntity>.toDomain(): List<StockMovement> {
+    private suspend fun List<StockMovementStorageRow>.toDomain(): List<StockMovement> {
         val words = vocabulary.snapshot()
         return map { it.toDomain(words) }
     }

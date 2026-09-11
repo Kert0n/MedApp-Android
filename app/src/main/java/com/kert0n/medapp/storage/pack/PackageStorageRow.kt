@@ -5,6 +5,7 @@ import androidx.room.Relation
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageFacts
 import com.kert0n.medapp.domain.value.Vocabulary
+import com.kert0n.medapp.storage.medkit.MedKitStorageEntity
 import com.kert0n.medapp.storage.value.storedDose
 import com.kert0n.medapp.storage.value.storedMoney
 import com.kert0n.medapp.storage.value.storedQuantity
@@ -16,18 +17,21 @@ import com.kert0n.medapp.storage.value.storedUnit
  *
  * Картина броней — тоже своя строка: её двигают чужие действия. Её отсутствие означает `null`
  * у пачки, а не ноль (PLAN F1). Единицу и форму строка держит идентификаторами, а объекты даёт
- * снимок словаря.
+ * снимок словаря; аптечку Room читает связью в той же транзакции, и одну на всю выборку — списку
+ * пачек не нужно по запросу на строку.
  */
 class PackageStorageRow(
     @Embedded val pack: PackageStorageEntity,
     @Relation(parentColumn = "id", entityColumn = "package_id")
     val details: PackageDetailsStorageEntity,
     @Relation(parentColumn = "id", entityColumn = "package_id")
-    val claims: ClaimsStorageEntity? = null
+    val claims: ClaimsStorageEntity? = null,
+    @Relation(parentColumn = "med_kit_id", entityColumn = "id")
+    val medKit: MedKitStorageEntity? = null
 ) {
     fun toDomain(vocabulary: Vocabulary): Package = Package(
         id = pack.id,
-        medKitId = pack.medKitId,
+        medKit = requireNotNull(medKit) { "пачка лежит в аптечке, которой нет: ${pack.medKitId}" }.toDomain(),
         facts = PackageFacts(
             shared = pack.sharedFacts(vocabulary),
             expiresOn = details.expiry(),

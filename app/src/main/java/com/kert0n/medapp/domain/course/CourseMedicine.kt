@@ -7,7 +7,6 @@ import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.doses
 import com.kert0n.medapp.domain.value.Quantity
-import kotlin.uuid.Uuid
 
 /**
  * Препарат курса: пачки, которые человек, выбрав их источниками, объявил одним лекарством.
@@ -18,9 +17,8 @@ import kotlin.uuid.Uuid
  * целиком. Разовую дозу знает курс и передаёт аргументом, расклад доступного приносит
  * [Availability] — по числу на каждую пачку.
  *
- * Состав адресуется идентификаторами, а не пачками: препарат хранит именно их, и держать внутри
- * себя чужие сущности ему незачем. Наружу этим не пользуются — публичная сторона у лечения одна,
- * и это курс: он принимает пачку и спрашивает препарат уже её идентификатором.
+ * Состав держит сами пачки: курс, прочитанный из базы, читает и их, и подставить вместо пачки
+ * форму или единицу нечем. Публичная сторона у лечения одна, и это курс.
  */
 class CourseMedicine(sources: List<CourseSource> = emptyList()) {
 
@@ -32,7 +30,7 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
     val sources: List<CourseSource> = sources.toList()
 
     init {
-        require(sources.distinctBy { it.packageId }.size == sources.size) {
+        require(sources.distinctBy { it.pkg }.size == sources.size) {
             "одна пачка входит в курс один раз"
         }
     }
@@ -42,10 +40,10 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
     val allocatedTotal: Doses
         get() = sources.fold(0.doses) { total, source -> total + source.allocatedDoses }
 
-    internal fun allocatedTo(packageId: Uuid): Doses? =
-        sources.firstOrNull { it.packageId == packageId }?.allocatedDoses
+    internal fun allocatedTo(pkg: Package): Doses? =
+        sources.firstOrNull { it.pkg == pkg }?.allocatedDoses
 
-    internal fun holds(packageId: Uuid): Boolean = sources.any { it.packageId == packageId }
+    internal fun holds(pkg: Package): Boolean = sources.any { it.pkg == pkg }
 
     /**
      * Подключает пачку последней в расходе, если она годится под назначенное: та же форма и та
@@ -60,7 +58,7 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
         val rejection = when {
             pkg.lifecycle != Package.Lifecycle.ACTIVE ||
                 pkg.access != Package.Access.AVAILABLE -> CourseRejected.Reason.PACKAGE_UNUSABLE
-            holds(pkg.id) -> CourseRejected.Reason.ALREADY_ATTACHED
+            holds(pkg) -> CourseRejected.Reason.ALREADY_ATTACHED
             // Пачка без формы не годится ни под какое назначение: сказать, тот ли это препарат,
             // нечем, и сначала форму надо заполнить.
             pkg.facts.form == null -> CourseRejected.Reason.FORM_UNKNOWN
@@ -69,13 +67,13 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
             else -> null
         }
         if (rejection != null) return Result.failure(CourseRejected(rejection))
-        return Result.success(withSources(sources + CourseSource(pkg.id, doses)))
+        return Result.success(withSources(sources + CourseSource(pkg, doses)))
     }
 
     /** Убирает пачку; препарат без пачек — законное состояние, курс просто не обеспечен. */
-    internal fun detach(packageId: Uuid): CourseMedicine {
-        requireHolds(packageId)
-        return withSources(sources.filterNot { it.packageId == packageId })
+    internal fun detach(pkg: Package): CourseMedicine {
+        requireHolds(pkg)
+        return withSources(sources.filterNot { it.pkg == pkg })
     }
 
     /** Переставляет пачку: место в препарате — очередь в расходе. */
@@ -90,11 +88,9 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
     }
 
     /** Задаёт выделение пачки в целых дозах; верхнюю границу называет [maxDoses]. */
-    internal fun allocate(packageId: Uuid, doses: Doses): CourseMedicine {
-        requireHolds(packageId)
-        return withSources(
-            sources.map { if (it.packageId == packageId) CourseSource(packageId, doses) else it }
-        )
+    internal fun allocate(pkg: Package, doses: Doses): CourseMedicine {
+        requireHolds(pkg)
+        return withSources(sources.map { if (it.pkg == pkg) CourseSource(pkg, doses) else it })
     }
 
     /**
@@ -117,26 +113,26 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
             coveredUntil = remaining.getOrNull(covered.count - 1)?.at,
             firstUncoveredAt = remaining.getOrNull(covered.count)?.at,
             perSource = capacities.map {
-                CourseCoverage.Source(it.packageId, it.allocated, it.covers, it.leftover)
+                CourseCoverage.Source(it.pkg, it.allocated, it.covers, it.leftover)
             }
         )
     }
 
     /**
-     * Верхняя граница выделения пачки [packageId] в целых дозах: меньшее из того, что пачка даёт,
-     * и того, что [required] оставляет сверх выделенного остальным. С других пачек выделение само
-     * не снимается — это решение человека (C1). [packageId] может ещё не быть в препарате:
-     * «сколько выделю, если подключу».
+     * Верхняя граница выделения пачки [pkg] в целых дозах: меньшее из того, что пачка даёт, и
+     * того, что [required] оставляет сверх выделенного остальным. С других пачек выделение само
+     * не снимается — это решение человека (C1). [pkg] может ещё не быть в препарате: «сколько
+     * выделю, если подключу».
      */
     internal fun maxDoses(
-        packageId: Uuid,
+        pkg: Package,
         dose: Dose,
         required: Doses,
         availability: Availability
     ): Doses {
-        val here = allocatedTo(packageId) ?: 0.doses
+        val here = allocatedTo(pkg) ?: 0.doses
         val stillNeeded = required.minusOrNone(allocatedTotal - here)
-        return minOf(availability.dosesOf(packageId, dose), stillNeeded)
+        return minOf(availability.dosesOf(pkg, dose), stillNeeded)
     }
 
     /**
@@ -151,7 +147,7 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
         availability: Availability
     ): CourseMedicine {
         val clamped = capacities(dose, availability)
-            .map { CourseSource(it.packageId, it.covers) }
+            .map { CourseSource(it.pkg, it.covers) }
         var excess = clamped.fold(0.doses) { total, it -> total + it.allocatedDoses }
             .minusOrNone(required)
         val trimmed = clamped.toMutableList()
@@ -159,7 +155,7 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
             if (excess.isNone) break
             val source = trimmed[index]
             val taken = minOf(source.allocatedDoses, excess)
-            trimmed[index] = CourseSource(source.packageId, source.allocatedDoses - taken)
+            trimmed[index] = CourseSource(source.pkg, source.allocatedDoses - taken)
             excess -= taken
         }
         return withSources(trimmed)
@@ -174,14 +170,14 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
         dose: Dose,
         doses: Doses,
         availability: Availability
-    ): Map<Uuid, Doses> {
+    ): Map<Package, Doses> {
         var left = doses
-        val spent = LinkedHashMap<Uuid, Doses>()
+        val spent = LinkedHashMap<Package, Doses>()
         for (capacity in capacities(dose, availability)) {
             if (left.isNone) break
             val taken = minOf(capacity.covers, left)
             if (taken.isNone) continue
-            spent[capacity.packageId] = taken
+            spent[capacity.pkg] = taken
             left -= taken
         }
         return spent
@@ -192,10 +188,10 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
      * взято, и не ниже нуля. Так уходит доза, принятая мимо плана: бронь уменьшается по порядку
      * расходования, а остатка пачки это не касается.
      */
-    internal fun spent(spent: Map<Uuid, Doses>): CourseMedicine = withSources(
+    internal fun spent(spent: Map<Package, Doses>): CourseMedicine = withSources(
         sources.map { source ->
-            val taken = spent[source.packageId] ?: return@map source
-            CourseSource(source.packageId, source.allocatedDoses.minusOrNone(taken))
+            val taken = spent[source.pkg] ?: return@map source
+            CourseSource(source.pkg, source.allocatedDoses.minusOrNone(taken))
         }
     )
 
@@ -205,7 +201,7 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
      * оживает: приём из невыделенной пачки брони не создаёт.
      */
     internal fun dosesAfterIntake(
-        packageId: Uuid,
+        pkg: Package,
         dose: Dose,
         taken: Dose,
         availableAfter: Quantity
@@ -213,7 +209,7 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
         require(availableAfter.unit == dose.unit) {
             "доступный остаток измеряется единицей дозы: ${availableAfter.unit} и ${dose.unit}"
         }
-        val allocated = allocatedTo(packageId) ?: 0.doses
+        val allocated = allocatedTo(pkg) ?: 0.doses
         if (allocated.isNone) return 0.doses
         val leftAllocated = (dose * allocated).minusOrZero(taken.quantity)
         val limited =
@@ -228,10 +224,10 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
      */
     private fun capacities(dose: Dose, availability: Availability): List<SourceCapacity> =
         sources.map { source ->
-            val available = availability.of(source.packageId)
+            val available = availability.of(source.pkg)
             val whole = available.dosesIn(dose)
             SourceCapacity(
-                packageId = source.packageId,
+                pkg = source.pkg,
                 allocated = source.allocatedDoses,
                 whole = whole,
                 leftover = available - dose * whole
@@ -243,7 +239,7 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
      * ([covers]) — не больше выделенного.
      */
     private data class SourceCapacity(
-        val packageId: Uuid,
+        val pkg: Package,
         val allocated: Doses,
         val whole: Doses,
         val leftover: Quantity
@@ -260,7 +256,7 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
 
     override fun toString(): String = "CourseMedicine($sources)"
 
-    private fun requireHolds(packageId: Uuid) {
-        require(holds(packageId)) { "пачка $packageId не источник этого курса" }
+    private fun requireHolds(pkg: Package) {
+        require(holds(pkg)) { "пачка ${pkg.id} не источник этого курса" }
     }
 }
