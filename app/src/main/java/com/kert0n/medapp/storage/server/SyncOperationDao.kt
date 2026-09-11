@@ -89,12 +89,16 @@ interface SyncOperationDao {
     @Transaction
     @Query(
         "SELECT * FROM sync_operations o WHERE status IN ('PENDING', 'SENDING', 'ANSWERED') " +
+            "AND (not_before IS NULL OR not_before <= :now) " +
             "AND NOT EXISTS (" +
             "  SELECT 1 FROM sync_operation_dependencies d JOIN sync_operations p ON p.id = d.depends_on_id " +
             "  WHERE d.operation_id = o.id AND p.status != 'APPLIED'" +
+            ") AND NOT EXISTS (" +
+            "  SELECT 1 FROM sync_operations e WHERE e.package_id = o.package_id AND e.sequence < o.sequence " +
+            "  AND e.status IN ('PENDING', 'SENDING', 'ANSWERED')" +
             ") ORDER BY sequence"
     )
-    suspend fun ready(): List<SyncOperationStorageRow>
+    suspend fun ready(now: Instant): List<SyncOperationStorageRow>
 
     /** Замораживает запрос и берёт в отправку — только если операция ещё не закрыта. */
     @Query(
@@ -131,22 +135,24 @@ interface SyncOperationDao {
 
     /** Ответ есть, применить нечем: остаётся `ANSWERED`, попытка считается — от неё растёт задержка. */
     @Query(
-        "UPDATE sync_operations SET last_error = :lastError, last_tried_at = :at, attempts = attempts + 1 " +
-            "WHERE id = :id AND status = 'ANSWERED'"
+        "UPDATE sync_operations SET last_error = :lastError, last_tried_at = :at, attempts = attempts + 1, " +
+            "not_before = :notBefore WHERE id = :id AND status = 'ANSWERED'"
     )
-    suspend fun defer(id: Uuid, lastError: String, at: Instant): Int
+    suspend fun defer(id: Uuid, lastError: String, at: Instant, notBefore: Instant): Int
 
     /** Закрытие или возврат в ожидание стирает записанный ответ: он либо применён, либо будет получен заново. */
     @Query(
         "UPDATE sync_operations SET status = :status, last_error = :lastError, " +
-            "last_tried_at = :at, attempts = attempts + :attempted, answer_status = NULL, answer_body = NULL WHERE id = :id"
+            "last_tried_at = :at, attempts = attempts + :attempted, answer_status = NULL, answer_body = NULL, " +
+            "not_before = :notBefore WHERE id = :id"
     )
     suspend fun settle(
         id: Uuid,
         status: SyncOperationStatus,
         lastError: String? = null,
         at: Instant? = null,
-        attempted: Int = 0
+        attempted: Int = 0,
+        notBefore: Instant? = null
     )
 
     /**
@@ -154,14 +160,14 @@ interface SyncOperationDao {
      * под тем же номером. Не попытка — задержка от этого не растёт.
      */
     @Query(
-        "UPDATE sync_operations SET status = 'PENDING', last_error = :lastError, last_tried_at = :at, " +
+        "UPDATE sync_operations SET status = 'PENDING', last_error = :lastError, last_tried_at = :at, not_before = :notBefore, " +
             "prepared_method = NULL, prepared_path = NULL, prepared_query = NULL, prepared_body = NULL, " +
             "prepared_drug_version = NULL, prepared_claims_version = NULL, prepared_quantity_before = NULL, " +
             "prepared_mine_before = NULL, prepared_unit_id = NULL, prepared_at = NULL, " +
             "answer_status = NULL, answer_body = NULL " +
             "WHERE id = :id AND status IN ('SENDING', 'ANSWERED')"
     )
-    suspend fun reprepare(id: Uuid, lastError: String, at: Instant): Int
+    suspend fun reprepare(id: Uuid, lastError: String, at: Instant, notBefore: Instant?): Int
 
     /**
      * Незакрытые операции, которым нужен эффект [dependsOn], закрываются тем же статусом: отказ

@@ -85,9 +85,9 @@ class SyncOperationRoomRepository @Inject constructor(
     override suspend fun enqueue(queued: QueuedCommand, at: Instant): SyncOperation =
         queue.enqueue(queued.id, queued.command, at, queued.groupId, queued.dependsOn)
 
-    override suspend fun ready(): List<StoredSyncOperation> = database.withTransaction {
+    override suspend fun ready(now: Instant): List<StoredSyncOperation> = database.withTransaction {
         val words = vocabulary.snapshot()
-        queue.ready().map { it.toDomain(words) }
+        queue.ready(now).map { it.toDomain(words) }
     }
 
     /**
@@ -148,8 +148,8 @@ class SyncOperationRoomRepository @Inject constructor(
         queue.answered(id, answer.status, answer.body, at)
     }
 
-    override suspend fun defer(id: Uuid, reason: String, at: Instant) {
-        queue.defer(id, reason, at)
+    override suspend fun defer(id: Uuid, reason: String, at: Instant, notBefore: Instant) {
+        queue.defer(id, reason, at, notBefore)
     }
 
     /** Подготовка закрыла операцию сама: истина по пачке уже в базе — она только что легла свежим снимком. */
@@ -189,7 +189,7 @@ class SyncOperationRoomRepository @Inject constructor(
                 command?.let { apply(outcome.state, it, words, at) }
             }
             is Delivery.Stale -> {
-                queue.reprepare(id, lastError = "устарело: ${outcome.snapshot.pack.version}", at = at)
+                queue.reprepare(id, lastError = "устарело: ${outcome.snapshot.pack.version}", at = at, notBefore = outcome.notBefore)
                 apply(outcome.snapshot, words, at)
             }
             is Delivery.Refused -> {
@@ -199,7 +199,7 @@ class SyncOperationRoomRepository @Inject constructor(
                 cascade(id, SyncOperationStatus.REFUSED)
             }
             is Delivery.Retry ->
-                queue.settle(id, SyncOperationStatus.PENDING, outcome.error, at, attempted = 1)
+                queue.settle(id, SyncOperationStatus.PENDING, outcome.error, at, attempted = 1, notBefore = outcome.notBefore)
             Delivery.AccessLost -> {
                 queue.settle(id, SyncOperationStatus.ACCESS_LOST, null, at, attempted = 1)
                 intakes.markRemoteRefused(id)

@@ -45,7 +45,8 @@ class SyncOperationStorageEntity(
     @ColumnInfo(name = "last_tried_at") val lastTriedAt: Instant? = null,
     @Embedded(prefix = "prepared_") val prepared: PreparedRequestStorageColumns? = null,
     @ColumnInfo(name = "answer_status") val answerStatus: Int? = null,
-    @ColumnInfo(name = "answer_body") val answerBody: String? = null
+    @ColumnInfo(name = "answer_body") val answerBody: String? = null,
+    @ColumnInfo(name = "not_before") val notBefore: Instant? = null
 )
 
 /**
@@ -68,5 +69,6 @@ fun SyncOperation.toStorageEntity(): SyncOperationStorageEntity = SyncOperationS
     lastTriedAt = lastTriedAt,
     prepared = prepared?.toStorageColumns(),
     answerStatus = answer?.status,
-    answerBody = answer?.body
+    answerBody = answer?.body,
+    notBefore = notBefore
 )

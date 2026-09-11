@@ -93,7 +93,7 @@ class QueueStorageTest {
         assertEquals(ResourceVersion(3), request.drugVersion)
         assertEquals(tablets("20"), request.quantityBefore)
         assertTrue(request.body!!.contains("\"drugVersion\":3"))
-        assertEquals(listOf(taken.id), storage.ready().map { it.id })
+        assertEquals(listOf(taken.id), storage.ready(at.plusSeconds(600)).map { it.id })
     }
 
     /** Свежее состояние ложится первым, и запрос везёт его версию и остаток, а не те, что лежали в строке. */
@@ -150,7 +150,7 @@ class QueueStorageTest {
         assertEquals(1, stored.operation.attempts)
         assertEquals(IntakeAccounting.REMOTE_APPLIED, requireNotNull(database.intakes().findEntity(INTAKE)).accounting)
         assertEquals(IntakeStatus.TAKEN, requireNotNull(database.intakes().findEntity(INTAKE)).status)
-        assertTrue(storage.ready().isEmpty())
+        assertTrue(storage.ready(at.plusSeconds(600)).isEmpty())
     }
 
     @Test
@@ -188,7 +188,7 @@ class QueueStorageTest {
         val pkg = requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY)
         assertEquals(com.kert0n.medapp.domain.pack.Package.Access.LOST, pkg.access)
         assertNull(pkg.claims)
-        assertTrue(storage.ready().isEmpty())
+        assertTrue(storage.ready(at.plusSeconds(600)).isEmpty())
     }
 
     @Test
@@ -197,10 +197,10 @@ class QueueStorageTest {
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE, claimAfter = tablets("0")), at)
         database.syncOperations().enqueue(release, PackageSyncCommand.ReleaseClaim(PACK), at, dependsOn = setOf(operation))
 
-        assertEquals(listOf(operation), storage.ready().map { it.id })
+        assertEquals(listOf(operation), storage.ready(at.plusSeconds(600)).map { it.id })
         storage.take(operation, null, at)
         storage.settle(operation, Delivery.Applied(PackageState.Present(snapshot)), at)
-        assertEquals(listOf(release), storage.ready().map { it.id })
+        assertEquals(listOf(release), storage.ready(at.plusSeconds(600)).map { it.id })
     }
 
     /** «Устарело» — не закрытие: снимок ложится, запрос сбрасывается, операция снова ждёт под тем же номером. */
@@ -245,7 +245,7 @@ class QueueStorageTest {
         assertEquals("SUPERSEDED", dependent.operation.lastError)
         assertEquals(IntakeAccounting.REMOTE_REFUSED, requireNotNull(database.intakes().findEntity(INTAKE)).accounting)
         assertEquals(tablets("17"), requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY).quantity)
-        assertTrue(storage.ready().isEmpty())
+        assertTrue(storage.ready(at.plusSeconds(600)).isEmpty())
     }
 
     /** Единицу пачки сменили на сервере: расход закрывается отказом при взятии, не тревожа сервер. */
@@ -278,18 +278,33 @@ class QueueStorageTest {
         storage.take(operation, null, at)
 
         storage.answered(operation, RawResponse(200, snapshotJson), at.plusSeconds(1))
-        storage.defer(operation, "словарь не знает единицу", at.plusSeconds(2))
+        storage.defer(operation, "словарь не знает единицу", at.plusSeconds(2), notBefore = at.plusSeconds(4))
 
         val stored = (requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable).operation
         assertEquals(SyncOperationStatus.ANSWERED, stored.status)
         assertEquals(RawResponse(200, snapshotJson), stored.answer)
         assertEquals(1, stored.attempts)
-        assertEquals(listOf(operation), storage.ready().map { it.id })
+        assertEquals(listOf(operation), storage.ready(at.plusSeconds(600)).map { it.id })
         assertNull(storage.take(operation, null, at.plusSeconds(3)))
 
         storage.settle(operation, Delivery.Applied(PackageState.Present(snapshot)), at.plusSeconds(4))
         val settled = (requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable).operation
         assertEquals(SyncOperationStatus.APPLIED, settled.status)
         assertNull(settled.answer)
+    }
+
+    /** Готовность — одно определение в запросе: срок, зависимости и порядок по пачке. */
+    @Test
+    fun readinessIsTheTermTheDependenciesAndTheOrderWithinThePackage() = runTest {
+        val second = Uuid.parse("00000000-0000-4000-8000-000000000093")
+        database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
+        database.syncOperations().enqueue(second, PackageSyncCommand.Consume(PACK, dose("1"), second), at)
+        storage.take(operation, null, at)
+
+        storage.settle(operation, Delivery.Retry("обрыв", notBefore = at.plusSeconds(30)), at)
+
+        // Первая ждёт срока, вторая ждёт первую: до срока готовых нет, после — только первая.
+        assertTrue(storage.ready(at.plusSeconds(10)).isEmpty())
+        assertEquals(listOf(operation), storage.ready(at.plusSeconds(31)).map { it.id })
     }
 }

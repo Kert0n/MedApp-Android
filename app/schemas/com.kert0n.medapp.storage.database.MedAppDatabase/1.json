@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "481e8ac5b6898a4939faec62339e00e7",
+    "identityHash": "270fbd96b6b219ad9de157d733097b98",
     "entities": [
       {
         "tableName": "quantity_units",
@@ -1092,7 +1092,7 @@
       },
       {
         "tableName": "sync_operations",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `kind` TEXT NOT NULL, `payload` TEXT NOT NULL, `payload_version` INTEGER NOT NULL, `sequence` INTEGER NOT NULL, `status` TEXT NOT NULL, `attempts` INTEGER NOT NULL, `created_at` INTEGER NOT NULL, `package_id` TEXT, `med_kit_id` TEXT, `group_id` TEXT, `last_error` TEXT, `last_tried_at` INTEGER, `answer_status` INTEGER, `answer_body` TEXT, `prepared_method` TEXT, `prepared_path` TEXT, `prepared_query` TEXT, `prepared_body` TEXT, `prepared_drug_version` INTEGER, `prepared_claims_version` INTEGER, `prepared_quantity_before` TEXT, `prepared_mine_before` TEXT, `prepared_unit_id` TEXT, `prepared_at` INTEGER, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `kind` TEXT NOT NULL, `payload` TEXT NOT NULL, `payload_version` INTEGER NOT NULL, `sequence` INTEGER NOT NULL, `status` TEXT NOT NULL, `attempts` INTEGER NOT NULL, `created_at` INTEGER NOT NULL, `package_id` TEXT, `med_kit_id` TEXT, `group_id` TEXT, `last_error` TEXT, `last_tried_at` INTEGER, `answer_status` INTEGER, `answer_body` TEXT, `not_before` INTEGER, `prepared_method` TEXT, `prepared_path` TEXT, `prepared_query` TEXT, `prepared_body` TEXT, `prepared_drug_version` INTEGER, `prepared_claims_version` INTEGER, `prepared_quantity_before` TEXT, `prepared_mine_before` TEXT, `prepared_unit_id` TEXT, `prepared_at` INTEGER, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -1176,6 +1176,11 @@
             "fieldPath": "answerBody",
             "columnName": "answer_body",
             "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "notBefore",
+            "columnName": "not_before",
+            "affinity": "INTEGER"
           },
           {
             "fieldPath": "prepared.method",
@@ -1385,7 +1390,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '481e8ac5b6898a4939faec62339e00e7')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '270fbd96b6b219ad9de157d733097b98')"
     ]
   }
 }

@@ -22,10 +22,10 @@ class QueueServiceTest {
     private class Storage : QueueStorage {
         val enqueued = mutableListOf<QueuedCommand>()
         var transactions = 0
-        override suspend fun ready(): List<StoredSyncOperation> = emptyList()
+        override suspend fun ready(now: Instant): List<StoredSyncOperation> = emptyList()
         override suspend fun take(id: Uuid, fresh: PackageSnapshotNetworkDTO?, at: Instant): Take? = null
         override suspend fun answered(id: Uuid, answer: com.kert0n.medapp.network.server.RawResponse, at: Instant) = Unit
-        override suspend fun defer(id: Uuid, reason: String, at: Instant) = Unit
+        override suspend fun defer(id: Uuid, reason: String, at: Instant, notBefore: Instant) = Unit
         override suspend fun settle(id: Uuid, outcome: Delivery, at: Instant) = Unit
         override suspend fun <T> transaction(block: suspend () -> T): T {
             transactions++

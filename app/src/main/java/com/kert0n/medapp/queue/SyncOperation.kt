@@ -12,6 +12,8 @@ import kotlin.uuid.Uuid
  * (PLAN E2). Зависимости — множество: порядок между ними ничего не значит, и повтор тоже, а
  * список потребовал бы проверки уникальности вместо типа. [answer] — ответ сервера, записанный
  * до того, как его удалось применить: он есть ровно у [SyncOperationStatus.ANSWERED].
+ * [notBefore] — раньше этого срока операцию не трогают: задержка повтора и `Retry-After` живут
+ * здесь, а не в памяти прохода, и переживают его, процесс и второй `drain`.
  */
 class SyncOperation(
     val id: Uuid,
@@ -26,7 +28,8 @@ class SyncOperation(
     val attempts: Int = 0,
     val lastError: String? = null,
     val lastTriedAt: Instant? = null,
-    val answer: RawResponse? = null
+    val answer: RawResponse? = null,
+    val notBefore: Instant? = null
 ) {
     /** Своя копия: множество, оставшееся у вызывающего, меняло бы порядок отправки очереди. */
     val dependsOn: Set<Uuid> = dependsOn.toSet()
@@ -56,12 +59,13 @@ class SyncOperation(
                 attempts == other.attempts &&
                 lastError == other.lastError &&
                 lastTriedAt == other.lastTriedAt &&
-                answer == other.answer
+                answer == other.answer &&
+                notBefore == other.notBefore
             )
 
     override fun hashCode(): Int = Objects.hash(
         id, command, sequence, createdAt, payloadVersion, prepared, groupId, dependsOn,
-        status, attempts, lastError, lastTriedAt, answer
+        status, attempts, lastError, lastTriedAt, answer, notBefore
     )
 
     override fun toString(): String =

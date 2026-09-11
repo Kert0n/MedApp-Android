@@ -42,59 +42,43 @@ class QueueWorker @Inject constructor(
 ) {
 
     /**
-     * Проход повторяется, пока предыдущий переподготовил хоть одну операцию: она снова ждёт и
-     * должна уйти сейчас, а не при следующем вызове. Предел повторов — защита от сервера,
-     * отвергающего свежую версию раз за разом: дальше операция ждёт по обычной задержке.
+     * Проход: пока в базе есть готовая операция — берётся первая по номеру, и так до тех пор,
+     * пока готовых не останется или связь не оборвётся. Готовность — одно определение, и живёт
+     * оно в запросе ([QueueStorage.ready]): срок, зависимости, порядок по пачке. Поэтому
+     * переподготовленная операция уходит тем же проходом, а зависимая — сразу за родителем.
+     * Промах словаря дочитывается один раз; строка, которой не помог и свежий словарь, —
+     * пропуск, а не бесконечный круг. Переподготовка одной операции — не больше трёх раз
+     * подряд: дальше она ждёт по обычной задержке.
      */
     suspend fun drain(): Report {
-        var report = pass(vocabularyRefreshable = true)
-        var rounds = 1
-        while (report.reprepared > 0 && rounds < MAX_REPREPARE_ROUNDS) {
-            report = report + pass(vocabularyRefreshable = false)
-            rounds++
-        }
-        return report
-    }
-
-    /**
-     * Один проход по готовым операциям. Промах словаря дочитывается один раз, и проход начинается
-     * заново уже без права на второе чтение: строка, которой не помог и свежий словарь, —
-     * пропуск, а не бесконечный круг.
-     */
-    private suspend fun pass(vocabularyRefreshable: Boolean): Report {
-        val pass = Pass(now = clock.instant())
-        for (entry in storage.ready()) {
+        val drain = Drain()
+        var vocabularyRefreshable = true
+        while (true) {
+            val entry = storage.ready(clock.instant()).firstOrNull { it.id !in drain.skippedIds } ?: break
             val operation = when (entry) {
                 is StoredSyncOperation.Readable -> entry.operation
                 is StoredSyncOperation.Unreadable -> {
-                    if (entry.reason is StoredSyncOperation.Reason.VocabularyStale && vocabularyRefreshable &&
-                        vocabulary.refresh() is ApiResult.Success
-                    ) {
-                        return pass(vocabularyRefreshable = false)
+                    if (entry.reason is StoredSyncOperation.Reason.VocabularyStale && vocabularyRefreshable) {
+                        vocabularyRefreshable = false
+                        if (vocabulary.refresh() is ApiResult.Success) continue
                     }
-                    pass.skipped += entry
+                    drain.skip(entry)
                     continue
                 }
             }
             val packageId = (operation.command as? PackageSyncCommand)?.packageId
-            if (packageId != null && packageId in pass.heldPackages) continue
-            val notBefore = operation.notBefore()
-            if (notBefore != null && notBefore.isAfter(pass.now)) {
-                pass.retryNotBefore(notBefore)
-                continue
-            }
             val step = if (operation.status == SyncOperationStatus.ANSWERED) {
                 resume(operation)
             } else {
-                attempt(operation, packageId, pass)
+                attempt(operation, packageId, drain)
             }
-            if (pass.record(operation, packageId, step)) return pass.report()
+            if (drain.record(operation, packageId, step)) break
         }
-        return pass.report()
+        return drain.report()
     }
 
     /** Подготовка по свежему состоянию, отправка, запись ответа и его применение — одна операция. */
-    private suspend fun attempt(operation: SyncOperation, packageId: Uuid?, pass: Pass): Step {
+    private suspend fun attempt(operation: SyncOperation, packageId: Uuid?, pass: Drain): Step {
         val fresh = if (operation.prepared == null && packageId != null && packageId !in pass.freshPackages &&
             operation.command !is PackageSyncCommand.Create
         ) {
@@ -105,7 +89,7 @@ class QueueWorker @Inject constructor(
         } else {
             null
         }
-        val taken = when (val take = storage.take(operation.id, fresh, pass.now)) {
+        val taken = when (val take = storage.take(operation.id, fresh, clock.instant())) {
             null -> return Step.Skipped
             is Take.Closed -> {
                 packageId?.let(pass.freshPackages::add)
@@ -261,10 +245,6 @@ class QueueWorker @Inject constructor(
         data class Failed(val delivery: Delivery, val stop: Boolean = false) : Read
     }
 
-    /** Не раньше чем: последняя попытка плюс задержка по их числу; первая попытка — сразу. */
-    private fun SyncOperation.notBefore(): Instant? =
-        lastTriedAt?.takeIf { attempts > 0 }?.plus(backoff(attempts).toJavaDuration())
-
     /** Две секунды после первой неудачи, удвоение с каждой следующей, не дольше пяти минут. */
     private fun backoff(attempts: Int): Duration =
         (INITIAL_BACKOFF * (1 shl minOf(attempts - 1, MAX_BACKOFF_STEPS).coerceAtLeast(0))).coerceAtMost(MAX_BACKOFF)
@@ -285,41 +265,46 @@ class QueueWorker @Inject constructor(
         data object Skipped : Step
     }
 
-    /** Состояние одного прохода: что закрыто, что пропущено, какие пачки дальше не трогать. */
-    private inner class Pass(val now: Instant) {
-        var settled = 0
-        var reprepared = 0
-        val skipped = ArrayList<StoredSyncOperation.Unreadable>()
+    /** Состояние одного прохода: что закрыто, что пропущено, какие пачки уже прочитаны. */
+    private inner class Drain {
+        private var settled = 0
+        private val skipped = ArrayList<StoredSyncOperation.Unreadable>()
         private var retryAt: Instant? = null
-        val heldPackages = HashSet<Uuid>()
+        private val reprepared = HashMap<Uuid, Int>()
+        val skippedIds = HashSet<Uuid>()
 
         /** Пачки, чьё серверное состояние в этом проходе уже лежит в базе. */
         val freshPackages = HashSet<Uuid>()
 
-        fun retryNotBefore(at: Instant) {
+        fun skip(entry: StoredSyncOperation.Unreadable) {
+            skipped += entry
+            skippedIds += entry.id
+        }
+
+        private fun retryNotBefore(at: Instant) {
             retryAt = if (retryAt == null || at.isBefore(retryAt)) at else retryAt
         }
+
+        private fun later(operation: SyncOperation, wait: Duration? = null): Instant =
+            clock.instant().plus((wait ?: backoff(operation.attempts + 1)).toJavaDuration()).also(::retryNotBefore)
 
         /** Записывает шаг; `true` — проход надо остановить. */
         suspend fun record(operation: SyncOperation, packageId: Uuid?, step: Step): Boolean {
             when (step) {
                 is Step.Settled -> {
-                    storage.settle(operation.id, step.delivery, clock.instant())
-                    when (step.delivery) {
-                        is Delivery.Retry -> {
-                            // Следующая команда той же пачки везёт предусловие, которое эта ещё
-                            // не сдвинула: в этом проходе пачка дальше не трогается.
-                            packageId?.let(heldPackages::add)
-                            retryNotBefore(clock.instant().plus((step.retryAfter ?: backoff(operation.attempts + 1)).toJavaDuration()))
-                        }
+                    val delivery = when (val delivery = step.delivery) {
+                        // Срок повтора живёт в базе: следующий проход, процесс или второй
+                        // `drain` его увидят, а операция раньше него готовой не будет.
+                        is Delivery.Retry -> delivery.copy(notBefore = later(operation, step.retryAfter))
                         is Delivery.Stale -> {
-                            // Операция снова первая по своей пачке и уйдёт следующим проходом;
-                            // остальные её команды ждут её, как ждали.
-                            packageId?.let(heldPackages::add)
-                            reprepared++
+                            val rounds = (reprepared[operation.id] ?: 0) + 1
+                            reprepared[operation.id] = rounds
+                            if (rounds >= MAX_REPREPARE_ROUNDS) delivery.copy(notBefore = later(operation)) else delivery
                         }
-                        is Delivery.Applied, is Delivery.Refused, Delivery.AccessLost -> settled++
+                        else -> delivery
                     }
+                    storage.settle(operation.id, delivery, clock.instant())
+                    if (delivery is Delivery.Applied || delivery is Delivery.Refused || delivery is Delivery.AccessLost) settled++
                     return step.stop
                 }
                 is Step.Closed -> {
@@ -327,17 +312,19 @@ class QueueWorker @Inject constructor(
                     return false
                 }
                 is Step.Deferred -> {
-                    storage.defer(operation.id, step.reason, clock.instant())
-                    packageId?.let(heldPackages::add)
-                    retryNotBefore(clock.instant().plus(backoff(operation.attempts + 1).toJavaDuration()))
+                    storage.defer(operation.id, step.reason, clock.instant(), notBefore = later(operation))
                     return step.stop
                 }
                 Step.Unauthorized -> return true
-                Step.Skipped -> return false
+                Step.Skipped -> {
+                    // Взять не удалось — кто-то закрыл или взял её между чтением и взятием.
+                    skippedIds += operation.id
+                    return false
+                }
             }
         }
 
-        fun report() = Report(settled, skipped, retryAt, reprepared)
+        fun report() = Report(settled, skipped, retryAt)
     }
 
     /**
@@ -347,19 +334,11 @@ class QueueWorker @Inject constructor(
     data class Report(
         val settled: Int,
         val skipped: List<StoredSyncOperation.Unreadable>,
-        val retryAt: Instant?,
-        val reprepared: Int = 0
-    ) {
-        /** Итог нескольких проходов подряд: закрытое складывается, срок — ближайший из названных. */
-        operator fun plus(next: Report): Report = Report(
-            settled = settled + next.settled,
-            skipped = skipped + next.skipped,
-            retryAt = listOfNotNull(retryAt, next.retryAt).minOrNull(),
-            reprepared = next.reprepared
-        )
-    }
+        val retryAt: Instant?
+    )
 
     private companion object {
+        /** Столько раз подряд одна операция переподготавливается сразу; дальше — по задержке. */
         const val MAX_REPREPARE_ROUNDS = 3
         val INITIAL_BACKOFF: Duration = 2.seconds
         val MAX_BACKOFF: Duration = 5.minutes

@@ -97,9 +97,18 @@ class QueueWorkerTest {
 
         val deferred = mutableListOf<Pair<Uuid, String>>()
 
-        override suspend fun ready(): List<StoredSyncOperation> =
+        /** То же определение, что в SQL: срок наступил, зависимости применены, первая незакрытая по пачке. */
+        override suspend fun ready(now: Instant): List<StoredSyncOperation> =
             operations.values
                 .filter { !it.status.isClosed }
+                .filter { it.notBefore == null || !it.notBefore!!.isAfter(now) }
+                .filter { op -> op.dependsOn.all { operations[it]?.status == SyncOperationStatus.APPLIED } }
+                .filter { op ->
+                    val pkg = (op.command as? PackageSyncCommand)?.packageId
+                    pkg == null || operations.values.none {
+                        (it.command as? PackageSyncCommand)?.packageId == pkg && it.sequence < op.sequence && !it.status.isClosed
+                    }
+                }
                 .sortedBy { it.sequence }
                 .map<SyncOperation, StoredSyncOperation> { StoredSyncOperation.Readable(it) } + unreadable
 
@@ -124,10 +133,10 @@ class QueueWorkerTest {
             operations[id] = operation.with(status = SyncOperationStatus.ANSWERED, answer = answer)
         }
 
-        override suspend fun defer(id: Uuid, reason: String, at: Instant) {
+        override suspend fun defer(id: Uuid, reason: String, at: Instant, notBefore: Instant) {
             deferred += id to reason
             val operation = operations.getValue(id)
-            operations[id] = operation.with(attempts = operation.attempts + 1, lastTriedAt = at)
+            operations[id] = operation.with(attempts = operation.attempts + 1, lastTriedAt = at, notBefore = notBefore)
         }
 
         override suspend fun <T> transaction(block: suspend () -> T): T = block()
@@ -146,7 +155,7 @@ class QueueWorkerTest {
             (state as? PackageState.Present)?.let { learn(it.snapshot) }
             val operation = operations.getValue(id)
             operations[id] = if (outcome is Delivery.Stale) {
-                operation.with(status = SyncOperationStatus.PENDING, dropPrepared = true, dropAnswer = true)
+                operation.with(status = SyncOperationStatus.PENDING, dropPrepared = true, dropAnswer = true, notBefore = outcome.notBefore, dropNotBefore = outcome.notBefore == null)
             } else {
                 operation.with(
                     status = when (outcome) {
@@ -158,7 +167,9 @@ class QueueWorkerTest {
                     },
                     attempts = operation.attempts + 1,
                     lastTriedAt = at,
-                    dropAnswer = true
+                    dropAnswer = true,
+                    notBefore = (outcome as? Delivery.Retry)?.notBefore,
+                    dropNotBefore = (outcome as? Delivery.Retry)?.notBefore == null
                 )
             }
         }
@@ -169,11 +180,13 @@ class QueueWorkerTest {
             attempts: Int = this.attempts,
             lastTriedAt: Instant? = this.lastTriedAt,
             answer: RawResponse? = this.answer,
+            notBefore: Instant? = this.notBefore,
             dropPrepared: Boolean = false,
-            dropAnswer: Boolean = false
+            dropAnswer: Boolean = false,
+            dropNotBefore: Boolean = false
         ) = SyncOperation(
             id, command, sequence, createdAt, payloadVersion, if (dropPrepared) null else prepared, groupId, dependsOn,
-            status, attempts, lastError, lastTriedAt, if (dropAnswer) null else answer
+            status, attempts, lastError, lastTriedAt, if (dropAnswer) null else answer, if (dropNotBefore) null else notBefore
         )
     }
 
@@ -434,7 +447,8 @@ class QueueWorkerTest {
 
         val first = worker(storage, transport).drain()
         assertEquals(0, first.settled)
-        assertEquals(Delivery.Retry("ответ потерян"), storage.settled.single().second)
+        // Срок повтора — в исходе и в базе, а не в памяти прохода: две секунды после первой неудачи.
+        assertEquals(Delivery.Retry("ответ потерян", notBefore = now.plusSeconds(2)), storage.settled.single().second)
         assertEquals(SyncOperationStatus.PENDING, storage.operations.getValue(INTAKE).status)
         assertNotNull(first.retryAt)
 
@@ -625,6 +639,60 @@ class QueueWorkerTest {
         assertEquals(1, report.settled)
         assertTrue(transport.sent.isEmpty())
         assertEquals(Delivery.Applied(PackageState.Present(snapshot)), storage.settled.single().second)
+    }
+
+    /** Второй офлайн-приём той же пачки не уходит, пока первый ждёт срока: порядок по пачке — в определении готовности. */
+    @Test
+    fun theNextOperationOfAPackageWaitsWhileTheFirstWaitsForItsRetry() = runTest {
+        val second = PackageSyncCommand.Consume(PACK, dose("1"), OTHER_PACK)
+        val storage = Storage(listOf(operation(sequence = 0), operation(second, id = OTHER_PACK, sequence = 1)))
+        val transport = transport { ApiResult.Failure(ApiFailure.OutcomeUnknown) }
+
+        worker(storage, transport).drain()
+
+        assertEquals(1, transport.sent.size)
+        assertEquals(now.plusSeconds(2), storage.operations.getValue(INTAKE).notBefore)
+        assertNull(storage.operations.getValue(OTHER_PACK).notBefore)
+    }
+
+    /** `Retry-After` переживает новый `drain`: срок лежит в базе, и до него операция не готова. */
+    @Test
+    fun retryAfterSurvivesAnotherDrain() = runTest {
+        val storage = Storage(listOf(operation()))
+        var limited = true
+        val transport = transport {
+            if (limited) ApiResult.Failure(ApiFailure.TooManyRequests(30.seconds)) else ApiResult.Success(RawResponse(200, snapshotJson))
+        }
+        worker(storage, transport).drain()
+        assertEquals(now.plusSeconds(30), storage.operations.getValue(INTAKE).notBefore)
+
+        limited = false
+        QueueWorker(storage, transport, resolver(true), Clock.fixed(now.plusSeconds(10), ZoneOffset.UTC)).drain()
+        assertEquals(1, transport.sent.size)
+        val inTime = QueueWorker(storage, transport, resolver(true), Clock.fixed(now.plusSeconds(31), ZoneOffset.UTC)).drain()
+        assertEquals(2, transport.sent.size)
+        assertEquals(1, inTime.settled)
+    }
+
+    /** Зависимая операция уходит тем же проходом, что и её родитель: готовность перечитывается после каждого шага. */
+    @Test
+    fun aDependentOperationGoesOutInTheSameDrainAsItsParent() = runTest {
+        val release = PackageSyncCommand.ReleaseClaim(PACK)
+        val parent = operation(sync, sequence = 0)
+        val dependent = SyncOperation(
+            id = OTHER_PACK, command = release, sequence = 1, createdAt = EARLIER, payloadVersion = 1, dependsOn = setOf(INTAKE)
+        )
+        val storage = Storage(listOf(parent, dependent))
+        val transport = transport { request ->
+            if (request.path.endsWith("/sync/$INTAKE")) ApiResult.Success(RawResponse(200, snapshotJson))
+            else ApiResult.Success(RawResponse(204, ""))
+        }
+        transport.snapshotAnswer = ApiResult.Success(snapshot)
+
+        val report = worker(storage, transport).drain()
+
+        assertEquals(2, report.settled)
+        assertEquals(listOf("PUT", "DELETE"), transport.sent.map { it.method })
     }
 
     @Test

@@ -47,7 +47,8 @@ class SyncOperationStorageRow(
                 attempts = operation.attempts,
                 lastError = operation.lastError,
                 lastTriedAt = operation.lastTriedAt,
-                answer = operation.answerStatus?.let { RawResponse(it, operation.answerBody.orEmpty()) }
+                answer = operation.answerStatus?.let { RawResponse(it, operation.answerBody.orEmpty()) },
+                notBefore = operation.notBefore
             )
         )
     } catch (missed: VocabularyMiss) {
