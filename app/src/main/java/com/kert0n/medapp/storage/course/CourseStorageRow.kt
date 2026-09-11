@@ -10,7 +10,10 @@ import com.kert0n.medapp.domain.course.CourseSource
 import com.kert0n.medapp.domain.course.Prescription
 import com.kert0n.medapp.domain.course.Revision
 import com.kert0n.medapp.domain.value.Doses
+import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.storage.value.storedDose
+import com.kert0n.medapp.storage.value.storedForm
+import com.kert0n.medapp.storage.value.storedUnit
 import java.math.BigDecimal
 
 /**
@@ -30,28 +33,30 @@ class CourseStorageRow(
     /** Лечение ещё не начато: имя обязательно, назначение — нет. */
     val isDraft: Boolean get() = course.title != null
 
-    fun toDraft(): CourseDraft = CourseDraft(
+    fun toDraft(vocabulary: Vocabulary): CourseDraft = CourseDraft(
         id = course.id,
         title = requireNotNull(course.title) { "у черновика есть имя: без него это уже эпизод" },
         note = course.note,
         doseAmount = course.doseAmount?.let(::BigDecimal),
         schedule = schedule(),
-        medicine = medicine(),
+        medicine = medicine(vocabulary),
         revision = Revision(course.revision),
         createdAt = course.createdAt,
         updatedAt = course.updatedAt
     )
 
-    fun toPlan(): Course = Course(
+    fun toPlan(vocabulary: Vocabulary): Course = Course(
         id = course.id,
         prescription = Prescription(
             dose = storedDose(
                 requireNotNull(course.doseAmount) { "у начатого лечения доза назначена" },
-                requireNotNull(course.unitId) { "у начатого лечения записана единица дозы" }
+                vocabulary.storedUnit(
+                    requireNotNull(course.unitId) { "у начатого лечения записана единица дозы" }
+                )
             ),
             schedule = requireNotNull(schedule()) { "у начатого лечения расписание назначено" }
         ),
-        medicine = medicine(),
+        medicine = medicine(vocabulary),
         revision = Revision(course.revision),
         createdAt = course.createdAt,
         updatedAt = course.updatedAt
@@ -72,11 +77,11 @@ class CourseStorageRow(
         )
     }
 
-    private fun medicine(): CourseMedicine = CourseMedicine(
+    private fun medicine(vocabulary: Vocabulary): CourseMedicine = CourseMedicine(
         sources = sources.sortedBy { it.position }.map {
             CourseSource(packageId = it.packageId, allocatedDoses = Doses(it.allocatedDoses))
         },
-        formId = course.formId,
-        unitId = course.unitId
+        form = course.formId?.let(vocabulary::storedForm),
+        unit = course.unitId?.let(vocabulary::storedUnit)
     )
 }

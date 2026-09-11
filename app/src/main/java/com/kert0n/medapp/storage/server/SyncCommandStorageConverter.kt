@@ -3,6 +3,7 @@ package com.kert0n.medapp.storage.server
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.network.medkit.MedKitSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncCommand
 import com.kert0n.medapp.network.server.SyncCommand
@@ -73,32 +74,39 @@ object SyncCommandStorageConverter {
      * Команда строки очереди. `null` значит ровно одно: этой сборке неизвестен вид команды или
      * версия payload — обычное следствие обновления приложения. Повреждённый payload известного
      * вида — не «команда неизвестна», а ошибка разбора, и она называет себя сама: иначе строка
-     * очереди сообщала бы человеку неверную причину (PLAN F4).
+     * очереди сообщала бы человеку неверную причину (PLAN F4). Единицы и формы payload держит
+     * идентификаторами, а объекты им даёт снимок словаря [vocabulary]; промах по нему — тоже
+     * причина, и называет она единицу.
      */
-    fun commandOf(kind: String, payload: String, payloadVersion: Int): SyncCommand? {
+    fun commandOf(
+        kind: String,
+        payload: String,
+        payloadVersion: Int,
+        vocabulary: Vocabulary
+    ): SyncCommand? {
         if (payloadVersion != PAYLOAD_VERSION) return null
         val fields = runCatching { json.parseToJsonElement(payload) as JsonObject }.getOrNull()
             ?: throw IllegalArgumentException("payload команды «$kind» не разбирается")
-        return runCatching { read(kind, fields) }.getOrElse { cause ->
-            throw IllegalArgumentException("поля команды «$kind» не разбираются", cause)
+        return runCatching { read(kind, fields, vocabulary) }.getOrElse { cause ->
+            throw IllegalArgumentException("поля команды «$kind» не разбираются: ${cause.message}", cause)
         }
     }
 
-    private fun read(kind: String, fields: JsonObject): SyncCommand? = when (kind) {
+    private fun read(kind: String, fields: JsonObject, vocabulary: Vocabulary): SyncCommand? = when (kind) {
         PACKAGE_CREATE -> PackageSyncCommand.Create(
             packageId = fields.uuid("packageId"),
             medKitId = fields.uuid("medKitId"),
-            quantity = fields.quantity("quantity"),
-            facts = fields.facts()
+            quantity = fields.quantity("quantity", vocabulary),
+            facts = fields.facts(vocabulary)
         )
         PACKAGE_DESCRIBE -> PackageSyncCommand.Describe(
             packageId = fields.uuid("packageId"),
-            before = (fields["before"] as JsonObject).facts(),
-            after = (fields["after"] as JsonObject).facts()
+            before = (fields["before"] as JsonObject).facts(vocabulary),
+            after = (fields["after"] as JsonObject).facts(vocabulary)
         )
         PACKAGE_CORRECT_STOCK -> PackageSyncCommand.CorrectStock(
             packageId = fields.uuid("packageId"),
-            actual = fields.quantity("actual")
+            actual = fields.quantity("actual", vocabulary)
         )
         PACKAGE_MOVE -> PackageSyncCommand.Move(
             packageId = fields.uuid("packageId"),
@@ -107,13 +115,13 @@ object SyncCommandStorageConverter {
         PACKAGE_DELETE -> PackageSyncCommand.Delete(packageId = fields.uuid("packageId"))
         PACKAGE_CONSUME -> PackageSyncCommand.Consume(
             packageId = fields.uuid("packageId"),
-            amount = Dose(fields.quantity("amount")),
+            amount = Dose(fields.quantity("amount", vocabulary)),
             intakeId = fields.uuid("intakeId"),
-            claimAfter = if (fields.containsKey("claimAfter")) fields.quantity("claimAfter") else null
+            claimAfter = if (fields.containsKey("claimAfter")) fields.quantity("claimAfter", vocabulary) else null
         )
         PACKAGE_SET_CLAIM -> PackageSyncCommand.SetClaim(
             packageId = fields.uuid("packageId"),
-            amount = fields.quantity("amount")
+            amount = fields.quantity("amount", vocabulary)
         )
         PACKAGE_RELEASE_CLAIM -> PackageSyncCommand.ReleaseClaim(
             packageId = fields.uuid("packageId")
@@ -187,11 +195,11 @@ object SyncCommandStorageConverter {
         quantity: Quantity
     ) {
         put(name, JsonPrimitive(quantity.toStorageAmount()))
-        put("${name}UnitId", JsonPrimitive(quantity.unitId.toString()))
+        put("${name}UnitId", JsonPrimitive(quantity.unit.id.toString()))
     }
 
     private fun kotlinx.serialization.json.JsonObjectBuilder.putFacts(facts: PackageSharedFacts) {
-        facts.formId?.let { put("formId", JsonPrimitive(it.toString())) }
+        facts.form?.let { put("formId", JsonPrimitive(it.id.toString())) }
         facts.category?.let { put("category", JsonPrimitive(it)) }
         facts.manufacturer?.let { put("manufacturer", JsonPrimitive(it)) }
         facts.country?.let { put("country", JsonPrimitive(it)) }
@@ -212,12 +220,17 @@ object SyncCommandStorageConverter {
 
     private fun JsonObject.optionalUuid(name: String): Uuid? = optionalText(name)?.let(Uuid::parse)
 
-    private fun JsonObject.quantity(name: String): Quantity =
-        storedQuantity(text(name), uuid("${name}UnitId"))
+    private fun JsonObject.quantity(name: String, vocabulary: Vocabulary): Quantity {
+        val unitId = uuid("${name}UnitId")
+        val unit = requireNotNull(vocabulary.unit(unitId)) { "единица $unitId не в словаре" }
+        return storedQuantity(text(name), unit)
+    }
 
-    private fun JsonObject.facts(): PackageSharedFacts = PackageSharedFacts(
+    private fun JsonObject.facts(vocabulary: Vocabulary): PackageSharedFacts = PackageSharedFacts(
         name = text("name"),
-        formId = optionalUuid("formId"),
+        form = optionalUuid("formId")?.let { id ->
+            requireNotNull(vocabulary.form(id)) { "форма $id не в словаре" }
+        },
         category = optionalText("category"),
         manufacturer = optionalText("manufacturer"),
         country = optionalText("country"),

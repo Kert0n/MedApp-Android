@@ -2,6 +2,7 @@ package com.kert0n.medapp.domain.stock
 
 import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.domain.value.QuantityUnit
 import com.kert0n.medapp.domain.value.requireDecimalWithinLimits
 import com.kert0n.medapp.domain.value.requireOptionalText
 import java.math.BigDecimal
@@ -20,7 +21,7 @@ sealed interface StockMovement {
 
     val id: Uuid
     val packageId: Uuid
-    val unitId: Uuid
+    val unit: QuantityUnit
     val occurredAt: Instant?
     val observedAt: Instant
     val note: String?
@@ -36,7 +37,7 @@ sealed interface StockMovement {
         override val note: String? = null
     ) : StockMovement {
         init { requireNote(note) }
-        override val unitId: Uuid get() = amount.unitId
+        override val unit: QuantityUnit get() = amount.unit
     }
 
     /** Пересчитали и увидели [after] вместо [before]: пересчёт находит и больше, и меньше. */
@@ -51,10 +52,10 @@ sealed interface StockMovement {
         override val note: String? = null
     ) : StockMovement {
         init {
-            require(before.unitId == after.unitId) { "пересчёт не меняет единицу" }
+            require(before.unit == after.unit) { "пересчёт не меняет единицу" }
             requireNote(note)
         }
-        override val unitId: Uuid get() = after.unitId
+        override val unit: QuantityUnit get() = after.unit
     }
 
     /** Выбросили названное количество по названной причине. */
@@ -69,7 +70,7 @@ sealed interface StockMovement {
         override val note: String? = null
     ) : StockMovement {
         init { requireNote(note) }
-        override val unitId: Uuid get() = amount.unitId
+        override val unit: QuantityUnit get() = amount.unit
 
         /** Просрочка и порча названы в D7; прочее человек поясняет заметкой. */
         enum class Reason { EXPIRED, DAMAGED, OTHER }
@@ -99,7 +100,7 @@ sealed interface StockMovement {
             }
             requireNote(note)
         }
-        override val unitId: Uuid get() = amount.unitId
+        override val unit: QuantityUnit get() = amount.unit
     }
 
     /**
@@ -111,7 +112,7 @@ sealed interface StockMovement {
         override val id: Uuid,
         override val packageId: Uuid,
         val delta: BigDecimal,
-        override val unitId: Uuid,
+        override val unit: QuantityUnit,
         val medKitId: Uuid,
         override val observedAt: Instant,
         override val occurredAt: Instant? = null,
@@ -139,7 +140,7 @@ sealed interface StockMovement {
         override val note: String? = null
     ) : StockMovement {
         init { requireNote(note) }
-        override val unitId: Uuid get() = amount.unitId
+        override val unit: QuantityUnit get() = amount.unit
     }
 
     /**

@@ -14,6 +14,7 @@ import kotlin.uuid.Uuid
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import com.kert0n.medapp.fixture.VOCABULARY
 
 /**
  * Все шесть видов движения записываются одной таблицей и читаются обратно теми же самыми:
@@ -39,7 +40,7 @@ class StockMovementStorageMapperTest {
     @Test
     fun everyKindSurvivesTheRoundTrip() {
         for (movement in everyKind) {
-            assertEquals(movement, movement.toStorageEntity().toDomain())
+            assertEquals(movement, movement.toStorageEntity().toDomain(VOCABULARY))
         }
     }
 
@@ -61,7 +62,7 @@ class StockMovementStorageMapperTest {
         assertEquals(SHARED_KIT, stored.targetMedKitId)
         assertNull(stored.medKitId)
 
-        val restored = stored.toDomain()
+        val restored = stored.toDomain(VOCABULARY)
         assertEquals(BigDecimal("-5"), restored.deltaIn(medKit(id = HOME_KIT)))
         assertEquals(BigDecimal("5"), restored.deltaIn(medKit(id = SHARED_KIT)))
     }
@@ -85,6 +86,6 @@ class StockMovementStorageMapperTest {
         assertEquals("20", stored.beforeAmount)
         assertEquals("18.5", stored.afterAmount)
         assertNull(stored.delta)
-        assertEquals(BigDecimal("-1.5"), stored.toDomain().deltaIn(medKit(id = HOME_KIT)))
+        assertEquals(BigDecimal("-1.5"), stored.toDomain(VOCABULARY).deltaIn(medKit(id = HOME_KIT)))
     }
 }

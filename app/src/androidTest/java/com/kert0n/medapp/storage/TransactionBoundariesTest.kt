@@ -56,6 +56,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import com.kert0n.medapp.fixture.VOCABULARY
 
 /**
  * Связанные изменения сохраняются атомарно: откат не оставляет ни отдельного расхода, ни
@@ -208,7 +209,7 @@ class TransactionBoundariesTest {
         assertNotNull(failure)
         assertEquals(IntakeStatus.PLANNED, requireNotNull(intakes.find(INTAKE)).status)
         assertEquals(tablets("20"), requireNotNull(packages.find(PACK)).quantity)
-        assertEquals(emptyList<StockMovement>(), database.stockMovements().ofPackage(PACK).map { it.toDomain() })
+        assertEquals(emptyList<StockMovement>(), database.stockMovements().ofPackage(PACK).map { it.toDomain(VOCABULARY) })
         assertEquals(1, database.syncOperations().all().size)
     }
 
@@ -395,7 +396,7 @@ class TransactionBoundariesTest {
 
         assertNotNull(failure)
         assertEquals(tablets("20"), requireNotNull(packages.find(PACK)).quantity)
-        assertEquals(emptyList<StockMovement>(), database.stockMovements().ofPackage(PACK).map { it.toDomain() })
+        assertEquals(emptyList<StockMovement>(), database.stockMovements().ofPackage(PACK).map { it.toDomain(VOCABULARY) })
     }
 
     /** В минус пачка не уходит, и в историю попадает то, что действительно ушло. */
@@ -411,7 +412,7 @@ class TransactionBoundariesTest {
             at = LATER
         )
 
-        val disposal = database.stockMovements().ofPackage(PACK).single().toDomain()
+        val disposal = database.stockMovements().ofPackage(PACK).single().toDomain(VOCABULARY)
         assertEquals(tablets("20"), (disposal as StockMovement.Disposal).amount)
         assertEquals(Package.Lifecycle.ARCHIVED, requireNotNull(packages.find(PACK)).lifecycle)
     }
@@ -451,7 +452,7 @@ class TransactionBoundariesTest {
         packages.adjust(PackageAdjustment.Recount(PACK, tablets("17"), movementId), at = LATER)
 
         assertEquals(tablets("17"), requireNotNull(packages.find(PACK)).quantity)
-        val recount = database.stockMovements().ofPackage(PACK).single().toDomain()
+        val recount = database.stockMovements().ofPackage(PACK).single().toDomain(VOCABULARY)
         assertEquals(tablets("20"), (recount as StockMovement.Recount).before)
         assertEquals(tablets("17"), recount.after)
     }
@@ -467,7 +468,7 @@ class TransactionBoundariesTest {
         packages.adjust(PackageAdjustment.Recount(PACK, tablets("15"), otherMovementId), at = LATER)
 
         val second = database.stockMovements().ofPackage(PACK)
-            .map { it.toDomain() }
+            .map { it.toDomain(VOCABULARY) }
             .filterIsInstance<StockMovement.Recount>()
             .single { it.id == otherMovementId }
         assertEquals(tablets("18"), second.before)
@@ -499,7 +500,7 @@ class TransactionBoundariesTest {
         )
 
         assertEquals(SHARED_KIT, requireNotNull(packages.find(PACK)).medKitId)
-        val transfer = database.stockMovements().ofPackage(PACK).single().toDomain()
+        val transfer = database.stockMovements().ofPackage(PACK).single().toDomain(VOCABULARY)
         assertEquals(StockMovement.Transfer::class, transfer::class)
     }
 
@@ -518,6 +519,6 @@ class TransactionBoundariesTest {
 
         assertNotNull(failure)
         assertEquals(tablets("20"), requireNotNull(packages.find(PACK)).quantity)
-        assertEquals(emptyList<StockMovement>(), database.stockMovements().ofPackage(PACK).map { it.toDomain() })
+        assertEquals(emptyList<StockMovement>(), database.stockMovements().ofPackage(PACK).map { it.toDomain(VOCABULARY) })
     }
 }

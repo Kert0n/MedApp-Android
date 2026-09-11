@@ -2,9 +2,11 @@ package com.kert0n.medapp.domain.course
 
 import com.kert0n.medapp.domain.pack.Availability
 import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.value.DosageForm
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.domain.value.QuantityUnit
 import java.time.Instant
 import kotlin.uuid.Uuid
 
@@ -30,7 +32,7 @@ class Course(
 ) {
 
     init {
-        require(prescription.dose.unitId == medicine.unitId) {
+        require(prescription.dose.unit == medicine.unit) {
             "доза измеряется единицей источников курса"
         }
     }
@@ -42,9 +44,9 @@ class Course(
 
     val sources: List<CourseSource> get() = medicine.sources
 
-    val formId: Uuid? get() = medicine.formId
+    val form: DosageForm? get() = medicine.form
 
-    val unitId: Uuid? get() = medicine.unitId
+    val unit: QuantityUnit? get() = medicine.unit
 
     val allocatedDosesTotal: Doses get() = medicine.allocatedTotal
 

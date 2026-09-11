@@ -59,7 +59,7 @@ class StockMovementTest {
     @Test
     fun unitComesFromTheAmountAndCannotContradictIt() {
         val added = StockMovement.Receipt(id, PACK, millilitres("100"), HOME_KIT, moment, moment)
-        assertEquals(MILLILITRES, added.unitId)
+        assertEquals(MILLILITRES, added.unit)
     }
 
     @Test

@@ -13,6 +13,7 @@ import com.kert0n.medapp.storage.pack.PackageDao
 import com.kert0n.medapp.storage.pack.toDetailsStorageEntity
 import com.kert0n.medapp.storage.pack.toStorageEntity as toPackageStorageEntity
 import com.kert0n.medapp.storage.server.SyncOperationDao
+import com.kert0n.medapp.storage.value.VocabularyDao
 import com.kert0n.medapp.storage.value.toStorageAmount
 import java.time.Instant
 import javax.inject.Inject
@@ -25,13 +26,17 @@ class IntakeRoomRepository @Inject constructor(
     private val intakes: IntakeDao,
     private val packages: PackageDao,
     private val courses: CourseDao,
-    private val queue: SyncOperationDao
+    private val queue: SyncOperationDao,
+    private val vocabulary: VocabularyDao
 ) : IntakeStorageRepository {
 
     override fun observeOfCourse(courseId: Uuid): Flow<List<Intake>> =
-        intakes.observeOfCourse(courseId).map { rows -> rows.map { it.toDomain() } }
+        intakes.observeOfCourse(courseId).map { rows ->
+            val words = vocabulary.snapshot()
+            rows.map { it.toDomain(words) }
+        }
 
-    override suspend fun find(id: Uuid): Intake? = intakes.find(id)?.toDomain()
+    override suspend fun find(id: Uuid): Intake? = intakes.find(id)?.toDomain(vocabulary.snapshot())
 
     override suspend fun syncStateOf(id: Uuid): IntakeSyncState? = intakes.find(id)?.syncState()
 
@@ -43,7 +48,10 @@ class IntakeRoomRepository @Inject constructor(
             .count { it != -1L }
 
     override suspend fun plannedBefore(until: Instant): List<CourseIntake> =
-        intakes.plannedBefore(until).map { it.toDomain() as CourseIntake }
+        intakes.plannedBefore(until).let { rows ->
+            val words = vocabulary.snapshot()
+            rows.map { it.toDomain(words) as CourseIntake }
+        }
 
     override suspend fun record(outcome: IntakeOutcome): Boolean = database.withTransaction {
         val intake = outcome.intake
@@ -67,7 +75,7 @@ class IntakeRoomRepository @Inject constructor(
                 packageId = taken?.packageId,
                 medKitId = taken?.medKitId,
                 amount = taken?.amount?.quantity?.toStorageAmount(),
-                unitId = intake.unitId,
+                unitId = intake.unit.id,
                 accounting = outcome.sync.accounting,
                 operationId = outcome.sync.operationId
             ) > 0
@@ -76,7 +84,7 @@ class IntakeRoomRepository @Inject constructor(
 
         source?.let {
             // Расход не трогает обвязку доставки: версия и картина броней остаются прежними (E3).
-            val spent = it.toDomain().consume(requireNotNull(outcome.taken).amount)
+            val spent = it.toDomain(vocabulary.snapshot()).consume(requireNotNull(outcome.taken).amount)
             packages.save(
                 spent.toPackageStorageEntity(it.pack.syncState()),
                 spent.toDetailsStorageEntity()

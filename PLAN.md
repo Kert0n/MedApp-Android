@@ -403,7 +403,7 @@ package com.kert0n.medapp.domain.value
  * Равенство — по числовому значению, а не по умолчанию data-класса: BigDecimal.equals
  * различает 1 и 1.000000 по масштабу, а сервер отвечает всегда шестью знаками.
  */
-data class Quantity(val amount: BigDecimal, val unitId: Uuid) {
+data class Quantity(val amount: BigDecimal, val unit: QuantityUnit) {
     init {
         require(amount.signum() >= 0) { "количество не бывает отрицательным" }
         require(amount.scale() <= SCALE)
@@ -427,13 +427,13 @@ data class Quantity(val amount: BigDecimal, val unitId: Uuid) {
 
     val isZero: Boolean
 
-    override fun equals(other: Any?): Boolean   // unitId + compareTo == 0
+    override fun equals(other: Any?): Boolean   // unit + compareTo == 0
     override fun hashCode(): Int                // по stripTrailingZeros
 
     companion object {
         const val SCALE = 6
         const val MAX_INTEGER_DIGITS = 13   // серверный предел, принятый как продуктовый (C1)
-        fun zero(unitId: Uuid): Quantity
+        fun zero(unit: QuantityUnit): Quantity
     }
 }
 
@@ -451,7 +451,24 @@ data class Money(val amount: BigDecimal, val currency: Currency = DEFAULT_CURREN
 
 data class QuantityUnit(val id: Uuid, val name: String)
 data class DosageForm(val id: Uuid, val name: String)
+
+/** Снимок словаря: по идентификатору — объект; `null` значит «снимок устарел», не «такого нет». */
+class Vocabulary(units: Collection<QuantityUnit>, forms: Collection<DosageForm>) {
+    fun unit(id: Uuid): QuantityUnit?
+    fun form(id: Uuid): DosageForm?
+}
 ```
+
+**Единица и форма в домене — объекты словаря, не идентификаторы** (решение разбора PR 9).
+`Quantity.unit`, `Dose.unit`, `PackageSharedFacts.form`, `StockMovement.unit`, `Intake.unit`,
+форма и единица назначения — всё это `QuantityUnit` и `DosageForm`. Основание то же, что у
+«на входе — сущность»: голый `Uuid` единицы не защищён от подстановки формы или пачки, а как
+единица называется, величина должна знать сама — иначе каждому экрану приходилось бы искать имя
+по номеру. Идентификаторы остаются там, где им место: в колонках таблиц, в сетевых формах и в
+маршрутах экранов; сборка строки в домен разрешает их по снимку словаря `Vocabulary`, а сетевой
+маппер — через резолвер, который при промахе дочитывает словарь с сервера (E4). Словарь только
+растёт, поэтому промах значит «снимок старый», а не «такого нет»; без связи строка с
+неизвестной единицей нечитаема с названной причиной, и это задержка, а не вечное состояние.
 
 **Предел принадлежит типу, который его проверяет** (решение PR 3). `Quantity.SCALE`,
 `Money.MAX_INTEGER_DIGITS`, `Course.TITLE_MAX_LENGTH`, `PackageSharedFacts.NAME_MAX_LENGTH`,

@@ -28,15 +28,15 @@ import org.junit.Test
  */
 class CourseSourceFormTest {
 
-    private val tabletPack = pack(id = PACK, formId = TABLET_FORM, quantity = tablets("20"))
+    private val tabletPack = pack(id = PACK, form = TABLET_FORM, quantity = tablets("20"))
 
     private fun draft() = course(doseAmount = BigDecimal("2"))
 
     @Test
     fun firstSourceFixesFormAndUnit() {
         val fixed = draft().attach(tabletPack, doses = 5.doses, at = LATER).getOrThrow()
-        assertEquals(TABLET_FORM, fixed.formId)
-        assertEquals(TABLETS, fixed.unitId)
+        assertEquals(TABLET_FORM, fixed.form)
+        assertEquals(TABLETS, fixed.unit)
         // Доза собралась только теперь: единицу принесла пачка, число задал человек.
         assertEquals(dose("2"), fixed.dose)
     }
@@ -45,18 +45,18 @@ class CourseSourceFormTest {
     fun packageWithoutAFormIsAttachedToNothing() {
         // «Форма неизвестна» и «форма неизвестна» — две разные неизвестности, и совместимыми они
         // не бывают. Экран так и говорит: «укажите форму, чтобы подключить к курсу».
-        val unknownForm = pack(id = OTHER_PACK, formId = null)
+        val unknownForm = pack(id = OTHER_PACK, form = null)
         assertEquals(
             CourseRejected.Reason.FORM_UNKNOWN,
             draft().attach(unknownForm, doses = 1.doses, at = LATER).rejection()
         )
         // И для первого источника тоже: фиксировать «неизвестно» нечем.
-        assertNull(draft().formId)
+        assertNull(draft().form)
     }
 
     @Test
     fun incompatibleFormIsRejected() {
-        val capsules = pack(id = OTHER_PACK, formId = CAPSULE_FORM, quantity = tablets("10"))
+        val capsules = pack(id = OTHER_PACK, form = CAPSULE_FORM, quantity = tablets("10"))
         val fixed = draft().attach(tabletPack, doses = 5.doses, at = LATER).getOrThrow()
         assertEquals(
             CourseRejected.Reason.FORM_MISMATCH,
@@ -68,13 +68,13 @@ class CourseSourceFormTest {
     fun incompatibleUnitIsRejected() {
         // Форма та же, единица другая: доза курса измеряется единицей курса, и миллилитры в
         // «две таблетки» не подставятся.
-        val syrup = pack(id = OTHER_PACK, formId = TABLET_FORM, quantity = millilitres("100"))
+        val syrup = pack(id = OTHER_PACK, form = TABLET_FORM, quantity = millilitres("100"))
         val fixed = draft().attach(tabletPack, doses = 5.doses, at = LATER).getOrThrow()
         assertEquals(
             CourseRejected.Reason.UNIT_MISMATCH,
             fixed.attach(syrup, doses = 1.doses, at = LATER).rejection()
         )
-        assertEquals(TABLETS, fixed.unitId)
+        assertEquals(TABLETS, fixed.unit)
     }
 
     @Test
@@ -84,8 +84,8 @@ class CourseSourceFormTest {
         val active = activeCourse(sources = listOf(source(PACK, 5)))
         val unsupplied = active.detach(tabletPack, LATER)
         assertEquals(emptyList<CourseSource>(), unsupplied.sources)
-        assertEquals(TABLET_FORM, unsupplied.formId)
-        assertEquals(TABLETS, unsupplied.unitId)
+        assertEquals(TABLET_FORM, unsupplied.form)
+        assertEquals(TABLETS, unsupplied.unit)
         assertEquals(dose("2"), unsupplied.dose)
         assertEquals(listOf<CourseSource>(), unsupplied.sources)
     }
@@ -94,8 +94,8 @@ class CourseSourceFormTest {
     fun detachingTheLastSourceOfADraftForgetsFormAndUnit() {
         val chosen = draft().attach(tabletPack, doses = 5.doses, at = LATER).getOrThrow()
         val emptied = chosen.detach(tabletPack, LATER)
-        assertNull(emptied.formId)
-        assertNull(emptied.unitId)
+        assertNull(emptied.form)
+        assertNull(emptied.unit)
         assertNull(emptied.dose)
         // Число дозы человек уже назвал, и терять его незачем — неизвестна снова только единица.
         assertEquals(BigDecimal("2"), emptied.doseAmount)
@@ -103,30 +103,30 @@ class CourseSourceFormTest {
 
     @Test
     fun draftForgetsFormOnlyWhenTheStackEmpties() {
-        val second = pack(id = OTHER_PACK, formId = TABLET_FORM, quantity = tablets("12"))
+        val second = pack(id = OTHER_PACK, form = TABLET_FORM, quantity = tablets("12"))
         val two = draft()
             .attach(tabletPack, doses = 5.doses, at = LATER).getOrThrow()
             .attach(second, doses = 4.doses, at = LATER).getOrThrow()
         val one = two.detach(tabletPack, LATER)
-        assertEquals(TABLET_FORM, one.formId)
-        assertEquals(TABLETS, one.unitId)
+        assertEquals(TABLET_FORM, one.form)
+        assertEquals(TABLETS, one.unit)
     }
 
     @Test
     fun forgottenFormLetsTheDraftStartOverWithAnotherForm() {
-        val capsules = pack(id = OTHER_PACK, formId = CAPSULE_FORM, quantity = millilitres("10"))
+        val capsules = pack(id = OTHER_PACK, form = CAPSULE_FORM, quantity = millilitres("10"))
         val restarted = draft()
             .attach(tabletPack, doses = 5.doses, at = LATER).getOrThrow()
             .detach(tabletPack, LATER)
             .attach(capsules, doses = 1.doses, at = LATER).getOrThrow()
-        assertEquals(CAPSULE_FORM, restarted.formId)
-        assertEquals(MILLILITRES, restarted.unitId)
+        assertEquals(CAPSULE_FORM, restarted.form)
+        assertEquals(MILLILITRES, restarted.unit)
     }
 
     @Test
     fun unsuppliedActiveCourseStillDemandsItsOwnFormBack() {
         // Форма осталась, поэтому подключить пачку другой формы к нему по-прежнему нельзя.
-        val capsules = pack(id = OTHER_PACK, formId = CAPSULE_FORM, quantity = tablets("10"))
+        val capsules = pack(id = OTHER_PACK, form = CAPSULE_FORM, quantity = tablets("10"))
         val unsupplied = activeCourse(sources = listOf(source(PACK, 5))).detach(tabletPack, LATER)
         assertEquals(
             CourseRejected.Reason.FORM_MISMATCH,

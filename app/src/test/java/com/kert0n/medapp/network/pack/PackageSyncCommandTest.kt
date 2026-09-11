@@ -24,7 +24,7 @@ import org.junit.Test
  */
 class PackageSyncCommandTest {
 
-    private val paracetamol = PackageSharedFacts(name = "Парацетамол", formId = TABLET_FORM)
+    private val paracetamol = PackageSharedFacts(name = "Парацетамол", form = TABLET_FORM)
 
     @Test
     fun anotherAmountIsAnotherCommand() {

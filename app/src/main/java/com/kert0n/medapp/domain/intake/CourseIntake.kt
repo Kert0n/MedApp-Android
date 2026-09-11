@@ -4,6 +4,7 @@ import com.kert0n.medapp.domain.course.Revision
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.course.ScheduledOccurrence
 import com.kert0n.medapp.domain.value.Dose
+import com.kert0n.medapp.domain.value.QuantityUnit
 import java.time.Instant
 import kotlin.uuid.Uuid
 
@@ -26,7 +27,7 @@ class CourseIntake(
 
     init {
         val taken = taken
-        require(taken == null || taken.amount.unitId == unitId) {
+        require(taken == null || taken.amount.unit == unit) {
             "фактическое количество измеряется единицей приёма"
         }
     }
@@ -35,7 +36,7 @@ class CourseIntake(
      * Единица НА МОМЕНТ СОБЫТИЯ, и берётся она у плановой дозы: второе поле с той же единицей
      * могло бы с ней разойтись.
      */
-    override val unitId: Uuid get() = plannedAmount.unitId
+    override val unit: QuantityUnit get() = plannedAmount.unit
 
     override val status: IntakeStatus
         get() = when (answer) {

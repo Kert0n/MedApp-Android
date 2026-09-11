@@ -2,10 +2,12 @@ package com.kert0n.medapp.domain.course
 
 import com.kert0n.medapp.domain.pack.Availability
 import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.value.DosageForm
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.doses
 import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.domain.value.QuantityUnit
 import java.util.Objects
 import kotlin.uuid.Uuid
 
@@ -23,8 +25,8 @@ import kotlin.uuid.Uuid
  */
 class CourseMedicine(
     sources: List<CourseSource> = emptyList(),
-    val formId: Uuid? = null,
-    val unitId: Uuid? = null
+    val form: DosageForm? = null,
+    val unit: QuantityUnit? = null
 ) {
 
     /**
@@ -38,7 +40,7 @@ class CourseMedicine(
         require(sources.distinctBy { it.packageId }.size == sources.size) {
             "одна пачка входит в курс один раз"
         }
-        require(sources.isEmpty() || (formId != null && unitId != null)) {
+        require(sources.isEmpty() || (form != null && unit != null)) {
             "форма и единица фиксируются первым источником"
         }
     }
@@ -60,17 +62,17 @@ class CourseMedicine(
                 pkg.access != Package.Access.AVAILABLE -> CourseRejected.Reason.PACKAGE_UNUSABLE
             holds(pkg.id) -> CourseRejected.Reason.ALREADY_ATTACHED
             // Две пачки без формы несовместимы: это два разных незнания, а не одно и то же.
-            pkg.facts.formId == null -> CourseRejected.Reason.FORM_UNKNOWN
-            formId != null && formId != pkg.facts.formId -> CourseRejected.Reason.FORM_MISMATCH
-            unitId != null && unitId != pkg.quantity.unitId -> CourseRejected.Reason.UNIT_MISMATCH
+            pkg.facts.form == null -> CourseRejected.Reason.FORM_UNKNOWN
+            form != null && form != pkg.facts.form -> CourseRejected.Reason.FORM_MISMATCH
+            unit != null && unit != pkg.quantity.unit -> CourseRejected.Reason.UNIT_MISMATCH
             else -> null
         }
         if (rejection != null) return Result.failure(CourseRejected(rejection))
         return Result.success(
             CourseMedicine(
                 sources = sources + CourseSource(pkg.id, doses),
-                formId = pkg.facts.formId,
-                unitId = pkg.quantity.unitId
+                form = pkg.facts.form,
+                unit = pkg.quantity.unit
             )
         )
     }
@@ -86,8 +88,8 @@ class CourseMedicine(
         val forget = left.isEmpty() && forgetFormWhenEmpty
         return CourseMedicine(
             sources = left,
-            formId = if (forget) null else formId,
-            unitId = if (forget) null else unitId
+            form = if (forget) null else form,
+            unit = if (forget) null else unit
         )
     }
 
@@ -211,8 +213,8 @@ class CourseMedicine(
         taken: Dose,
         availableAfter: Quantity
     ): Doses {
-        require(availableAfter.unitId == dose.unitId) {
-            "доступный остаток измеряется единицей дозы: ${availableAfter.unitId} и ${dose.unitId}"
+        require(availableAfter.unit == dose.unit) {
+            "доступный остаток измеряется единицей дозы: ${availableAfter.unit} и ${dose.unit}"
         }
         val allocated = allocatedTo(packageId) ?: 0.doses
         if (allocated.isNone) return 0.doses
@@ -253,19 +255,19 @@ class CourseMedicine(
     }
 
     private fun withSources(sources: List<CourseSource>): CourseMedicine =
-        CourseMedicine(sources = sources, formId = formId, unitId = unitId)
+        CourseMedicine(sources = sources, form = form, unit = unit)
 
     override fun equals(other: Any?): Boolean =
         this === other || (
             other is CourseMedicine &&
                 sources == other.sources &&
-                formId == other.formId &&
-                unitId == other.unitId
+                form == other.form &&
+                unit == other.unit
             )
 
-    override fun hashCode(): Int = Objects.hash(sources, formId, unitId)
+    override fun hashCode(): Int = Objects.hash(sources, form, unit)
 
-    override fun toString(): String = "CourseMedicine($sources, form=$formId, unit=$unitId)"
+    override fun toString(): String = "CourseMedicine($sources, form=$form, unit=$unit)"
 
     private fun requireHolds(packageId: Uuid) {
         require(holds(packageId)) { "пачка $packageId не источник этого курса" }

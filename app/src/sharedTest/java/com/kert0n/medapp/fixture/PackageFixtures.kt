@@ -6,6 +6,7 @@ import com.kert0n.medapp.domain.pack.ExpiryDate
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageFacts
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
+import com.kert0n.medapp.domain.value.DosageForm
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Money
 import com.kert0n.medapp.domain.value.Quantity
@@ -29,7 +30,7 @@ fun pack(
     medKitId: Uuid = HOME_KIT,
     name: String = "Парацетамол",
     quantity: Quantity = tablets("20"),
-    formId: Uuid? = null,
+    form: DosageForm? = null,
     category: String? = null,
     manufacturer: String? = null,
     country: String? = null,
@@ -50,7 +51,7 @@ fun pack(
     facts = PackageFacts(
         shared = PackageSharedFacts(
             name = name,
-            formId = formId,
+            form = form,
             category = category,
             manufacturer = manufacturer,
             country = country,
@@ -77,13 +78,13 @@ fun factsOf(pkg: Package): PackageFacts = pkg.facts
 /** Правка одного общего поля: композиция читается в тесте как «та же пачка, другое название». */
 fun PackageFacts.withShared(
     name: String = shared.name,
-    formId: Uuid? = shared.formId,
+    form: DosageForm? = shared.form,
     category: String? = shared.category,
     manufacturer: String? = shared.manufacturer,
     country: String? = shared.country,
     description: String? = shared.description
 ): PackageFacts = copy(
-    shared = PackageSharedFacts(name, formId, category, manufacturer, country, description)
+    shared = PackageSharedFacts(name, form, category, manufacturer, country, description)
 )
 
 /** Доступность пачки для тестов, которым нужны её числа: оценка равна остатку пачки. */
@@ -92,7 +93,7 @@ fun packAvailability(
     quantity: Quantity = tablets("20"),
     claims: Claims? = null,
     expiresOn: ExpiryDate? = null,
-    myAllocation: Quantity = Quantity.zero(quantity.unitId)
+    myAllocation: Quantity = Quantity.zero(quantity.unit)
 ): PackageAvailability = PackageAvailability(
     pkg = pack(id = id, quantity = quantity, claims = claims, expiresOn = expiresOn),
     effective = quantity,

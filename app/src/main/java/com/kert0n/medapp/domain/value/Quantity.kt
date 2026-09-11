@@ -1,17 +1,18 @@
 package com.kert0n.medapp.domain.value
 
 import java.math.BigDecimal
-import kotlin.uuid.Uuid
 
 /** Потолок числа доз: расписание такого размера отвергается задолго до этого (PLAN H1). */
 private val MAX_DOSES = BigDecimal(Int.MAX_VALUE)
 
 /**
- * Количество вместе с единицей: величины в разных единицах вместе не считаются. Ноль допустим —
- * остаток бывает нулевым, а строгая положительность — правило операции. Равенство по значению:
- * сервер отвечает шестью знаками, и `1` равно `1.000000` (PLAN B2).
+ * Количество вместе с единицей: величины в разных единицах вместе не считаются. Единица —
+ * объект словаря, а не его идентификатор: подставить сюда форму или пачку нечем, и как единица
+ * называется, величина знает сама. Ноль допустим — остаток бывает нулевым, а строгая
+ * положительность — правило операции. Равенство по значению: сервер отвечает шестью знаками, и
+ * `1` равно `1.000000` (PLAN B2).
  */
-data class Quantity(val amount: BigDecimal, val unitId: Uuid) {
+data class Quantity(val amount: BigDecimal, val unit: QuantityUnit) {
 
     init {
         requireNonNegativeDecimal(
@@ -26,7 +27,7 @@ data class Quantity(val amount: BigDecimal, val unitId: Uuid) {
 
     operator fun plus(other: Quantity): Quantity {
         requireSameUnit(other)
-        return Quantity(amount + other.amount, unitId)
+        return Quantity(amount + other.amount, unit)
     }
 
     /**
@@ -36,13 +37,13 @@ data class Quantity(val amount: BigDecimal, val unitId: Uuid) {
     operator fun minus(other: Quantity): Quantity {
         requireSameUnit(other)
         require(amount >= other.amount) { "нехватка: $this меньше $other" }
-        return Quantity(amount - other.amount, unitId)
+        return Quantity(amount - other.amount, unit)
     }
 
     /** Для показа доступности, где отрицательное просто не показывается (PLAN D4). */
     fun minusOrZero(other: Quantity): Quantity {
         requireSameUnit(other)
-        return if (amount >= other.amount) Quantity(amount - other.amount, unitId) else zero(unitId)
+        return if (amount >= other.amount) Quantity(amount - other.amount, unit) else zero(unit)
     }
 
     /**
@@ -51,7 +52,7 @@ data class Quantity(val amount: BigDecimal, val unitId: Uuid) {
      * не нужно: её обеспечивает сам счётчик.
      */
     operator fun times(doses: Doses): Quantity =
-        Quantity(amount * doses.count.toBigDecimal(), unitId)
+        Quantity(amount * doses.count.toBigDecimal(), unit)
 
     fun covers(dose: Dose): Boolean {
         requireSameUnit(dose.quantity)
@@ -70,24 +71,24 @@ data class Quantity(val amount: BigDecimal, val unitId: Uuid) {
     }
 
     private fun requireSameUnit(other: Quantity) {
-        require(unitId == other.unitId) {
-            "величины в разных единицах не считаются вместе: $unitId и ${other.unitId}"
+        require(unit == other.unit) {
+            "величины в разных единицах не считаются вместе: ${unit.name} и ${other.unit.name}"
         }
     }
 
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is Quantity) return false
-        return unitId == other.unitId && amount.compareTo(other.amount) == 0
+        return unit == other.unit && amount.compareTo(other.amount) == 0
     }
 
     /**
      * По значению, а не по масштабу: `BigDecimal.hashCode` учитывает `scale`, и `1` с `1.000000`
      * получили бы разные хеши при равных значениях — одна и та же пачка терялась бы в `Map`.
      */
-    override fun hashCode(): Int = 31 * unitId.hashCode() + amount.stripTrailingZeros().hashCode()
+    override fun hashCode(): Int = 31 * unit.hashCode() + amount.stripTrailingZeros().hashCode()
 
-    override fun toString(): String = "${amount.toPlainString()} @$unitId"
+    override fun toString(): String = "${amount.toPlainString()} ${unit.name}"
 
     companion object {
         /** Разрядность серверного `numeric(19, 6)`: шесть знаков — деление таблетки и капли. */
@@ -96,6 +97,6 @@ data class Quantity(val amount: BigDecimal, val unitId: Uuid) {
         /** Предел целой части — серверный, принят как продуктовый (C1). */
         const val MAX_INTEGER_DIGITS = 13
 
-        fun zero(unitId: Uuid): Quantity = Quantity(BigDecimal.ZERO, unitId)
+        fun zero(unit: QuantityUnit): Quantity = Quantity(BigDecimal.ZERO, unit)
     }
 }

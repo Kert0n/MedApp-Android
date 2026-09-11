@@ -18,6 +18,8 @@ import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import com.kert0n.medapp.fixture.VOCABULARY
+import com.kert0n.medapp.fixture.TABLETS_ID
 
 /**
  * Круговое преобразование упаковки: серверная часть и личные сведения хранятся порознь, а
@@ -28,7 +30,7 @@ class PackageStorageMapperTest {
     private val full: Package = pack(
         name = "Парацетамол",
         quantity = tablets("19.5"),
-        formId = TABLET_FORM,
+        form = TABLET_FORM,
         category = "Обезболивающие",
         manufacturer = "Завод",
         country = "Россия",
@@ -39,7 +41,7 @@ class PackageStorageMapperTest {
         price = Money(BigDecimal("199.90")),
         purchasedOn = LocalDate.of(2026, 1, 15),
         openedOn = LocalDate.of(2026, 2, 1),
-        templateId = TABLETS
+        templateId = TABLETS_ID
     )
 
     private fun rowOf(pkg: Package, sync: PackageSyncState = PackageSyncState(pkg.id)) =
@@ -47,7 +49,7 @@ class PackageStorageMapperTest {
 
     @Test
     fun everyFactSurvivesTheRoundTrip() {
-        val restored = rowOf(full).toDomain()
+        val restored = rowOf(full).toDomain(VOCABULARY)
         assertEquals(full.id, restored.id)
         assertEquals(full.medKitId, restored.medKitId)
         assertEquals(full.quantity, restored.quantity)
@@ -61,7 +63,7 @@ class PackageStorageMapperTest {
     @Test
     fun absentFactsStayAbsent() {
         val bare = pack(quantity = tablets("1"))
-        val restored = rowOf(bare).toDomain()
+        val restored = rowOf(bare).toDomain(VOCABULARY)
         assertEquals(bare.facts, restored.facts)
         assertNull(restored.facts.expiresOn)
         assertNull(restored.facts.price)
@@ -72,8 +74,8 @@ class PackageStorageMapperTest {
     @Test
     fun archivedEmptyPackageIsRestorable() {
         val archived = pack(quantity = tablets("0"), lifecycle = Package.Lifecycle.ARCHIVED)
-        assertEquals(archived.quantity, rowOf(archived).toDomain().quantity)
-        assertEquals(Package.Lifecycle.ARCHIVED, rowOf(archived).toDomain().lifecycle)
+        assertEquals(archived.quantity, rowOf(archived).toDomain(VOCABULARY).quantity)
+        assertEquals(Package.Lifecycle.ARCHIVED, rowOf(archived).toDomain(VOCABULARY).lifecycle)
     }
 
     /** Обвязка доставки едет в колонках, а не в пачке: домен её обратно не получает. */
@@ -87,12 +89,12 @@ class PackageStorageMapperTest {
         )
         val stored = full.toStorageEntity(sync)
         assertEquals(sync, stored.syncState())
-        assertEquals(full.facts, PackageStorageRow(stored, full.toDetailsStorageEntity()).toDomain().facts)
+        assertEquals(full.facts, PackageStorageRow(stored, full.toDetailsStorageEntity()).toDomain(VOCABULARY).facts)
     }
 
     @Test
     fun sharedFactsAreTheServerPartAndNothingElse() {
-        assertEquals(full.facts.shared, full.toStorageEntity().sharedFacts())
+        assertEquals(full.facts.shared, full.toStorageEntity().sharedFacts(VOCABULARY))
     }
 
     @Test

@@ -46,7 +46,7 @@ class CourseShortageTest {
         assertEquals(listOf(0.doses, 0.doses), after.allocations())
         assertEquals(twoPacks.schedule, after.schedule)
         assertEquals(twoPacks.dose, after.dose)
-        assertEquals(twoPacks.formId, after.formId)
+        assertEquals(twoPacks.form, after.form)
     }
 
     @Test

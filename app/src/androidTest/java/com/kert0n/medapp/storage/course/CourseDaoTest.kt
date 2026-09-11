@@ -23,6 +23,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import com.kert0n.medapp.fixture.VOCABULARY
 
 /**
  * Курс и его источники хранят порядок, а времена не заводятся дважды. Черновик и живой план —
@@ -54,7 +55,7 @@ class CourseDaoTest {
 
         val row = requireNotNull(courses.findPlan(COURSE))
         assertTrue(row.isDraft)
-        assertEquals("спросить у врача", row.toDraft().note)
+        assertEquals("спросить у врача", row.toDraft(VOCABULARY).note)
     }
 
     @Test
@@ -66,7 +67,7 @@ class CourseDaoTest {
             plan.medicine.toSourceStorageEntities(COURSE)
         )
 
-        val restored = requireNotNull(courses.findPlan(COURSE)).toPlan()
+        val restored = requireNotNull(courses.findPlan(COURSE)).toPlan(VOCABULARY)
         assertEquals(listOf(PACK, OTHER_PACK), restored.sources.map { it.packageId })
         assertEquals(plan.sources, restored.sources)
     }
@@ -127,7 +128,7 @@ class CourseDaoTest {
             second.medicine.toSourceStorageEntities(COURSE)
         )
 
-        val restored = requireNotNull(courses.findPlan(COURSE)).toPlan()
+        val restored = requireNotNull(courses.findPlan(COURSE)).toPlan(VOCABULARY)
         assertEquals(listOf(LocalTime.of(12, 0)), restored.schedule.times)
         assertEquals(listOf(OTHER_PACK), restored.sources.map { it.packageId })
     }
@@ -154,7 +155,7 @@ class CourseDaoTest {
         courses.deletePlan(COURSE)
 
         assertNull(courses.findPlan(COURSE))
-        val restored = requireNotNull(courses.findRecord(COURSE)).toDomain()
+        val restored = requireNotNull(courses.findRecord(COURSE)).toDomain(VOCABULARY)
         assertEquals(record.prescription, restored.prescription)
         assertEquals(plan.schedule.times, restored.prescription.schedule.times)
     }

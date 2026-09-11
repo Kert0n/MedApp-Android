@@ -6,6 +6,7 @@ import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageAvailability
 import com.kert0n.medapp.domain.pack.PackageFacts
 import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.network.pack.PackageQueueState
 import com.kert0n.medapp.network.pack.PackageSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncState
@@ -20,6 +21,7 @@ import com.kert0n.medapp.storage.server.SyncOperationDao
 import com.kert0n.medapp.storage.server.SyncOperationStorageRow
 import com.kert0n.medapp.storage.stock.StockMovementDao
 import com.kert0n.medapp.storage.stock.toStorageEntity as toMovementStorageEntity
+import com.kert0n.medapp.storage.value.VocabularyDao
 import java.time.Instant
 import java.time.LocalDate
 import javax.inject.Inject
@@ -32,13 +34,19 @@ class PackageRoomRepository @Inject constructor(
     private val packages: PackageDao,
     private val courses: CourseDao,
     private val movements: StockMovementDao,
-    private val queue: SyncOperationDao
+    private val queue: SyncOperationDao,
+    private val vocabulary: VocabularyDao
 ) : PackageStorageRepository {
 
+    /**
+     * Снимок словаря читается после строки, а не вместе с ней, и это безопасно: словарь только
+     * растёт, а единица ложится в базу не позже строки, которая её называет.
+     */
     override fun observe(id: Uuid): Flow<Package?> =
-        packages.observe(id).map { it?.toDomain() }
+        packages.observe(id).map { it?.toDomain(vocabulary.snapshot()) }
 
-    override suspend fun find(id: Uuid): Package? = packages.find(id)?.toDomain()
+    override suspend fun find(id: Uuid): Package? =
+        packages.find(id)?.toDomain(vocabulary.snapshot())
 
     override fun observeAvailability(id: Uuid): Flow<PackageAvailability?> =
         onChange { availabilityOf(id) }
@@ -65,7 +73,7 @@ class PackageRoomRepository @Inject constructor(
     private suspend fun change(packageId: Uuid, transition: (Package) -> Package): Boolean =
         database.withTransaction {
             val stored = packages.find(packageId) ?: return@withTransaction false
-            val changed = transition(stored.toDomain())
+            val changed = transition(stored.toDomain(vocabulary.snapshot()))
             packages.save(
                 changed.toStorageEntity(stored.pack.syncState()),
                 changed.toDetailsStorageEntity()
@@ -91,7 +99,7 @@ class PackageRoomRepository @Inject constructor(
         at: Instant
     ): Boolean = database.withTransaction {
         val stored = packages.find(adjustment.packageId) ?: return@withTransaction false
-        val applied = adjustment.applyTo(stored.toDomain(), at)
+        val applied = adjustment.applyTo(stored.toDomain(vocabulary.snapshot()), at)
         // Версии и время сверки остаются те, что записал снимок сервера: их двигает сеть (E4).
         packages.save(
             applied.pack.toStorageEntity(stored.pack.syncState()),
@@ -127,11 +135,13 @@ class PackageRoomRepository @Inject constructor(
         database.invalidationTracker.createFlow(*AVAILABILITY_TABLES).map { read() }
 
     private suspend fun availabilityOf(id: Uuid): PackageAvailability? = database.withTransaction {
-        val pkg = packages.find(id)?.toDomain() ?: return@withTransaction null
+        val words = vocabulary.snapshot()
+        val pkg = packages.find(id)?.toDomain(words) ?: return@withTransaction null
         availabilityOf(
             pkg,
             queue.unclosedOfPackage(id),
-            packages.allocationsOf(listOf(id)).firstOrNull()
+            packages.allocationsOf(listOf(id)).firstOrNull(),
+            words
         )
     }
 
@@ -141,14 +151,16 @@ class PackageRoomRepository @Inject constructor(
      */
     private suspend fun listing(query: PackageQuery, today: LocalDate): List<Package> =
         database.withTransaction {
-            val found = packages.matching(query, today).map { it.toDomain() }
+            val words = vocabulary.snapshot()
+            val found = packages.matching(query, today).map { it.toDomain(words) }
             if (query.filter != PackageQuery.Filter.HasFree) return@withTransaction found
             val allocations = packages.allocationsOf(found.map { it.id })
             found.filter { pkg ->
                 availabilityOf(
                     pkg,
                     queue.unclosedOfPackage(pkg.id),
-                    allocations.firstOrNull { it.packageId == pkg.id }
+                    allocations.firstOrNull { it.packageId == pkg.id },
+                    words
                 ).freeForAnyone.isZero.not()
             }
         }
@@ -156,11 +168,12 @@ class PackageRoomRepository @Inject constructor(
     private fun availabilityOf(
         pkg: Package,
         unclosed: List<SyncOperationStorageRow>,
-        allocation: PackageAllocationRow?
+        allocation: PackageAllocationRow?,
+        words: Vocabulary
     ): PackageAvailability = PackageAvailability(
         pkg = pkg,
-        effective = amountOf(pkg, unclosed),
-        myAllocation = allocation?.allocated ?: Quantity.zero(pkg.quantity.unitId)
+        effective = amountOf(pkg, unclosed, words),
+        myAllocation = allocation?.allocated(words) ?: Quantity.zero(pkg.quantity.unit)
     )
 
     /**
@@ -168,9 +181,13 @@ class PackageRoomRepository @Inject constructor(
      * которую нечем прочитать после обновления приложения, в число не входит: она названа среди
      * нечитаемых отдельно, а число остаётся тем, что известно (PLAN E1, F4).
      */
-    private fun amountOf(pkg: Package, unclosed: List<SyncOperationStorageRow>): Quantity {
+    private fun amountOf(
+        pkg: Package,
+        unclosed: List<SyncOperationStorageRow>,
+        words: Vocabulary
+    ): Quantity {
         val commands = unclosed.mapNotNull {
-            (it.toDomain() as? StoredSyncOperation.Readable)?.operation?.command as? PackageSyncCommand
+            (it.toDomain(words) as? StoredSyncOperation.Readable)?.operation?.command as? PackageSyncCommand
         }
         return PackageQueueState(pkg, commands).amount
     }
@@ -185,7 +202,9 @@ class PackageRoomRepository @Inject constructor(
             "sync_operations",
             "courses",
             "course_sources",
-            "active_package_assignments"
+            "active_package_assignments",
+            "quantity_units",
+            "form_types"
         )
     }
 }

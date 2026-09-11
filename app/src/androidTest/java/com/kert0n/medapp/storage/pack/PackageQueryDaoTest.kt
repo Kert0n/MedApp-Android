@@ -27,6 +27,8 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
+import com.kert0n.medapp.fixture.VOCABULARY
+import com.kert0n.medapp.fixture.TABLET_FORM_ID
 
 /**
  * Один запрос отвечает на поиск, фильтр и сортировку сразу, и просроченные идут первыми при
@@ -44,12 +46,12 @@ class PackageQueryDaoTest {
 
     private val paracetamol = pack(
         id = id(1), name = "Парацетамол", quantity = tablets("20"),
-        formId = TABLET_FORM, category = "Обезболивающие",
+        form = TABLET_FORM, category = "Обезболивающие",
         expiresOn = expiry("2027-12-31")
     )
     private val ibuprofen = pack(
         id = id(2), name = "Ибупрофен", quantity = tablets("5"),
-        formId = TABLET_FORM, category = "Обезболивающие",
+        form = TABLET_FORM, category = "Обезболивающие",
         expiresOn = expiry("2027-04-10")
     )
     private val expired = pack(
@@ -88,7 +90,7 @@ class PackageQueryDaoTest {
     }
 
     private suspend fun names(query: PackageQuery): List<String> =
-        packages.matching(query, today).map { it.toDomain().name }
+        packages.matching(query, today).map { it.toDomain(VOCABULARY).name }
 
     @Test
     fun withoutFilterEverythingIsThereWithExpiredFirst() = runTest {
@@ -128,7 +130,7 @@ class PackageQueryDaoTest {
         )
         assertEquals(
             listOf("Ибупрофен", "Парацетамол"),
-            names(PackageQuery(filter = PackageQuery.Filter.OfForm(TABLET_FORM)))
+            names(PackageQuery(filter = PackageQuery.Filter.OfForm(TABLET_FORM_ID)))
         )
     }
 
@@ -200,7 +202,7 @@ class PackageQueryDaoTest {
             PackageQuery(sort = PackageQuery.Sort.QUANTITY),
             today
         ).drop(1).map { it.pack.quantityUnitId }
-        assertEquals(1, ordered.count { it == MILLILITRES })
+        assertEquals(1, ordered.count { it == MILLILITRES.id })
     }
 
     @Test

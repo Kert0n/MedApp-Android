@@ -20,6 +20,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.kert0n.medapp.fixture.VOCABULARY
 
 /**
  * Плановый пункт и внеплановый факт лежат в одной таблице и различаются наличием курса.
@@ -30,7 +31,7 @@ class IntakeStorageMapperTest {
     @Test
     fun plannedIntakeComesBackPlanned() {
         val planned = plannedIntake()
-        val restored = planned.toStorageEntity().toDomain() as CourseIntake
+        val restored = planned.toStorageEntity().toDomain(VOCABULARY) as CourseIntake
 
         assertEquals(planned.id, restored.id)
         assertEquals(planned.courseId, restored.courseId)
@@ -44,7 +45,7 @@ class IntakeStorageMapperTest {
 
     @Test
     fun unsuppliedIntakeStaysUnsupplied() {
-        val restored = plannedIntake(plannedPackageId = null).toStorageEntity().toDomain() as CourseIntake
+        val restored = plannedIntake(plannedPackageId = null).toStorageEntity().toDomain(VOCABULARY) as CourseIntake
         assertNull(restored.plannedPackageId)
         assertEquals(false, restored.isSupplied)
     }
@@ -57,7 +58,7 @@ class IntakeStorageMapperTest {
             amount = dose("1.5"),
             at = LATER
         )
-        val restored = taken.toStorageEntity().toDomain() as CourseIntake
+        val restored = taken.toStorageEntity().toDomain(VOCABULARY) as CourseIntake
 
         assertEquals(IntakeStatus.TAKEN, restored.status)
         assertEquals(taken.taken, restored.taken)
@@ -73,7 +74,7 @@ class IntakeStorageMapperTest {
         val cancelled = plannedIntake().cancel(LATER)
 
         for (answered in listOf(skipped, missed, cancelled)) {
-            val restored = answered.toStorageEntity().toDomain() as CourseIntake
+            val restored = answered.toStorageEntity().toDomain(VOCABULARY) as CourseIntake
             assertEquals(answered.status, restored.status)
             assertEquals(answered.answer, restored.answer)
             assertNull(restored.taken)
@@ -87,7 +88,7 @@ class IntakeStorageMapperTest {
         assertNull(stored.courseId)
         assertNull(stored.plannedAmount)
 
-        val restored = stored.toDomain()
+        val restored = stored.toDomain(VOCABULARY)
         assertTrue(restored is UnplannedIntake)
         assertEquals(IntakeStatus.TAKEN, restored.status)
         assertEquals(unplanned.dose, (restored as UnplannedIntake).dose)
@@ -105,7 +106,7 @@ class IntakeStorageMapperTest {
         val stored = plannedIntake().confirm(pack(), dose("2"), LATER).toStorageEntity(sync)
 
         assertEquals(sync, stored.syncState())
-        assertEquals(IntakeStatus.TAKEN, stored.toDomain().status)
+        assertEquals(IntakeStatus.TAKEN, stored.toDomain(VOCABULARY).status)
     }
 
     @Test

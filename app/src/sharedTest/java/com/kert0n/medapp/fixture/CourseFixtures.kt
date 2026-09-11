@@ -8,9 +8,11 @@ import com.kert0n.medapp.domain.course.CourseSchedule
 import com.kert0n.medapp.domain.course.CourseSource
 import com.kert0n.medapp.domain.course.Prescription
 import com.kert0n.medapp.domain.course.Revision
+import com.kert0n.medapp.domain.value.DosageForm
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.domain.value.QuantityUnit
 import java.math.BigDecimal
 import java.time.DayOfWeek
 import java.time.Instant
@@ -61,8 +63,8 @@ fun course(
     title: String = "Парацетамол, пять дней",
     note: String? = null,
     doseAmount: BigDecimal? = null,
-    unitId: Uuid? = null,
-    formId: Uuid? = null,
+    unit: QuantityUnit? = null,
+    form: DosageForm? = null,
     schedule: CourseSchedule? = null,
     sources: List<CourseSource> = emptyList(),
     revision: Long = 0,
@@ -74,7 +76,7 @@ fun course(
     note = note,
     doseAmount = doseAmount,
     schedule = schedule,
-    medicine = CourseMedicine(sources = sources, formId = formId, unitId = unitId),
+    medicine = CourseMedicine(sources = sources, form = form, unit = unit),
     revision = Revision(revision),
     createdAt = createdAt,
     updatedAt = updatedAt
@@ -83,9 +85,9 @@ fun course(
 /** Назначение: две таблетки раз в день неделю, если тест не сказал иначе. */
 fun prescription(
     doseAmount: BigDecimal = BigDecimal("2"),
-    unitId: Uuid = TABLETS,
+    unit: QuantityUnit = TABLETS,
     schedule: CourseSchedule = schedule()
-) = Prescription(dose = Dose(Quantity(doseAmount, unitId)), schedule = schedule)
+) = Prescription(dose = Dose(Quantity(doseAmount, unit)), schedule = schedule)
 
 /**
  * Действующий план: доза, единица, форма и расписание у него есть по типу, и называть их в каждом
@@ -94,8 +96,8 @@ fun prescription(
 fun activeCourse(
     id: Uuid = COURSE,
     doseAmount: BigDecimal = BigDecimal("2"),
-    unitId: Uuid = TABLETS,
-    formId: Uuid = TABLET_FORM,
+    unit: QuantityUnit = TABLETS,
+    form: DosageForm = TABLET_FORM,
     schedule: CourseSchedule = schedule(),
     sources: List<CourseSource> = emptyList(),
     revision: Long = 1,
@@ -103,8 +105,8 @@ fun activeCourse(
     updatedAt: Instant = EARLIER
 ) = Course(
     id = id,
-    prescription = prescription(doseAmount, unitId, schedule),
-    medicine = CourseMedicine(sources = sources, formId = formId, unitId = unitId),
+    prescription = prescription(doseAmount, unit, schedule),
+    medicine = CourseMedicine(sources = sources, form = form, unit = unit),
     revision = Revision(revision),
     createdAt = createdAt,
     updatedAt = updatedAt
@@ -134,4 +136,4 @@ fun source(packageId: Uuid, doses: Int) = CourseSource(packageId, Doses(doses))
 
 /** Препарат курса из таблеток: пачки в порядке расходования, каждая со своим выделением. */
 fun medicine(vararg sources: CourseSource) =
-    CourseMedicine(sources = sources.toList(), formId = TABLET_FORM, unitId = TABLETS)
+    CourseMedicine(sources = sources.toList(), form = TABLET_FORM, unit = TABLETS)

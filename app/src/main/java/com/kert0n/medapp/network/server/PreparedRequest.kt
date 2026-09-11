@@ -34,12 +34,12 @@ class PreparedRequest(
         require(path.isNotBlank()) { "у запроса есть путь" }
         require(
             quantityBefore == null || mineBefore == null ||
-                quantityBefore.unitId == mineBefore.unitId
+                quantityBefore.unit == mineBefore.unit
         ) { "остаток и бронь до запроса измеряются одной единицей" }
     }
 
     /** Единица предусловий: она одна на обе величины и остаётся той, что была при подготовке. */
-    val unitId get() = quantityBefore?.unitId ?: mineBefore?.unitId
+    val unit get() = quantityBefore?.unit ?: mineBefore?.unit
 
     override fun equals(other: Any?): Boolean =
         this === other || (

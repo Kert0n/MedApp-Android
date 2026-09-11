@@ -16,6 +16,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.kert0n.medapp.fixture.VOCABULARY
 
 /**
  * Круговой тест по **всем одиннадцати** видам команд: исчерпывающего `when` по обоим корням
@@ -25,7 +26,7 @@ class SyncCommandStorageConverterTest {
 
     private val facts = PackageSharedFacts(
         name = "Парацетамол",
-        formId = TABLET_FORM,
+        form = TABLET_FORM,
         category = "Обезболивающие",
         manufacturer = "Завод",
         country = "Россия",
@@ -51,7 +52,8 @@ class SyncCommandStorageConverterTest {
     private fun roundTrip(command: SyncCommand): SyncCommand? = SyncCommandStorageConverter.commandOf(
         kind = SyncCommandStorageConverter.kindOf(command),
         payload = SyncCommandStorageConverter.payloadOf(command),
-        payloadVersion = SyncCommandStorageConverter.PAYLOAD_VERSION
+        payloadVersion = SyncCommandStorageConverter.PAYLOAD_VERSION,
+        vocabulary = VOCABULARY
     )
 
     @Test
@@ -94,7 +96,7 @@ class SyncCommandStorageConverterTest {
         val restored = roundTrip(command) as PackageSyncCommand.Describe
         assertEquals(facts, restored.before)
         assertNull(restored.after.category)
-        assertNull(restored.after.formId)
+        assertNull(restored.after.form)
     }
 
     @Test
@@ -116,7 +118,8 @@ class SyncCommandStorageConverterTest {
             SyncCommandStorageConverter.commandOf(
                 kind = SyncCommandStorageConverter.kindOf(command),
                 payload = SyncCommandStorageConverter.payloadOf(command),
-                payloadVersion = SyncCommandStorageConverter.PAYLOAD_VERSION + 1
+                payloadVersion = SyncCommandStorageConverter.PAYLOAD_VERSION + 1,
+                vocabulary = VOCABULARY
             )
         )
     }
@@ -128,7 +131,8 @@ class SyncCommandStorageConverterTest {
             SyncCommandStorageConverter.commandOf(
                 "PACKAGE_EXPLODE",
                 "{}",
-                SyncCommandStorageConverter.PAYLOAD_VERSION
+                SyncCommandStorageConverter.PAYLOAD_VERSION,
+                VOCABULARY
             )
         )
     }
@@ -143,7 +147,7 @@ class SyncCommandStorageConverterTest {
 
         for (payload in listOf("не json", "{}")) {
             val refusal = runCatching {
-                SyncCommandStorageConverter.commandOf("PACKAGE_DELETE", payload, version)
+                SyncCommandStorageConverter.commandOf("PACKAGE_DELETE", payload, version, VOCABULARY)
             }.exceptionOrNull()
 
             assertTrue("$payload: $refusal", refusal is IllegalArgumentException)

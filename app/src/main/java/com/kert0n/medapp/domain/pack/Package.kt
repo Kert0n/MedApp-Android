@@ -32,7 +32,7 @@ class Package(
         // Подсказка — это «сколько я обычно принимаю из ЭТОЙ пачки»: величина в чужой единице
         // не подставится в форму приёма и молча притворилась бы подходящей.
         val hint = facts.defaultIntakeAmount
-        require(hint == null || hint.unitId == quantity.unitId) {
+        require(hint == null || hint.unit == quantity.unit) {
             "доза-подсказка измеряется той же единицей, что остаток пачки"
         }
     }
@@ -65,7 +65,7 @@ class Package(
      */
     fun correctTo(actual: Quantity): Package {
         requireUsable("пересчёт")
-        require(actual.unitId == quantity.unitId) {
+        require(actual.unit == quantity.unit) {
             "пересчёт не меняет единицу: это отдельный сценарий"
         }
         return withQuantity(actual)

@@ -5,7 +5,9 @@ import androidx.room.Relation
 import com.kert0n.medapp.domain.course.CourseRecord
 import com.kert0n.medapp.domain.course.CourseSchedule
 import com.kert0n.medapp.domain.course.Prescription
+import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.storage.value.storedDose
+import com.kert0n.medapp.storage.value.storedUnit
 
 /**
  * Запись эпизода вместе с временами своего назначения: они лежат в `course_times` по тождеству
@@ -16,12 +18,12 @@ class CourseRecordStorageRow(
     @Relation(parentColumn = "id", entityColumn = "course_id")
     val times: List<CourseTimeStorageEntity> = emptyList()
 ) {
-    fun toDomain(): CourseRecord = CourseRecord(
+    fun toDomain(vocabulary: Vocabulary): CourseRecord = CourseRecord(
         id = record.id,
         title = record.title,
         note = record.note,
         prescription = Prescription(
-            dose = storedDose(record.doseAmount, record.unitId),
+            dose = storedDose(record.doseAmount, vocabulary.storedUnit(record.unitId)),
             schedule = CourseSchedule(
                 start = record.start,
                 endInclusive = record.endInclusive,

@@ -22,7 +22,7 @@ class QuantityStorageMapperTest {
     @Test
     fun storedAmountReadsBackAsTheSameQuantity() {
         val quantity = tablets("12.345678")
-        assertEquals(quantity, storedQuantity(quantity.toStorageAmount(), quantity.unitId))
+        assertEquals(quantity, storedQuantity(quantity.toStorageAmount(), quantity.unit))
     }
 
     @Test

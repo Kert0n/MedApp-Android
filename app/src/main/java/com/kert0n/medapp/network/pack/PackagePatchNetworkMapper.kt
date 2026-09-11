@@ -26,13 +26,13 @@ fun PackageFacts.toPatchNetworkMapping(
     if (shared == known.shared) return PackagePatchNetworkMapping(dto = null, formIdClearUnsupported = false)
     val dto = PackagePatchNetworkDTO(
         name = name.takeIf { it != known.name },
-        formId = formId.takeIf { it != null && it != known.formId },
+        formId = form?.takeIf { it != known.form }?.id,
         category = clearableText(known.category, category),
         manufacturer = clearableText(known.manufacturer, manufacturer),
         country = clearableText(known.country, country),
         description = clearableText(known.description, description)
     )
-    val formCleared = known.formId != null && formId == null
+    val formCleared = known.form != null && form == null
     return PackagePatchNetworkMapping(
         dto = dto.takeIf { !it.isEmpty },
         formIdClearUnsupported = formCleared && sync.isOnServer

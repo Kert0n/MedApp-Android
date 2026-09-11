@@ -1,5 +1,6 @@
 package com.kert0n.medapp.domain.intake
 
+import com.kert0n.medapp.domain.value.QuantityUnit
 import kotlin.uuid.Uuid
 
 /**
@@ -12,7 +13,7 @@ class UnplannedIntake(
 ) : Intake {
 
     /** Единица НА МОМЕНТ СОБЫТИЯ: берётся у самого факта, второго поля для неё не нужно. */
-    override val unitId: Uuid get() = dose.amount.unitId
+    override val unit: QuantityUnit get() = dose.amount.unit
 
     override val status: IntakeStatus get() = IntakeStatus.TAKEN
 

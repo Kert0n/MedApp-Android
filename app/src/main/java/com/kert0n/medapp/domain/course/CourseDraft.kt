@@ -2,10 +2,12 @@ package com.kert0n.medapp.domain.course
 
 import com.kert0n.medapp.domain.pack.Availability
 import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.value.DosageForm
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.doses
 import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.domain.value.QuantityUnit
 import com.kert0n.medapp.domain.value.requireNonNegativeDecimal
 import com.kert0n.medapp.domain.value.requireOptionalText
 import com.kert0n.medapp.domain.value.requireText
@@ -52,15 +54,15 @@ class CourseDraft(
      */
     val dose: Dose?
         get() {
-            val unitId = medicine.unitId ?: return null
-            return doseAmount?.let { Dose(Quantity(it, unitId)) }
+            val unit = medicine.unit ?: return null
+            return doseAmount?.let { Dose(Quantity(it, unit)) }
         }
 
     val sources: List<CourseSource> get() = medicine.sources
 
-    val formId: Uuid? get() = medicine.formId
+    val form: DosageForm? get() = medicine.form
 
-    val unitId: Uuid? get() = medicine.unitId
+    val unit: QuantityUnit? get() = medicine.unit
 
     val allocatedDosesTotal: Doses get() = medicine.allocatedTotal
 

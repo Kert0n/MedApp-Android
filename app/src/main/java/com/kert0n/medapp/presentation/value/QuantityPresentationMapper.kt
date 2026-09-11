@@ -31,7 +31,7 @@ fun QuantityPresentationDTO.toDomain(): ParsedInput<Quantity, QuantityPresentati
     reject(text)?.let { return ParsedInput.Rejected(it) }
     // Последнее слово за величиной: её нынешние пределы здесь известны, но менять их вправе домен,
     // и тогда отказ должен остаться отказом, а не исключением наружу.
-    return runCatching { Quantity(BigDecimal(text), unitId) }
+    return runCatching { Quantity(BigDecimal(text), unit) }
         .fold(
             onSuccess = { ParsedInput.Parsed(it) },
             onFailure = {

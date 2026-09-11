@@ -6,8 +6,11 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.kert0n.medapp.domain.stock.StockMovement
+import com.kert0n.medapp.domain.value.QuantityUnit
+import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.storage.pack.PackageStorageEntity
 import com.kert0n.medapp.storage.value.storedQuantity
+import com.kert0n.medapp.storage.value.storedUnit
 import com.kert0n.medapp.storage.value.toStorageAmount
 import java.math.BigDecimal
 import java.time.Instant
@@ -52,11 +55,13 @@ class StockMovementStorageEntity(
     /** Дискриминатор вида: варианты движения читаются целиком в `StockMovement.kt` (PLAN D7). */
     enum class Kind { RECEIPT, RECOUNT, DISPOSAL, TRANSFER, REMOTE_CHANGE, ACCESS_LOSS }
 
-    fun toDomain(): StockMovement = when (kind) {
+    fun toDomain(vocabulary: Vocabulary): StockMovement = toDomain(vocabulary.storedUnit(unitId))
+
+    private fun toDomain(unit: QuantityUnit): StockMovement = when (kind) {
         Kind.RECEIPT -> StockMovement.Receipt(
             id = id,
             packageId = packageId,
-            amount = quantity(amount),
+            amount = quantity(amount, unit),
             medKitId = medKit(),
             occurredAt = moment(),
             observedAt = observedAt,
@@ -65,8 +70,8 @@ class StockMovementStorageEntity(
         Kind.RECOUNT -> StockMovement.Recount(
             id = id,
             packageId = packageId,
-            before = quantity(beforeAmount),
-            after = quantity(afterAmount),
+            before = quantity(beforeAmount, unit),
+            after = quantity(afterAmount, unit),
             medKitId = medKit(),
             occurredAt = moment(),
             observedAt = observedAt,
@@ -75,7 +80,7 @@ class StockMovementStorageEntity(
         Kind.DISPOSAL -> StockMovement.Disposal(
             id = id,
             packageId = packageId,
-            amount = quantity(amount),
+            amount = quantity(amount, unit),
             reason = requireNotNull(reason) { "у утилизации названа причина" },
             medKitId = medKit(),
             occurredAt = moment(),
@@ -85,7 +90,7 @@ class StockMovementStorageEntity(
         Kind.TRANSFER -> StockMovement.Transfer(
             id = id,
             packageId = packageId,
-            amount = quantity(amount),
+            amount = quantity(amount, unit),
             sourceMedKitId = requireNotNull(sourceMedKitId) { "у переноса есть откуда" },
             targetMedKitId = requireNotNull(targetMedKitId) { "у переноса есть куда" },
             occurredAt = moment(),
@@ -96,7 +101,7 @@ class StockMovementStorageEntity(
             id = id,
             packageId = packageId,
             delta = BigDecimal(requireNotNull(delta) { "у чужого изменения есть разница" }),
-            unitId = unitId,
+            unit = unit,
             medKitId = medKit(),
             observedAt = observedAt,
             occurredAt = occurredAt,
@@ -105,7 +110,7 @@ class StockMovementStorageEntity(
         Kind.ACCESS_LOSS -> StockMovement.AccessLoss(
             id = id,
             packageId = packageId,
-            amount = quantity(amount),
+            amount = quantity(amount, unit),
             medKitId = medKit(),
             observedAt = observedAt,
             occurredAt = occurredAt,
@@ -113,8 +118,8 @@ class StockMovementStorageEntity(
         )
     }
 
-    private fun quantity(text: String?) =
-        storedQuantity(requireNotNull(text) { "у движения вида $kind записано количество" }, unitId)
+    private fun quantity(text: String?, unit: QuantityUnit) =
+        storedQuantity(requireNotNull(text) { "у движения вида $kind записано количество" }, unit)
 
     private fun medKit() = requireNotNull(medKitId) { "движение вида $kind называет свою аптечку" }
 
@@ -127,7 +132,7 @@ fun StockMovement.toStorageEntity(): StockMovementStorageEntity {
         id = id,
         packageId = packageId,
         kind = kindOf(),
-        unitId = unitId,
+        unitId = unit.id,
         observedAt = observedAt,
         occurredAt = occurredAt,
         note = note

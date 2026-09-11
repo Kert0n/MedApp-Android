@@ -1,6 +1,7 @@
 package com.kert0n.medapp.domain.value
 
 import com.kert0n.medapp.fixture.TABLETS
+import com.kert0n.medapp.fixture.MILLILITRES
 import com.kert0n.medapp.fixture.millilitres
 import com.kert0n.medapp.fixture.tablets
 
@@ -8,6 +9,7 @@ import java.math.BigDecimal
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -32,6 +34,16 @@ class QuantityTest {
     @Test
     fun sameNumberInDifferentUnitsIsNotEqual() {
         assertNotEquals(tablets("1"), millilitres("1"))
+    }
+
+    @Test
+    fun unitsAreToldApartAsObjectsNotByName() {
+        // Две единицы с одним именем и разными серверными идентификаторами — разные единицы:
+        // величина держит объект словаря, и складывать их вместе нельзя.
+        val other = QuantityUnit(MILLILITRES.id, TABLETS.name)
+        val lookalike = Quantity(BigDecimal("1"), other)
+        assertNotEquals(tablets("1"), lookalike)
+        assertThrows(IllegalArgumentException::class.java) { tablets("1") + lookalike }
     }
 
     @Test

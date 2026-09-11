@@ -28,8 +28,8 @@ import org.junit.Test
  */
 class CourseMedicineTest {
 
-    private val home = pack(id = PACK, formId = TABLET_FORM, quantity = tablets("20"))
-    private val dacha = pack(id = OTHER_PACK, formId = TABLET_FORM, quantity = tablets("12"))
+    private val home = pack(id = PACK, form = TABLET_FORM, quantity = tablets("20"))
+    private val dacha = pack(id = OTHER_PACK, form = TABLET_FORM, quantity = tablets("12"))
 
     private fun draftWithDose() = course(doseAmount = BigDecimal("2"))
 
@@ -49,7 +49,7 @@ class CourseMedicineTest {
     fun changingTheListAfterwardsDoesNotChangeTheMedicine() {
         // Иначе пачка попадала бы в препарат в обход проверки уникальности и без роста редакции.
         val chosen = mutableListOf(source(PACK, 5))
-        val medicine = CourseMedicine(chosen, formId = TABLET_FORM, unitId = TABLETS)
+        val medicine = CourseMedicine(chosen, form = TABLET_FORM, unit = TABLETS)
         chosen += source(PACK, 1)
         assertEquals(listOf(PACK), medicine.sources.map { it.packageId })
     }
@@ -63,8 +63,8 @@ class CourseMedicineTest {
 
     @Test
     fun unusablePackageIsNotASource() {
-        val archived = pack(formId = TABLET_FORM, lifecycle = Package.Lifecycle.ARCHIVED)
-        val lost = pack(id = OTHER_PACK, formId = TABLET_FORM, access = Package.Access.LOST)
+        val archived = pack(form = TABLET_FORM, lifecycle = Package.Lifecycle.ARCHIVED)
+        val lost = pack(id = OTHER_PACK, form = TABLET_FORM, access = Package.Access.LOST)
         assertEquals(
             CourseRejected.Reason.PACKAGE_UNUSABLE,
             draftWithDose().attach(archived, doses = 1.doses, at = LATER).rejection()
@@ -162,8 +162,8 @@ class CourseMedicineTest {
         val duplicated = runCatching {
             course(
                 doseAmount = BigDecimal("2"),
-                unitId = TABLETS,
-                formId = TABLET_FORM,
+                unit = TABLETS,
+                form = TABLET_FORM,
                 sources = listOf(source(PACK, 1), source(PACK, 2))
             )
         }

@@ -24,7 +24,7 @@ sealed interface PackageSyncCommand : SyncCommand {
     fun appliedTo(amount: Quantity): Quantity? = when (this) {
         is Consume -> amount.minusOrZero(this.amount.quantity)
         is CorrectStock -> this.actual
-        is Delete -> Quantity.zero(amount.unitId)
+        is Delete -> Quantity.zero(amount.unit)
         is Create, is Describe, is Move, is SetClaim, is ReleaseClaim -> null
     }
 
@@ -114,7 +114,7 @@ sealed interface PackageSyncCommand : SyncCommand {
         val claimAfter: Quantity? = null
     ) : PackageSyncCommand {
         init {
-            require(claimAfter == null || claimAfter.unitId == amount.unitId) {
+            require(claimAfter == null || claimAfter.unit == amount.unit) {
                 "бронь измеряется той же единицей, что расход"
             }
         }

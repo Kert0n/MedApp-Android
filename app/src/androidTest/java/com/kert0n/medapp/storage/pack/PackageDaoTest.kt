@@ -21,6 +21,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
+import com.kert0n.medapp.fixture.VOCABULARY
 
 /**
  * Локальные сведения об упаковке переживают снимок сервера: серверная часть переписывается
@@ -52,7 +53,7 @@ class PackageDaoTest {
     @Test
     fun savedPackageComesBackWholeFromTwoTables() = runTest {
         packages.save(local.toStorageEntity(), local.toDetailsStorageEntity())
-        val restored = requireNotNull(packages.find(PACK)).toDomain()
+        val restored = requireNotNull(packages.find(PACK)).toDomain(VOCABULARY)
         assertEquals(local.facts, restored.facts)
         assertEquals(local.quantity, restored.quantity)
         assertEquals(local.addedAt, restored.addedAt)
@@ -62,7 +63,7 @@ class PackageDaoTest {
     fun snapshotOfAnUnknownPackageCreatesItsDetailsRow() = runTest {
         val observed = Instant.parse("2026-09-10T12:00:00Z")
         packages.applyServerSnapshot(local.toStorageEntity(), observed)
-        val restored = requireNotNull(packages.find(PACK)).toDomain()
+        val restored = requireNotNull(packages.find(PACK)).toDomain(VOCABULARY)
         assertEquals(observed, restored.addedAt)
         assertNull(restored.facts.expiresOn)
         assertNull(restored.facts.note)
@@ -81,7 +82,7 @@ class PackageDaoTest {
             Instant.parse("2026-09-11T12:00:00Z")
         )
 
-        val restored = requireNotNull(packages.find(PACK)).toDomain()
+        val restored = requireNotNull(packages.find(PACK)).toDomain(VOCABULARY)
         assertEquals("Paracetamol", restored.name)
         assertEquals(tablets("12"), restored.quantity)
         assertEquals(local.facts.expiresOn, restored.facts.expiresOn)
@@ -97,7 +98,7 @@ class PackageDaoTest {
         val other = pack(id = OTHER_PACK, name = "Ибупрофен")
         packages.save(other.toStorageEntity(), other.toDetailsStorageEntity())
 
-        val seen = packages.observeOfMedKit(HOME_KIT).first().map { it.toDomain().name }
+        val seen = packages.observeOfMedKit(HOME_KIT).first().map { it.toDomain(VOCABULARY).name }
         assertEquals(listOf("Ибупрофен", "Парацетамол"), seen)
     }
 
@@ -110,7 +111,7 @@ class PackageDaoTest {
 
         val second = reopenFileDatabase(name)
         try {
-            val restored = requireNotNull(second.packages().find(PACK)).toDomain()
+            val restored = requireNotNull(second.packages().find(PACK)).toDomain(VOCABULARY)
             assertEquals(local.facts, restored.facts)
             assertEquals(local.quantity, restored.quantity)
         } finally {

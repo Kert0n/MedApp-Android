@@ -150,7 +150,7 @@ class IntakeTest {
     @Test
     fun amountsAreMeasuredByTheIntakeUnit() {
         // Единица приёма — единица его плановой дозы, второго поля для неё нет.
-        assertEquals(MILLILITRES, plannedIntake(plannedAmount = dose(millilitres("5"))).unitId)
+        assertEquals(MILLILITRES, plannedIntake(plannedAmount = dose(millilitres("5"))).unit)
         // Факт в другой единице к этому пункту не относится.
         assertThrows(IllegalArgumentException::class.java) {
             plannedIntake().confirm(pack(), dose(millilitres("5")), LATER)

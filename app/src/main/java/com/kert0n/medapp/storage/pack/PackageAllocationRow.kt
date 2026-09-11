@@ -3,7 +3,9 @@ package com.kert0n.medapp.storage.pack
 import androidx.room.ColumnInfo
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.storage.value.storedDose
+import com.kert0n.medapp.storage.value.storedUnit
 import kotlin.uuid.Uuid
 
 /**
@@ -16,5 +18,6 @@ class PackageAllocationRow(
     @ColumnInfo(name = "dose_amount") val doseAmount: String,
     @ColumnInfo(name = "unit_id") val unitId: Uuid
 ) {
-    val allocated: Quantity get() = storedDose(doseAmount, unitId) * Doses(allocatedDoses)
+    fun allocated(vocabulary: Vocabulary): Quantity =
+        storedDose(doseAmount, vocabulary.storedUnit(unitId)) * Doses(allocatedDoses)
 }

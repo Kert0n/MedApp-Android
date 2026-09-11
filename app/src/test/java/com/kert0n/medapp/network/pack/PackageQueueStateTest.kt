@@ -22,7 +22,7 @@ import org.junit.Test
  */
 class PackageQueueStateTest {
 
-    private val paracetamol = PackageSharedFacts(name = "Парацетамол", formId = TABLET_FORM)
+    private val paracetamol = PackageSharedFacts(name = "Парацетамол", form = TABLET_FORM)
 
     private fun consume(amount: String) = PackageSyncCommand.Consume(PACK, dose(amount), INTAKE)
 

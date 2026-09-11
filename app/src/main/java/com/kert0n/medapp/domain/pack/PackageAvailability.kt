@@ -32,21 +32,21 @@ data class PackageAvailability(
     constructor(
         pkg: Package,
         effective: Quantity,
-        myAllocation: Quantity = Quantity.zero(pkg.quantity.unitId)
+        myAllocation: Quantity = Quantity.zero(pkg.quantity.unit)
     ) : this(
         packageId = pkg.id,
         expiresOn = pkg.facts.expiresOn,
         effective = effective,
-        reservedByOthers = pkg.claims?.let { Quantity(it.reservedByOthers, pkg.quantity.unitId) }
-            ?: Quantity.zero(pkg.quantity.unitId),
+        reservedByOthers = pkg.claims?.let { Quantity(it.reservedByOthers, pkg.quantity.unit) }
+            ?: Quantity.zero(pkg.quantity.unit),
         myAllocation = myAllocation,
         suppliesStock = pkg.suppliesStock
     )
 
     init {
-        val unitId = effective.unitId
-        require(reservedByOthers.unitId == unitId) { "чужие брони измеряются единицей пачки" }
-        require(myAllocation.unitId == unitId) { "выделение измеряется единицей пачки" }
+        val unit = effective.unit
+        require(reservedByOthers.unit == unit) { "чужие брони измеряются единицей пачки" }
+        require(myAllocation.unit == unit) { "выделение измеряется единицей пачки" }
     }
 
     /**
@@ -56,7 +56,7 @@ data class PackageAvailability(
     val availableToMe: Quantity
         get() =
             if (suppliesStock) effective.minusOrZero(reservedByOthers)
-            else Quantity.zero(effective.unitId)
+            else Quantity.zero(effective.unit)
 
     /**
      * Свободно любому: доступное мне без моего выделения. Считается не от суммы броней: моя
@@ -78,7 +78,7 @@ data class PackageAvailability(
         date: LocalDate,
         reportZone: ZoneId,
         now: Instant,
-        spent: Quantity = Quantity.zero(effective.unitId)
+        spent: Quantity = Quantity.zero(effective.unit)
     ): PackageForecast {
         // `atZone().toLocalDate()`: `LocalDate.ofInstant` требует API 34 при нижней границе 29.
         val todayThere = now.atZone(reportZone).toLocalDate()

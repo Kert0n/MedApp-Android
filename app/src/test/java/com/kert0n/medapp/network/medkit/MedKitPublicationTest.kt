@@ -4,7 +4,7 @@ import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
-import com.kert0n.medapp.fixture.TABLETS
+import com.kert0n.medapp.fixture.TABLETS_ID
 import com.kert0n.medapp.fixture.medKit
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.network.server.ApiFailure
@@ -28,7 +28,7 @@ class MedKitPublicationTest {
     private val requests = mutableListOf<String>()
 
     private fun drug(id: String) = """
-        {"drug":{"id":"$id","name":"Парацетамол","quantity":"20.000000","quantityUnitId":"$TABLETS",
+        {"drug":{"id":"$id","name":"Парацетамол","quantity":"20.000000","quantityUnitId":"$TABLETS_ID",
          "medKitId":"$HOME_KIT","version":1},"reservations":{"total":"0.000000","version":1}}
     """
 
@@ -61,7 +61,7 @@ class MedKitPublicationTest {
             }
         }
         val outcome = service.publish(local, packages)
-        assertTrue(outcome is MedKitPublication.Outcome.Published)
+        assertTrue("$outcome", outcome is MedKitPublication.Outcome.Published)
         outcome as MedKitPublication.Outcome.Published
         assertEquals(MedKit.Publication.PUBLISHED, outcome.medKit.publication)
         assertEquals(2, outcome.packages.size)

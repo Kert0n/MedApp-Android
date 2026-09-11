@@ -36,6 +36,8 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import com.kert0n.medapp.fixture.VOCABULARY
+import com.kert0n.medapp.fixture.TABLETS_ID
 
 /**
  * История не удаляется вместе с упаковкой: приёмы и движения держат её ключами `RESTRICT`,
@@ -67,12 +69,12 @@ class HistoryDaoTest {
     @Test
     fun plannedIntakeAndItsConfirmationComeBackWhole() = runTest {
         intakes.upsert(plannedIntake().toStorageEntity())
-        val stored = requireNotNull(intakes.find(INTAKE)).toDomain()
+        val stored = requireNotNull(intakes.find(INTAKE)).toDomain(VOCABULARY)
         assertEquals(IntakeStatus.PLANNED, stored.status)
 
         val taken = plannedIntake().confirm(pack(), dose("2"), LATER)
         intakes.upsert(taken.toStorageEntity())
-        assertEquals(taken.taken, requireNotNull(intakes.find(INTAKE)).toDomain().taken)
+        assertEquals(taken.taken, requireNotNull(intakes.find(INTAKE)).toDomain(VOCABULARY).taken)
     }
 
     /** Один пункт расписания заводится один раз: повторная материализация идемпотентна. */
@@ -102,7 +104,7 @@ class HistoryDaoTest {
             packageId = PACK,
             medKitId = HOME_KIT,
             amount = "2",
-            unitId = TABLETS,
+            unitId = TABLETS_ID,
             accounting = IntakeAccounting.LOCAL_APPLIED,
             operationId = null
         )
@@ -114,7 +116,7 @@ class HistoryDaoTest {
             packageId = null,
             medKitId = null,
             amount = null,
-            unitId = TABLETS,
+            unitId = TABLETS_ID,
             accounting = IntakeAccounting.NOT_APPLICABLE,
             operationId = null
         )
@@ -161,7 +163,7 @@ class HistoryDaoTest {
         assertEquals(1, movements.ofPackage(PACK).size)
         assertEquals(
             Package.Lifecycle.ARCHIVED,
-            requireNotNull(database.packages().find(PACK)).toDomain().lifecycle
+            requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY).lifecycle
         )
     }
 
@@ -189,6 +191,6 @@ class HistoryDaoTest {
         movements.insert(second.toMovementStorageEntity())
         movements.insert(first.toMovementStorageEntity())
 
-        assertEquals(listOf(first, second), movements.ofPackage(PACK).map { it.toDomain() })
+        assertEquals(listOf(first, second), movements.ofPackage(PACK).map { it.toDomain(VOCABULARY) })
     }
 }

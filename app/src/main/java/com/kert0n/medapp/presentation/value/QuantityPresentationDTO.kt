@@ -1,6 +1,6 @@
 package com.kert0n.medapp.presentation.value
 
-import kotlin.uuid.Uuid
+import com.kert0n.medapp.domain.value.QuantityUnit
 
 /**
  * Величины в том виде, в каком их держит экран: строками, как человек напечатал.
@@ -9,5 +9,6 @@ import kotlin.uuid.Uuid
  * (`data/local/entity`). Форма ввода не может держать `Quantity`: пока человек печатает, там лежит
  * «12,», «0.0000001» или пусто, и ни одно из этих состояний величиной не является. Приводит их к
  * домену маппер представления — так же, как сетевой маппер приводит домен к телу запроса.
+ * Единица — объект словаря: форма держит то, что человек выбрал из списка, а не его номер.
  */
-data class QuantityPresentationDTO(val amount: String, val unitId: Uuid)
+data class QuantityPresentationDTO(val amount: String, val unit: QuantityUnit)

@@ -21,7 +21,7 @@ class DoseTest {
 
     @Test
     fun theUnitComesFromTheAmount() {
-        assertEquals(TABLETS, Dose(tablets("2")).unitId)
+        assertEquals(TABLETS, Dose(tablets("2")).unit)
     }
 
     @Test

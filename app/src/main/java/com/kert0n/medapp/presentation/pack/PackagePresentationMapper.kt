@@ -18,7 +18,7 @@ fun Package.toPresentationDTO(syncedAt: Instant? = null): PackagePresentationDTO
         medKitId = medKitId,
         name = facts.name,
         quantity = quantity.toPresentationDTO(),
-        formId = facts.formId,
+        form = facts.form,
         category = facts.category,
         manufacturer = facts.manufacturer,
         country = facts.country,
@@ -46,4 +46,4 @@ fun Package.toPresentationDTO(syncedAt: Instant? = null): PackagePresentationDTO
 
 /** Строки нормализованы: 1 и 1.000000 дают одинаковое состояние экрана. */
 private fun Quantity.toPresentationDTO() =
-    QuantityPresentationDTO(amount.stripTrailingZeros().toPlainString(), unitId)
+    QuantityPresentationDTO(amount.stripTrailingZeros().toPlainString(), unit)

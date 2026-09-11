@@ -13,11 +13,14 @@ import com.kert0n.medapp.domain.intake.IntakeAnswer
 import com.kert0n.medapp.domain.intake.IntakeStatus
 import com.kert0n.medapp.domain.intake.TakenDose
 import com.kert0n.medapp.domain.intake.UnplannedIntake
+import com.kert0n.medapp.domain.value.QuantityUnit
+import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.network.intake.IntakeAccounting
 import com.kert0n.medapp.network.intake.IntakeSyncState
 import com.kert0n.medapp.storage.course.CourseRecordStorageEntity
 import com.kert0n.medapp.storage.pack.PackageStorageEntity
 import com.kert0n.medapp.storage.value.storedDose
+import com.kert0n.medapp.storage.value.storedUnit
 import com.kert0n.medapp.storage.value.toStorageAmount
 import java.time.Instant
 import java.time.LocalDate
@@ -83,7 +86,10 @@ class IntakeStorageEntity(
     val accounting: IntakeAccounting = IntakeAccounting.NOT_APPLICABLE,
     @ColumnInfo(name = "operation_id") val operationId: Uuid? = null
 ) {
-    fun toDomain(): Intake = if (courseId == null) unplanned() else scheduled()
+    fun toDomain(vocabulary: Vocabulary): Intake {
+        val unit = vocabulary.storedUnit(unitId)
+        return if (courseId == null) unplanned(unit) else scheduled(unit)
+    }
 
     fun syncState(): IntakeSyncState = IntakeSyncState(
         intakeId = id,
@@ -91,7 +97,7 @@ class IntakeStorageEntity(
         operationId = operationId
     )
 
-    private fun scheduled(): CourseIntake = CourseIntake(
+    private fun scheduled(unit: QuantityUnit): CourseIntake = CourseIntake(
         id = id,
         courseId = requireNotNull(courseId),
         courseRevision = Revision(requireNotNull(courseRevision) {
@@ -104,19 +110,20 @@ class IntakeStorageEntity(
         ),
         plannedAmount = storedDose(
             requireNotNull(plannedAmount) { "у пункта расписания есть плановая доза" },
-            unitId
+            unit
         ),
         plannedPackageId = plannedPackageId,
-        answer = answer()
+        answer = answer(unit)
     )
 
-    private fun unplanned(): UnplannedIntake = UnplannedIntake(id = id, dose = requireNotNull(taken()) {
-        "внеплановый приём состоялся по определению: другого статуса у него не бывает"
-    })
+    private fun unplanned(unit: QuantityUnit): UnplannedIntake =
+        UnplannedIntake(id = id, dose = requireNotNull(taken(unit)) {
+            "внеплановый приём состоялся по определению: другого статуса у него не бывает"
+        })
 
-    private fun answer(): IntakeAnswer? = when (status) {
+    private fun answer(unit: QuantityUnit): IntakeAnswer? = when (status) {
         IntakeStatus.PLANNED -> null
-        IntakeStatus.TAKEN -> IntakeAnswer.Taken(requireNotNull(taken()))
+        IntakeStatus.TAKEN -> IntakeAnswer.Taken(requireNotNull(taken(unit)))
         IntakeStatus.SKIPPED -> IntakeAnswer.Skipped(answeredMoment())
         IntakeStatus.MISSED -> IntakeAnswer.Missed(answeredMoment())
         IntakeStatus.CANCELLED -> IntakeAnswer.Cancelled(answeredMoment())
@@ -125,12 +132,12 @@ class IntakeStorageEntity(
     private fun answeredMoment(): Instant =
         requireNotNull(answeredAt) { "у отвеченного приёма есть момент ответа" }
 
-    private fun taken(): TakenDose? {
+    private fun taken(unit: QuantityUnit): TakenDose? {
         val amount = takenAmount ?: return null
         return TakenDose(
             packageId = requireNotNull(takenPackageId) { "у принятой дозы есть своя пачка" },
             medKitId = requireNotNull(takenMedKitId) { "у принятой дозы есть аптечка на момент события" },
-            amount = storedDose(amount, unitId),
+            amount = storedDose(amount, unit),
             at = answeredMoment()
         )
     }
@@ -141,7 +148,7 @@ fun Intake.toStorageEntity(sync: IntakeSyncState = IntakeSyncState(id)): IntakeS
     val takenDose = taken
     val common = IntakeStorageEntity(
         id = id,
-        unitId = unitId,
+        unitId = unit.id,
         status = status,
         answeredAt = answerMoment(),
         takenPackageId = takenDose?.packageId,

@@ -40,13 +40,15 @@ class DosesTest {
     @Test
     fun wholeDosesOnlyBecauseADoseIsNotSplitBetweenPacks() {
         // По одной таблетке в двух пачках при дозе в две таблетки дают ноль доз, а не одну.
-        val unitId = TABLETS_FOR_TEST
-        val dose = Dose(Quantity(java.math.BigDecimal("2"), unitId))
-        assertTrue(Quantity(java.math.BigDecimal("1"), unitId).dosesIn(dose) == 0.doses)
-        assertTrue(Quantity(java.math.BigDecimal("7"), unitId).dosesIn(dose) == 3.doses)
+        val unit = TABLETS_FOR_TEST
+        val dose = Dose(Quantity(java.math.BigDecimal("2"), unit))
+        assertTrue(Quantity(java.math.BigDecimal("1"), unit).dosesIn(dose) == 0.doses)
+        assertTrue(Quantity(java.math.BigDecimal("7"), unit).dosesIn(dose) == 3.doses)
     }
 
     private companion object {
-        val TABLETS_FOR_TEST = kotlin.uuid.Uuid.parse("00000000-0000-4000-8000-000000000001")
+        val TABLETS_FOR_TEST = com.kert0n.medapp.domain.value.QuantityUnit(
+            kotlin.uuid.Uuid.parse("00000000-0000-4000-8000-000000000001"), "таблетка"
+        )
     }
 }

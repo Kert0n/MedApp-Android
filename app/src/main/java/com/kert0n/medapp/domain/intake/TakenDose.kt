@@ -25,7 +25,7 @@ data class TakenDose(
     constructor(pkg: Package, amount: Dose, at: Instant) : this(pkg.id, pkg.medKitId, amount, at) {
         // Пачку передают целиком как раз затем, чтобы проверить это отношение: две таблетки из
         // флакона, который меряют миллилитрами, — не факт, а испорченная история.
-        require(amount.unitId == pkg.quantity.unitId) {
+        require(amount.unit == pkg.quantity.unit) {
             "принятое измеряется единицей той пачки, из которой взято"
         }
     }

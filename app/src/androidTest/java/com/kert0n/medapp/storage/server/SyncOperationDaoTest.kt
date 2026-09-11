@@ -33,6 +33,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import com.kert0n.medapp.fixture.VOCABULARY
 
 /**
  * Очередь и её зависимости лежат в базе: номер выдаёт она, порядок по одной пачке строится
@@ -245,12 +246,12 @@ class SyncOperationDaoTest {
         val damaged = unreadable(first)
 
         assertEquals(first, damaged.id)
-        assertEquals(listOf(damaged), queue.all().mapNotNull { it.toDomain() as? StoredSyncOperation.Unreadable })
+        assertEquals(listOf(damaged), queue.all().mapNotNull { it.toDomain(VOCABULARY) as? StoredSyncOperation.Unreadable })
     }
 
     private suspend fun readable(id: Uuid): SyncOperation =
-        (requireNotNull(queue.find(id)).toDomain() as StoredSyncOperation.Readable).operation
+        (requireNotNull(queue.find(id)).toDomain(VOCABULARY) as StoredSyncOperation.Readable).operation
 
     private suspend fun unreadable(id: Uuid): StoredSyncOperation.Unreadable =
-        requireNotNull(queue.find(id)).toDomain() as StoredSyncOperation.Unreadable
+        requireNotNull(queue.find(id)).toDomain(VOCABULARY) as StoredSyncOperation.Unreadable
 }

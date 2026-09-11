@@ -6,8 +6,10 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
+import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.network.server.ResourceVersion
+import com.kert0n.medapp.storage.value.storedForm
 import com.kert0n.medapp.storage.value.toStorageAmount
 import com.kert0n.medapp.storage.value.toStorageSortKey
 import java.time.Instant
@@ -50,9 +52,9 @@ class PackageStorageEntity(
     val access: Package.Access = Package.Access.AVAILABLE,
     @ColumnInfo(name = "synced_at") val syncedAt: Instant? = null
 ) {
-    fun sharedFacts(): PackageSharedFacts = PackageSharedFacts(
+    fun sharedFacts(vocabulary: Vocabulary): PackageSharedFacts = PackageSharedFacts(
         name = name,
-        formId = formId,
+        form = formId?.let(vocabulary::storedForm),
         category = category,
         manufacturer = manufacturer,
         country = country,
@@ -76,8 +78,8 @@ fun Package.toStorageEntity(sync: PackageSyncState = PackageSyncState(id)): Pack
         nameSearch = facts.name.lowercase(),
         quantity = quantity.toStorageAmount(),
         quantitySort = quantity.toStorageSortKey(),
-        quantityUnitId = quantity.unitId,
-        formId = facts.formId,
+        quantityUnitId = quantity.unit.id,
+        formId = facts.form?.id,
         category = facts.category,
         manufacturer = facts.manufacturer,
         country = facts.country,

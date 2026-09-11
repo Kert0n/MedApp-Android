@@ -2,6 +2,7 @@ package com.kert0n.medapp.presentation.pack
 
 import com.kert0n.medapp.domain.pack.ExpiryDate
 import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.value.DosageForm
 import com.kert0n.medapp.presentation.value.MoneyPresentationDTO
 import com.kert0n.medapp.presentation.value.QuantityPresentationDTO
 import java.time.Instant
@@ -28,7 +29,7 @@ data class PackagePresentationDTO(
     val medKitId: Uuid,
     val name: String,
     val quantity: QuantityPresentationDTO,
-    val formId: Uuid?,
+    val form: DosageForm?,
     val category: String?,
     val manufacturer: String?,
     val country: String?,

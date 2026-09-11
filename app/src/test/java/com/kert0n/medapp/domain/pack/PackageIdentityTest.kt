@@ -45,14 +45,14 @@ class PackageIdentityTest {
         val built = Package(
             id = PACK,
             medKitId = HOME_KIT,
-            facts = PackageFacts(PackageSharedFacts(name = "Парацетамол", formId = TABLET_FORM)),
+            facts = PackageFacts(PackageSharedFacts(name = "Парацетамол", form = TABLET_FORM)),
             quantity = tablets("20"),
             addedAt = Instant.EPOCH
         )
         assertEquals(Package.Lifecycle.ACTIVE, built.lifecycle)
         assertEquals(Package.Access.AVAILABLE, built.access)
         assertEquals("Парацетамол", built.name)
-        assertEquals(TABLET_FORM, built.facts.formId)
+        assertEquals(TABLET_FORM, built.facts.form)
     }
 
     @Test(expected = IllegalArgumentException::class)
