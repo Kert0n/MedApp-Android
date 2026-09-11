@@ -30,9 +30,10 @@ import org.junit.Test
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.QuantityUnit
-import com.kert0n.medapp.network.pack.PackageSyncCommand
+import com.kert0n.medapp.queue.PreparedRequest
+import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncState
-import com.kert0n.medapp.network.pack.toPreparedRequest
+import com.kert0n.medapp.queue.pack.toPreparedRequest
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -102,6 +103,10 @@ class ContractProbe {
         )
 
         /** Успех, в том числе с `null` — пачка кончилась и уничтожена; отказ — провал пробы. */
+        /** Готовый запрос очереди — примитивами, как его и шлёт `QueueHttpTransport`. */
+        private suspend fun MedAppApi.send(request: PreparedRequest) =
+            send(request.method, request.path, request.query, request.body)
+
         private fun <T> success(result: ApiResult<T>): T = when (result) {
             is ApiResult.Success -> result.value
             is ApiResult.Failure -> throw AssertionError("ожидался успех: $result")
@@ -301,18 +306,18 @@ class ContractProbe {
         )
         val request = consume.toPreparedRequest(operationId, sync, confirmed = null, mine = null, at = Instant.EPOCH)
 
-        val body = requireNotNull(success(owner.send(request))) { "sync отвечает снимком" }
+        val body = requireNotNull(success(owner.send(request)).body.takeIf { it.isNotEmpty() }) { "sync отвечает снимком" }
         val snapshot = medAppJson.decodeFromString(PackageSnapshotNetworkDTO.serializer(), body)
         assertEquals("8.000000", snapshot.pack.amount)
         assertEquals("3.000000", snapshot.claims.mine)
         // Тот же замороженный запрос второй раз: сервер применил его один раз и отвечает тем же
         // снимком; 409 он отдаёт только другому телу под тем же номером.
         val repeated = medAppJson.decodeFromString(
-            PackageSnapshotNetworkDTO.serializer(), requireNotNull(success(owner.send(request)))
+            PackageSnapshotNetworkDTO.serializer(), success(owner.send(request)).body
         )
         assertEquals("8.000000", repeated.pack.amount)
         // Снятие брони и удаление — без тела.
-        assertNull(success(owner.send(PackageSyncCommand.ReleaseClaim(pack.id).toPreparedRequest(
+        assertEquals("", success(owner.send(PackageSyncCommand.ReleaseClaim(pack.id).toPreparedRequest(
             Uuid.random(), PackageSyncState(pack.id, snapshot.pack.version, snapshot.claims.version), null, null, Instant.EPOCH
         ))))
     }

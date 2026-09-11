@@ -2,7 +2,7 @@ package com.kert0n.medapp.queue
 
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.value.Quantity
-import com.kert0n.medapp.network.pack.PackageSyncCommand
+import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import kotlin.uuid.Uuid
 
 /**

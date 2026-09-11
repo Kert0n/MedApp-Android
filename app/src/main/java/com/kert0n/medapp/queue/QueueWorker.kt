@@ -1,10 +1,10 @@
 package com.kert0n.medapp.queue
 
-import com.kert0n.medapp.network.medkit.MedKitSyncCommand
+import com.kert0n.medapp.queue.medkit.MedKitSyncCommand
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
-import com.kert0n.medapp.network.pack.PackageSyncCommand
-import com.kert0n.medapp.network.pack.answersWithSnapshot
-import com.kert0n.medapp.network.pack.isSync
+import com.kert0n.medapp.queue.pack.PackageSyncCommand
+import com.kert0n.medapp.queue.pack.answersWithSnapshot
+import com.kert0n.medapp.queue.pack.isSync
 import com.kert0n.medapp.network.server.ApiFailure
 import com.kert0n.medapp.network.server.ApiResult
 import com.kert0n.medapp.network.server.medAppJson

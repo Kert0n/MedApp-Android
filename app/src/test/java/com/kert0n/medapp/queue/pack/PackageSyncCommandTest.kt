@@ -1,4 +1,4 @@
-package com.kert0n.medapp.network.pack
+package com.kert0n.medapp.queue.pack
 
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
 import com.kert0n.medapp.fixture.HOME_KIT

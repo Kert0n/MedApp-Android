@@ -32,7 +32,7 @@ import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.fixture.unplannedIntake
 import com.kert0n.medapp.network.intake.IntakeAccounting
 import com.kert0n.medapp.network.intake.IntakeSyncState
-import com.kert0n.medapp.network.pack.PackageSyncCommand
+import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.storage.course.ActivePackageAssignmentStorageEntity

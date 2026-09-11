@@ -12,9 +12,9 @@ import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
-import com.kert0n.medapp.network.pack.PackageSyncCommand
+import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncState
-import com.kert0n.medapp.network.pack.toPreparedRequest
+import com.kert0n.medapp.queue.pack.toPreparedRequest
 import com.kert0n.medapp.network.server.ApiFailure
 import com.kert0n.medapp.network.server.ApiResult
 import com.kert0n.medapp.network.server.MedAppApi

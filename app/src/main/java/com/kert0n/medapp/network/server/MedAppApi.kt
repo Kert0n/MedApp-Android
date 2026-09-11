@@ -23,7 +23,6 @@ import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
 import com.kert0n.medapp.network.pack.PackageSyncNetworkDTO
 import com.kert0n.medapp.network.template.PackageTemplateNetworkDTO
 import com.kert0n.medapp.network.value.VocabularyEntryNetworkDTO
-import com.kert0n.medapp.queue.PreparedRequest
 import io.ktor.client.HttpClient
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.basicAuth
@@ -202,23 +201,23 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
     // Очередь
 
     /**
-     * Замороженный запрос очереди как есть: метод, путь, параметры и тело собраны при первой
-     * отправке, и здесь они не пересобираются (PLAN E2). Успех — любой 2xx, тело отдаётся
-     * строкой: какая форма за ним стоит, знает та команда, что запрос готовила. Пустое тело —
-     * `null`: так отвечают 204 и уничтоженная пачка.
+     * Готовый изменяющий запрос как есть — примитивами: метод, путь, параметры и тело собрала
+     * очередь, и здесь они не пересобираются (PLAN E2). Успех — любой 2xx со статусом и телом
+     * строкой: какая форма за ним стоит и какой статус ожидался, знает та команда, что запрос
+     * готовила, — сеть про очередь не знает.
      */
-    suspend fun send(request: PreparedRequest): ApiResult<String?> = try {
-        val response = http.request(request.path) {
-            method = HttpMethod.parse(request.method)
-            request.query.forEach { (name, value) -> parameter(name, value) }
-            request.body?.let {
+    suspend fun send(method: String, path: String, query: Map<String, String>, body: String?): ApiResult<RawResponse> = try {
+        val response = http.request(path) {
+            this.method = HttpMethod.parse(method)
+            query.forEach { (name, value) -> parameter(name, value) }
+            body?.let {
                 contentType(ContentType.Application.Json)
                 setBody(it)
             }
         }
         when {
-            response.status.isSuccess() -> ApiResult.Success(response.bodyAsText().takeIf { it.isNotEmpty() })
-            else -> ApiResult.Failure(refusal(response, command = true, path = request.path))
+            response.status.isSuccess() -> ApiResult.Success(RawResponse(response.status.value, response.bodyAsText()))
+            else -> ApiResult.Failure(refusal(response, command = true, path = path))
         }
     } catch (cause: AccessTokenThrottled) {
         ApiResult.Failure(ApiFailure.TooManyRequests(cause.retryAfter))

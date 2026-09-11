@@ -313,25 +313,19 @@ class MedAppApiTest {
         )
     }
 
-    /** Замороженный запрос очереди уходит как есть: метод, путь, параметры и тело не пересобираются. */
+    /** Готовый запрос уходит как есть: метод, путь, параметры и тело не пересобираются. */
     @Test
     fun preparedRequestIsSentVerbatimAndAnsweredWithTheRawBody() = runTest {
         val api = api()
-        val request = com.kert0n.medapp.queue.PreparedRequest(
-            method = "PUT",
-            path = "/v1/med-kits/$otherKit/drugs/$pack",
-            query = mapOf("version" to "3"),
-            preparedAt = java.time.Instant.EPOCH
-        )
-        val result = api.send(request)
-        assertTrue("$result", result is ApiResult.Success && result.value!!.contains("\"version\":3"))
+        val result = api.send("PUT", "/v1/med-kits/$otherKit/drugs/$pack", mapOf("version" to "3"), body = null)
+        assertTrue("$result", result is ApiResult.Success && result.value.body.contains("\"version\":3"))
         assertEquals("PUT /v1/med-kits/$otherKit/drugs/$pack?version=3", requests.single())
 
-        val empty = api.send(com.kert0n.medapp.queue.PreparedRequest("DELETE", "/v1/drugs/$pack", preparedAt = java.time.Instant.EPOCH))
-        assertEquals(ApiResult.Success(null), empty)
+        val empty = api.send("DELETE", "/v1/drugs/$pack", emptyMap(), body = null)
+        assertEquals(ApiResult.Success(RawResponse(204, "")), empty)
 
         val refused = api { HttpStatusCode.PreconditionFailed to "" }
-            .send(com.kert0n.medapp.queue.PreparedRequest("DELETE", "/v1/drugs/$pack", preparedAt = java.time.Instant.EPOCH))
+            .send("DELETE", "/v1/drugs/$pack", emptyMap(), body = null)
         assertEquals(ApiResult.Failure(ApiFailure.PreconditionFailed), refused)
     }
 }

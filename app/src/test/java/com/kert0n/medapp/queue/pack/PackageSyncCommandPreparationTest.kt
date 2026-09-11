@@ -1,4 +1,4 @@
-package com.kert0n.medapp.network.pack
+package com.kert0n.medapp.queue.pack
 
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
 import com.kert0n.medapp.fixture.EARLIER
@@ -9,6 +9,7 @@ import com.kert0n.medapp.fixture.SHARED_KIT
 import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.tablets
+import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.network.server.ResourceVersion
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

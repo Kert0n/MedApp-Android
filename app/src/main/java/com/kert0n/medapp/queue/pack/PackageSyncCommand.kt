@@ -1,4 +1,4 @@
-package com.kert0n.medapp.network.pack
+package com.kert0n.medapp.queue.pack
 
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
 import com.kert0n.medapp.domain.value.Dose
@@ -70,7 +70,7 @@ sealed interface PackageSyncCommand : SyncCommand {
      * Пересчитали и увидели столько.
      *
      * **Абсолютное значение, а не дельта** (PLAN E1): проекция заменяет остаток, а не вычитает.
-     * Ноль допустим и переводится в DELETE сетевым маппером — это его дело, а не смысл команды.
+     * Ноль допустим и становится `DELETE` при подготовке запроса — это форма провода, а не смысл команды (B6).
      */
     data class CorrectStock(
         override val packageId: Uuid,

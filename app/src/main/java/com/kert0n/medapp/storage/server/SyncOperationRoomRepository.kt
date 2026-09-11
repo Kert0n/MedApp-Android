@@ -2,12 +2,12 @@ package com.kert0n.medapp.storage.server
 
 import androidx.room.withTransaction
 import com.kert0n.medapp.domain.value.Quantity
-import com.kert0n.medapp.network.medkit.MedKitSyncCommand
-import com.kert0n.medapp.network.pack.PackageSyncCommand
+import com.kert0n.medapp.queue.medkit.MedKitSyncCommand
+import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.network.pack.toDomain
-import com.kert0n.medapp.network.pack.toPreparedRequest
-import com.kert0n.medapp.network.medkit.toPreparedRequest as toMedKitPreparedRequest
+import com.kert0n.medapp.queue.pack.toPreparedRequest
+import com.kert0n.medapp.queue.medkit.toPreparedRequest as toMedKitPreparedRequest
 import com.kert0n.medapp.queue.Delivery
 import com.kert0n.medapp.queue.QueueStorage
 import com.kert0n.medapp.queue.QueuedCommand

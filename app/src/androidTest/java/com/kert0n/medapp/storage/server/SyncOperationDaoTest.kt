@@ -11,8 +11,8 @@ import com.kert0n.medapp.fixture.inMemoryDatabase
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.rejectedByDatabase
 import com.kert0n.medapp.fixture.tablets
-import com.kert0n.medapp.network.medkit.MedKitSyncCommand
-import com.kert0n.medapp.network.pack.PackageSyncCommand
+import com.kert0n.medapp.queue.medkit.MedKitSyncCommand
+import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import com.kert0n.medapp.queue.PreparedRequest
 import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.queue.SyncOperation

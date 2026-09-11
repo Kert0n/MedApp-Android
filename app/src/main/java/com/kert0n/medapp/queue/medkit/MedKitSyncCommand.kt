@@ -1,4 +1,4 @@
-package com.kert0n.medapp.network.medkit
+package com.kert0n.medapp.queue.medkit
 
 import com.kert0n.medapp.queue.SyncCommand
 import kotlin.uuid.Uuid

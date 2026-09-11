@@ -5,7 +5,7 @@ import com.kert0n.medapp.BuildConfig
 import com.kert0n.medapp.network.account.AccessTokens
 import io.ktor.client.plugins.logging.Logger
 import com.kert0n.medapp.network.server.MedAppApi
-import com.kert0n.medapp.network.server.QueueHttpTransport
+import com.kert0n.medapp.queue.QueueHttpTransport
 import com.kert0n.medapp.network.server.crptHttpClient
 import com.kert0n.medapp.network.server.medAppHttpClient
 import com.kert0n.medapp.queue.QueueTransport

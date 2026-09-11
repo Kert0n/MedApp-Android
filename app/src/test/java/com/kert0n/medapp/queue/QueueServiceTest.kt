@@ -6,7 +6,7 @@ import com.kert0n.medapp.fixture.INTAKE
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.medKit
-import com.kert0n.medapp.network.pack.PackageSyncCommand
+import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import java.time.Instant
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.test.runTest
