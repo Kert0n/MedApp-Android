@@ -91,4 +91,11 @@ interface IntakeDao {
 
     @Query("DELETE FROM intakes WHERE id = :id")
     suspend fun delete(id: Uuid)
+
+    @Query("SELECT * FROM intakes WHERE course_id = :courseId AND status = 'PLANNED'")
+    suspend fun plannedOf(courseId: Uuid): List<IntakeStorageEntity>
+
+    /** Убираются только плановые: условие в запросе, а не в вызывающем, — факт не удалится и по ошибке. */
+    @Query("DELETE FROM intakes WHERE id IN (:ids) AND status = 'PLANNED'")
+    suspend fun deletePlanned(ids: List<Uuid>): Int
 }

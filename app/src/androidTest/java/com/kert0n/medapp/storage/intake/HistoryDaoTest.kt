@@ -39,6 +39,8 @@ import org.junit.Test
 import com.kert0n.medapp.fixture.VOCABULARY
 import com.kert0n.medapp.fixture.TABLETS_ID
 import com.kert0n.medapp.fixture.medKit
+import com.kert0n.medapp.fixture.intakeRepository
+import com.kert0n.medapp.fixture.FIRST_SCHEDULED_ON
 
 /**
  * История не удаляется вместе с упаковкой: приёмы и движения держат её ключами `RESTRICT`,
@@ -88,6 +90,25 @@ class HistoryDaoTest {
         val inserted = intakes.insertPlannedIfMissing(listOf(again))
 
         assertEquals(listOf(-1L), inserted)
+        assertNotNull(intakes.find(INTAKE))
+        assertEquals(null, intakes.find(OTHER_INTAKE))
+    }
+
+    /**
+     * Поздний ответ вернул конец лечения назад — последний материализованный пункт стал лишним.
+     * Убирается только плановое: факт остаётся, даже если его пункта нет среди оставшихся.
+     */
+    @Test
+    fun pruningRemovesOnlyThePlannedSlotsOutsideTheRemainingOnes() = runTest {
+        val repository = database.intakeRepository()
+        val taken = plannedIntake().confirm(pack().take(dose("2"), LATER).getOrThrow())
+        val extra = plannedIntake(id = OTHER_INTAKE, scheduledOn = FIRST_SCHEDULED_ON.plusDays(7))
+        intakes.upsert(taken.toStorageEntity())
+        intakes.upsert(extra.toStorageEntity())
+
+        val pruned = repository.prunePlanned(COURSE, keep = emptySet())
+
+        assertEquals(1, pruned)
         assertNotNull(intakes.find(INTAKE))
         assertEquals(null, intakes.find(OTHER_INTAKE))
     }
