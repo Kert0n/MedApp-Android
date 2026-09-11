@@ -72,7 +72,7 @@ interface SyncOperationDao {
     @Transaction
     @Query(
         "SELECT * FROM sync_operations WHERE package_id = :packageId " +
-            "AND status NOT IN ('DONE', 'ACCESS_LOST') " +
+            "AND status NOT IN ('APPLIED', 'REFUSED', 'ACCESS_LOST') " +
             "ORDER BY sequence"
     )
     suspend fun unclosedOfPackage(packageId: Uuid): List<SyncOperationStorageRow>
@@ -82,15 +82,16 @@ interface SyncOperationDao {
     suspend fun withStatus(status: SyncOperationStatus): List<SyncOperationStorageRow>
 
     /**
-     * Готовые к отправке: ожидающие и отправлявшиеся в момент смерти процесса, у которых нет
-     * незакрытой зависимости. Порядок — номер очереди; кто ещё не готов, ждёт своей зависимости.
+     * Готовые к отправке: ожидающие и отправлявшиеся в момент смерти процесса, у которых каждая
+     * зависимость **применена** — зависимость значит «нужен эффект», и закрытая отказом её не
+     * даёт. Порядок — номер очереди; кто ещё не готов, ждёт своей зависимости.
      */
     @Transaction
     @Query(
         "SELECT * FROM sync_operations o WHERE status IN ('PENDING', 'SENDING') " +
             "AND NOT EXISTS (" +
             "  SELECT 1 FROM sync_operation_dependencies d JOIN sync_operations p ON p.id = d.depends_on_id " +
-            "  WHERE d.operation_id = o.id AND p.status NOT IN ('DONE', 'ACCESS_LOST')" +
+            "  WHERE d.operation_id = o.id AND p.status != 'APPLIED'" +
             ") ORDER BY sequence"
     )
     suspend fun ready(): List<SyncOperationStorageRow>
@@ -132,6 +133,30 @@ interface SyncOperationDao {
         at: Instant? = null,
         attempted: Int = 0
     )
+
+    /**
+     * Сбрасывает собранный запрос: версия устарела, и он готовится заново по свежему состоянию
+     * под тем же номером. Не попытка — задержка от этого не растёт.
+     */
+    @Query(
+        "UPDATE sync_operations SET status = 'PENDING', last_error = :lastError, last_tried_at = :at, " +
+            "prepared_method = NULL, prepared_path = NULL, prepared_query = NULL, prepared_body = NULL, " +
+            "prepared_drug_version = NULL, prepared_claims_version = NULL, prepared_quantity_before = NULL, " +
+            "prepared_mine_before = NULL, prepared_unit_id = NULL, prepared_at = NULL " +
+            "WHERE id = :id AND status = 'SENDING'"
+    )
+    suspend fun reprepare(id: Uuid, lastError: String, at: Instant): Int
+
+    /**
+     * Незакрытые операции, которым нужен эффект [dependsOn], закрываются тем же статусом: отказ
+     * родителя отказывает зависимым, утрата доступа — теряет их. Возвращает их номера, чтобы
+     * каскад дошёл и до их зависимых.
+     */
+    @Query(
+        "SELECT operation_id FROM sync_operation_dependencies d JOIN sync_operations o ON o.id = d.operation_id " +
+            "WHERE d.depends_on_id = :dependsOn AND o.status IN ('PENDING', 'SENDING')"
+    )
+    suspend fun unclosedDependentsOf(dependsOn: Uuid): List<Uuid>
 
     @Query("SELECT depends_on_id FROM sync_operation_dependencies WHERE operation_id = :id")
     suspend fun dependenciesOf(id: Uuid): List<Uuid>

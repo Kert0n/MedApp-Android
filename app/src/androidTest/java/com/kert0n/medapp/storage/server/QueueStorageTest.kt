@@ -23,6 +23,7 @@ import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.network.server.medAppJson
 import com.kert0n.medapp.queue.Delivery
 import com.kert0n.medapp.queue.PackageState
+import com.kert0n.medapp.queue.RefusalReason
 import com.kert0n.medapp.queue.StoredSyncOperation
 import com.kert0n.medapp.queue.SyncOperationStatus
 import com.kert0n.medapp.storage.database.MedAppDatabase
@@ -134,7 +135,7 @@ class QueueStorageTest {
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
         storage.take(operation, null, at)
 
-        storage.settle(operation, Delivery.Done(PackageState.Present(snapshot)), at.plusSeconds(1))
+        storage.settle(operation, Delivery.Applied(PackageState.Present(snapshot)), at.plusSeconds(1))
 
         val row = requireNotNull(database.packages().find(PACK))
         val pkg = row.toDomain(VOCABULARY)
@@ -143,7 +144,7 @@ class QueueStorageTest {
         assertEquals(ResourceVersion(2), row.pack.syncState().claimsVersion)
         assertNotNull(pkg.claims)
         val stored = requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable
-        assertEquals(SyncOperationStatus.DONE, stored.operation.status)
+        assertEquals(SyncOperationStatus.APPLIED, stored.operation.status)
         assertEquals(1, stored.operation.attempts)
         assertEquals(IntakeAccounting.REMOTE_APPLIED, requireNotNull(database.intakes().findEntity(INTAKE)).accounting)
         assertEquals(IntakeStatus.TAKEN, requireNotNull(database.intakes().findEntity(INTAKE)).status)
@@ -168,7 +169,7 @@ class QueueStorageTest {
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("20"), INTAKE), at)
         storage.take(operation, null, at)
 
-        storage.settle(operation, Delivery.Done(PackageState.Gone), at.plusSeconds(1))
+        storage.settle(operation, Delivery.Applied(PackageState.Gone), at.plusSeconds(1))
 
         val pkg = requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY)
         assertEquals(tablets("0"), pkg.quantity)
@@ -196,7 +197,52 @@ class QueueStorageTest {
 
         assertEquals(listOf(operation), storage.ready().map { it.id })
         storage.take(operation, null, at)
-        storage.settle(operation, Delivery.Done(PackageState.Present(snapshot)), at)
+        storage.settle(operation, Delivery.Applied(PackageState.Present(snapshot)), at)
         assertEquals(listOf(release), storage.ready().map { it.id })
+    }
+
+    /** «Устарело» — не закрытие: снимок ложится, запрос сбрасывается, операция снова ждёт под тем же номером. */
+    @Test
+    fun staleAppliesTheSnapshotDropsTheRequestAndLeavesTheOperationPending() = runTest {
+        database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
+        val frozen = requireNotNull(storage.take(operation, null, at)).prepared
+
+        storage.settle(operation, Delivery.Stale(snapshot), at.plusSeconds(1))
+
+        val stored = requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable
+        assertEquals(SyncOperationStatus.PENDING, stored.operation.status)
+        assertNull(stored.operation.prepared)
+        assertEquals(0, stored.operation.attempts)
+        assertEquals(tablets("17"), requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY).quantity)
+        // Заново — уже по свежему состоянию, а не по прежнему запросу.
+        val again = requireNotNull(storage.take(operation, null, at.plusSeconds(2))).prepared
+        assertEquals(ResourceVersion(4), again!!.drugVersion)
+        assertEquals(ResourceVersion(3), frozen!!.drugVersion)
+    }
+
+    /** Отказ родителя отказывает зависимых: им нужен был эффект, которого не будет; расход виден как непринятый. */
+    @Test
+    fun refusalCascadesToDependentsAndMarksTheIntakeRefused() = runTest {
+        val release = Uuid.parse("00000000-0000-4000-8000-000000000092")
+        database.intakes().upsert(
+            unplannedIntake(takenAmount = dose("3")).toIntakeStorageEntity(
+                IntakeSyncState(INTAKE, IntakeAccounting.PENDING, operationId = operation)
+            )
+        )
+        database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE, claimAfter = tablets("0")), at)
+        database.syncOperations().enqueue(release, PackageSyncCommand.ReleaseClaim(PACK), at, dependsOn = setOf(operation))
+        storage.take(operation, null, at)
+
+        storage.settle(operation, Delivery.Refused(RefusalReason.INSUFFICIENT, PackageState.Present(snapshot)), at.plusSeconds(1))
+
+        val refused = requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable
+        val dependent = requireNotNull(database.syncOperations().find(release)).toDomain(VOCABULARY) as StoredSyncOperation.Readable
+        assertEquals(SyncOperationStatus.REFUSED, refused.operation.status)
+        assertEquals("INSUFFICIENT", refused.operation.lastError)
+        assertEquals(SyncOperationStatus.REFUSED, dependent.operation.status)
+        assertEquals("SUPERSEDED", dependent.operation.lastError)
+        assertEquals(IntakeAccounting.REMOTE_REFUSED, requireNotNull(database.intakes().findEntity(INTAKE)).accounting)
+        assertEquals(tablets("17"), requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY).quantity)
+        assertTrue(storage.ready().isEmpty())
     }
 }

@@ -7,7 +7,6 @@ import com.kert0n.medapp.network.server.ApiResult
 import com.kert0n.medapp.network.value.VocabularyResolver
 import com.kert0n.medapp.queue.medkit.MedKitSyncCommand
 import com.kert0n.medapp.queue.pack.PackageSyncCommand
-import com.kert0n.medapp.queue.pack.isSync
 import java.time.Clock
 import java.time.Instant
 import javax.inject.Inject
@@ -38,7 +37,20 @@ class QueueWorker @Inject constructor(
     private val clock: Clock
 ) {
 
-    suspend fun drain(): Report = pass(vocabularyRefreshable = true)
+    /**
+     * Проход повторяется, пока предыдущий переподготовил хоть одну операцию: она снова ждёт и
+     * должна уйти сейчас, а не при следующем вызове. Предел повторов — защита от сервера,
+     * отвергающего свежую версию раз за разом: дальше операция ждёт по обычной задержке.
+     */
+    suspend fun drain(): Report {
+        var report = pass(vocabularyRefreshable = true)
+        var rounds = 1
+        while (report.reprepared > 0 && rounds < MAX_REPREPARE_ROUNDS) {
+            report = report + pass(vocabularyRefreshable = false)
+            rounds++
+        }
+        return report
+    }
 
     /**
      * Один проход по готовым операциям. Промах словаря дочитывается один раз, и проход начинается
@@ -48,6 +60,7 @@ class QueueWorker @Inject constructor(
     private suspend fun pass(vocabularyRefreshable: Boolean): Report {
         val now = clock.instant()
         var sent = 0
+        var reprepared = 0
         val skipped = ArrayList<StoredSyncOperation.Unreadable>()
         var retryAt: Instant? = null
         val heldPackages = HashSet<Uuid>()
@@ -85,7 +98,7 @@ class QueueWorker @Inject constructor(
                             heldPackages += packageId
                             retryAt = earliest(retryAt, clock.instant().plus(backoff(operation.attempts + 1).toJavaDuration()))
                         }
-                        if (read.stop) return Report(sent, skipped, retryAt)
+                        if (read.stop) return Report(sent, skipped, retryAt, reprepared)
                         continue
                     }
                 }
@@ -98,21 +111,28 @@ class QueueWorker @Inject constructor(
             when (val step = deliver(taken, request)) {
                 is Step.Settled -> {
                     storage.settle(taken.id, step.delivery, clock.instant())
-                    if (step.delivery is Delivery.Retry) {
-                        // Следующая команда той же пачки везёт предусловие, которое эта ещё не
-                        // сдвинула: в этом проходе пачка дальше не трогается.
-                        packageId?.let(heldPackages::add)
-                        val wait = step.retryAfter ?: backoff(attempts = taken.attempts + 1)
-                        retryAt = earliest(retryAt, clock.instant().plus(wait.toJavaDuration()))
-                    } else {
-                        sent++
+                    when (step.delivery) {
+                        is Delivery.Retry -> {
+                            // Следующая команда той же пачки везёт предусловие, которое эта ещё
+                            // не сдвинула: в этом проходе пачка дальше не трогается.
+                            packageId?.let(heldPackages::add)
+                            val wait = step.retryAfter ?: backoff(attempts = taken.attempts + 1)
+                            retryAt = earliest(retryAt, clock.instant().plus(wait.toJavaDuration()))
+                        }
+                        is Delivery.Stale -> {
+                            // Операция снова первая по своей пачке и уйдёт следующим проходом;
+                            // остальные её команды ждут её, как ждали.
+                            packageId?.let(heldPackages::add)
+                            reprepared++
+                        }
+                        is Delivery.Applied, is Delivery.Refused, Delivery.AccessLost -> sent++
                     }
-                    if (step.stop) return Report(sent, skipped, retryAt)
+                    if (step.stop) return Report(sent, skipped, retryAt, reprepared)
                 }
-                Step.Unauthorized -> return Report(sent, skipped, retryAt)
+                Step.Unauthorized -> return Report(sent, skipped, retryAt, reprepared)
             }
         }
-        return Report(sent, skipped, retryAt)
+        return Report(sent, skipped, retryAt, reprepared)
     }
 
     /**
@@ -146,10 +166,12 @@ class QueueWorker @Inject constructor(
         return when (val result = transport.send(request, command.expects)) {
             is ApiResult.Success -> Step.Settled(done(command, result.value))
             is ApiResult.Failure -> when (val failure = result.failure) {
-                ApiFailure.Conflict, ApiFailure.PreconditionFailed, ApiFailure.PreconditionRequired,
-                is ApiFailure.Invalid ->
-                    // Отказ по предусловию или уже применённый `sync`: истина на сервере, читаем её.
-                    Step.Settled(refused(command, failure))
+                ApiFailure.Conflict, ApiFailure.PreconditionFailed ->
+                    // Версия устарела: сервер отверг запрос до применения. Что делать дальше,
+                    // знает команда; истина в любом случае читается.
+                    Step.Settled(stale(command, request))
+                ApiFailure.PreconditionRequired, is ApiFailure.Invalid ->
+                    Step.Settled(refused(command, RefusalReason.INVALID))
                 ApiFailure.NotFound -> Step.Settled(Delivery.AccessLost)
                 ApiFailure.Unauthorized, ApiFailure.RegistrationRefused -> Step.Unauthorized
                 is ApiFailure.TooManyRequests ->
@@ -168,34 +190,49 @@ class QueueWorker @Inject constructor(
      */
     private suspend fun done(command: SyncCommand, answer: QueueAnswer): Delivery = when (command) {
         is PackageSyncCommand -> when (answer) {
-            is QueueAnswer.Snapshot -> Delivery.Done(PackageState.Present(answer.snapshot))
-            QueueAnswer.Gone -> Delivery.Done(PackageState.Gone)
+            is QueueAnswer.Snapshot -> Delivery.Applied(PackageState.Present(answer.snapshot))
+            QueueAnswer.Gone -> Delivery.Applied(PackageState.Gone)
             is QueueAnswer.Claim, QueueAnswer.Nothing ->
                 if (command is PackageSyncCommand.Delete || (command is PackageSyncCommand.CorrectStock && command.actual.isZero)) {
-                    Delivery.Done(PackageState.Gone)
+                    Delivery.Applied(PackageState.Gone)
                 } else {
-                    snapshotRead(command.packageId, refusal = null)
+                    snapshotRead(command.packageId) { Delivery.Applied(PackageState.Present(it)) }
                 }
         }
-        is MedKitSyncCommand -> Delivery.Done(PackageState.None)
+        is MedKitSyncCommand -> Delivery.Applied(PackageState.None)
         else -> command.unknownRoot()
     }
 
     /**
-     * Отказ сервера закрывает операцию: повторять её нечем и незачем. Что теперь правда, говорит
-     * снимок; для `sync` 409 — штатный исход «уже применено» (PLAN B4).
+     * Версия устарела — сервер отверг запрос до применения, в журнал он не попал. Расход и бронь
+     * готовятся заново по свежему состоянию под тем же номером; описание, пересчёт, перенос и
+     * удаление перекрыты чужой правкой — отказ, человек смотрит заново (PLAN E3). У курсового
+     * расхода прежде смотрится бронь: потерянный ответ, за которым пришёл отказ по версии,
+     * оставляет след в `mine`, и тогда расход применён.
      */
-    private suspend fun refused(command: SyncCommand, failure: ApiFailure): Delivery = when (command) {
-        is PackageSyncCommand -> {
-            val refusal = if (command.isSync && failure == ApiFailure.Conflict) null else failure.toString()
-            snapshotRead(command.packageId, refusal)
+    private suspend fun stale(command: SyncCommand, request: PreparedRequest): Delivery = when (command) {
+        is PackageSyncCommand -> snapshotRead(command.packageId) { snapshot ->
+            when {
+                command is PackageSyncCommand.Consume && command.provenAppliedBy(snapshot, request) ->
+                    Delivery.Applied(PackageState.Present(snapshot))
+                command.onStale == StalePolicy.REPREPARE -> Delivery.Stale(snapshot)
+                else -> Delivery.Refused(RefusalReason.STALE, PackageState.Present(snapshot))
+            }
         }
-        else -> Delivery.Done(PackageState.None, refusal = failure.toString())
+        is MedKitSyncCommand -> Delivery.Refused(RefusalReason.STALE, PackageState.None)
+        else -> command.unknownRoot()
     }
 
-    private suspend fun snapshotRead(packageId: Uuid, refusal: String?): Delivery =
+    /** Отказ по вводу закрывает операцию: повторять нечем и незачем. Что теперь правда, говорит снимок. */
+    private suspend fun refused(command: SyncCommand, reason: RefusalReason): Delivery = when (command) {
+        is PackageSyncCommand -> snapshotRead(command.packageId) { Delivery.Refused(reason, PackageState.Present(it)) }
+        else -> Delivery.Refused(reason, PackageState.None)
+    }
+
+    /** Истина по пачке, прочитанная следом; пачки нет — доступа нет, что бы ни значил ответ до того. */
+    private suspend fun snapshotRead(packageId: Uuid, then: (PackageSnapshotNetworkDTO) -> Delivery): Delivery =
         when (val read = transport.packageSnapshot(packageId)) {
-            is ApiResult.Success -> Delivery.Done(PackageState.Present(read.value), refusal)
+            is ApiResult.Success -> then(read.value)
             is ApiResult.Failure -> when (read.failure) {
                 ApiFailure.NotFound -> Delivery.AccessLost
                 else -> Delivery.Retry("снимок не прочитан: ${read.failure}")
@@ -224,10 +261,20 @@ class QueueWorker @Inject constructor(
     data class Report(
         val settled: Int,
         val skipped: List<StoredSyncOperation.Unreadable>,
-        val retryAt: Instant?
-    )
+        val retryAt: Instant?,
+        val reprepared: Int = 0
+    ) {
+        /** Итог нескольких проходов подряд: закрытое складывается, срок — ближайший из названных. */
+        operator fun plus(next: Report): Report = Report(
+            settled = settled + next.settled,
+            skipped = skipped + next.skipped,
+            retryAt = listOfNotNull(retryAt, next.retryAt).minOrNull(),
+            reprepared = next.reprepared
+        )
+    }
 
     private companion object {
+        const val MAX_REPREPARE_ROUNDS = 3
         val INITIAL_BACKOFF: Duration = 2.seconds
         val MAX_BACKOFF: Duration = 5.minutes
         const val MAX_BACKOFF_STEPS = 8

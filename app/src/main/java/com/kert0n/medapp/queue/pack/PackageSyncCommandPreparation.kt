@@ -146,10 +146,6 @@ fun PackageSyncCommand.toPreparedRequest(
     }
 }
 
-/** Курсовой расход едет `sync` под своим номером: повтор сервер применит один раз (PLAN B4). */
-val PackageSyncCommand.isSync: Boolean
-    get() = this is PackageSyncCommand.Consume && claimAfter != null
-
 private fun prepared(
     method: String,
     path: String,

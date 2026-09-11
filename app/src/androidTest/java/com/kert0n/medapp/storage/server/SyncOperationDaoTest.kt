@@ -198,7 +198,7 @@ class SyncOperationDaoTest {
     fun unclosedOperationsExcludeTheSettledOnes() = runTest {
         queue.enqueue(first, PackageSyncCommand.CorrectStock(PACK, tablets("10")), createdAt)
         queue.enqueue(second, PackageSyncCommand.Consume(PACK, dose("1"), INTAKE), createdAt)
-        queue.settle(first, SyncOperationStatus.DONE)
+        queue.settle(first, SyncOperationStatus.APPLIED)
 
         val unclosed = queue.unclosedOfPackage(PACK)
         assertEquals(listOf(second), unclosed.map { it.operation.id })

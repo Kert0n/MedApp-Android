@@ -3,7 +3,11 @@ package com.kert0n.medapp.queue.pack
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
 import com.kert0n.medapp.queue.Expected
+import com.kert0n.medapp.queue.PreparedRequest
+import com.kert0n.medapp.queue.StalePolicy
+import java.math.BigDecimal
 import com.kert0n.medapp.queue.SyncCommand
 import kotlin.uuid.Uuid
 
@@ -28,6 +32,17 @@ sealed interface PackageSyncCommand : SyncCommand {
         is Delete -> Quantity.zero(amount.unit)
         is Create, is Describe, is Move, is SetClaim, is ReleaseClaim -> null
     }
+
+    /**
+     * Устаревшая версия: расход и бронь готовятся заново — дельту и абсолютное решение владельца
+     * чужое изменение не отменяет; остальное чужая правка перекрывает, и человек смотрит заново.
+     * Создание версии не везёт: 409 у него — «уже есть», и это не устаревание.
+     */
+    val onStale: StalePolicy
+        get() = when (this) {
+            is Consume, is SetClaim, is ReleaseClaim -> StalePolicy.REPREPARE
+            is Create, is Describe, is CorrectStock, is Move, is Delete -> StalePolicy.REFUSE
+        }
 
     /**
      * Форма успешного ответа по контракту операции (PLAN B4, B5): создание, правка и перенос
@@ -132,6 +147,21 @@ sealed interface PackageSyncCommand : SyncCommand {
             require(claimAfter == null || claimAfter.unit == amount.unit) {
                 "бронь измеряется той же единицей, что расход"
             }
+        }
+
+        /**
+         * Применился ли этот расход, судя по броням: `sync` пишет расход и бронь одной
+         * транзакцией, и своя бронь, равная заявленной после расхода и не равной той, что была
+         * до запроса, — след применения. Так потерянный ответ, за которым пришёл отказ по
+         * версии, отличается от расхода, который сервер не видел (решение владельца, PLAN E3).
+         * Без блока брони или при броне, которую расход не менял, судить нечем — `false`.
+         */
+        fun provenAppliedBy(snapshot: PackageSnapshotNetworkDTO, prepared: PreparedRequest): Boolean {
+            val wanted = claimAfter?.takeUnless { it.isZero } ?: return false
+            val before = prepared.mineBefore ?: return false
+            if (before.amount.compareTo(wanted.amount) == 0) return false
+            val mine = snapshot.claims.mine ?: return false
+            return BigDecimal(mine).compareTo(wanted.amount) == 0
         }
     }
 

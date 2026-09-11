@@ -14,6 +14,7 @@ import com.kert0n.medapp.queue.Delivery
 import com.kert0n.medapp.queue.PackageState
 import com.kert0n.medapp.queue.QueueStorage
 import com.kert0n.medapp.queue.QueuedCommand
+import com.kert0n.medapp.queue.RefusalReason
 import com.kert0n.medapp.queue.StoredSyncOperation
 import com.kert0n.medapp.queue.SyncCommand
 import com.kert0n.medapp.queue.SyncOperation
@@ -96,9 +97,7 @@ class SyncOperationRoomRepository @Inject constructor(
         val stored = queue.find(id)?.toDomain(words) as? StoredSyncOperation.Readable
             ?: return@withTransaction null
         val operation = stored.operation
-        if (operation.status == SyncOperationStatus.DONE || operation.status == SyncOperationStatus.ACCESS_LOST) {
-            return@withTransaction null
-        }
+        if (operation.status.isClosed) return@withTransaction null
         fresh?.let { apply(it, words, at) }
         if (operation.prepared == null) {
             val request = when (val command = operation.command) {
@@ -151,42 +150,76 @@ class SyncOperationRoomRepository @Inject constructor(
 
     /**
      * Исход и его следствия одной транзакцией: статус операции, снимок пачки поверх подтверждённого
-     * остатка и броней, учёт расхода у приёма, который эту операцию поставил (PLAN E1, F5).
+     * остатка и броней, учёт расхода у приёма, который эту операцию поставил, и судьба зависимых
+     * (PLAN E1, E3, F5). «Устарело» операцию не закрывает: снимок ложится, запрос сбрасывается,
+     * и она снова ждёт.
      */
     override suspend fun settle(id: Uuid, outcome: Delivery, at: Instant) = database.withTransaction {
         val words = vocabulary.snapshot()
         val operation = (queue.find(id)?.toDomain(words) as? StoredSyncOperation.Readable)?.operation
             ?: return@withTransaction
+        val command = operation.command as? PackageSyncCommand
         when (outcome) {
-            is Delivery.Done -> {
-                queue.settle(id, SyncOperationStatus.DONE, outcome.refusal, at, attempted = 1)
+            is Delivery.Applied -> {
+                queue.settle(id, SyncOperationStatus.APPLIED, null, at, attempted = 1)
                 intakes.markRemoteApplied(id)
-                val command = operation.command as? PackageSyncCommand ?: return@withTransaction
-                when (val state = outcome.state) {
-                    is PackageState.Present -> apply(state.snapshot, words, at)
-                    PackageState.Gone -> {
-                        // Пачки на сервере больше нет: истина — ноль, и локально она архивируется.
-                        val row = packages.find(command.packageId) ?: return@withTransaction
-                        val pkg = row.toDomain(words)
-                        if (pkg.suppliesStock) {
-                            val gone = pkg.correctTo(Quantity.zero(pkg.quantity.unit))
-                            packages.save(gone.toStorageEntity(row.pack.syncState()), gone.toDetailsStorageEntity())
-                        }
-                        packages.deleteClaims(command.packageId)
-                    }
-                    PackageState.None -> Unit
-                }
+                command?.let { apply(outcome.state, it, words, at) }
+            }
+            is Delivery.Stale -> {
+                queue.reprepare(id, lastError = "устарело: ${outcome.snapshot.pack.version}", at = at)
+                apply(outcome.snapshot, words, at)
+            }
+            is Delivery.Refused -> {
+                queue.settle(id, SyncOperationStatus.REFUSED, outcome.reason.name, at, attempted = 1)
+                intakes.markRemoteRefused(id)
+                command?.let { apply(outcome.state, it, words, at) }
+                cascade(id, SyncOperationStatus.REFUSED)
             }
             is Delivery.Retry ->
                 queue.settle(id, SyncOperationStatus.PENDING, outcome.error, at, attempted = 1)
             Delivery.AccessLost -> {
                 queue.settle(id, SyncOperationStatus.ACCESS_LOST, null, at, attempted = 1)
-                (operation.command as? PackageSyncCommand)?.let { command ->
-                    val row = packages.find(command.packageId) ?: return@withTransaction
+                intakes.markRemoteRefused(id)
+                command?.let {
+                    val row = packages.find(it.packageId) ?: return@let
                     val lost = row.toDomain(words).loseAccess()
                     packages.save(lost.toStorageEntity(row.pack.syncState()), lost.toDetailsStorageEntity())
-                    packages.deleteClaims(command.packageId)
+                    packages.deleteClaims(it.packageId)
                 }
+                cascade(id, SyncOperationStatus.ACCESS_LOST)
+            }
+        }
+    }
+
+    /** Истина по пачке после закрытия — снимок, «пачки нет» либо ничего. */
+    private suspend fun apply(state: PackageState, command: PackageSyncCommand, words: Vocabulary, at: Instant) {
+        when (state) {
+            is PackageState.Present -> apply(state.snapshot, words, at)
+            PackageState.Gone -> {
+                // Пачки на сервере больше нет: истина — ноль, и локально она архивируется.
+                val row = packages.find(command.packageId) ?: return
+                val pkg = row.toDomain(words)
+                if (pkg.suppliesStock) {
+                    val gone = pkg.correctTo(Quantity.zero(pkg.quantity.unit))
+                    packages.save(gone.toStorageEntity(row.pack.syncState()), gone.toDetailsStorageEntity())
+                }
+                packages.deleteClaims(command.packageId)
+            }
+            PackageState.None -> Unit
+        }
+    }
+
+    /**
+     * Зависимость значит «нужен эффект»: операции, которым нужен был эффект закрытой отказом или
+     * потерей доступа, закрываются тем же статусом — и их зависимые следом.
+     */
+    private suspend fun cascade(id: Uuid, status: SyncOperationStatus) {
+        val pending = ArrayDeque(listOf(id))
+        while (pending.isNotEmpty()) {
+            for (dependent in queue.unclosedDependentsOf(pending.removeFirst())) {
+                queue.settle(dependent, status, RefusalReason.SUPERSEDED.name, at = null, attempted = 0)
+                intakes.markRemoteRefused(dependent)
+                pending += dependent
             }
         }
     }

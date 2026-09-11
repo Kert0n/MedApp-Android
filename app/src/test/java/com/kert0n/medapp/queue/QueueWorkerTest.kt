@@ -104,28 +104,41 @@ class QueueWorkerTest {
 
         override suspend fun settle(id: Uuid, outcome: Delivery, at: Instant) {
             settled += id to outcome
-            ((outcome as? Delivery.Done)?.state as? PackageState.Present)?.let {
+            val state = when (outcome) {
+                is Delivery.Applied -> outcome.state
+                is Delivery.Refused -> outcome.state
+                is Delivery.Stale -> PackageState.Present(outcome.snapshot)
+                is Delivery.Retry, Delivery.AccessLost -> PackageState.None
+            }
+            (state as? PackageState.Present)?.let {
                 known = PackageSyncState(PACK, it.snapshot.pack.version, it.snapshot.claims.version)
             }
             val operation = operations.getValue(id)
-            operations[id] = operation.with(
-                status = when (outcome) {
-                    is Delivery.Done -> SyncOperationStatus.DONE
-                    is Delivery.Retry -> SyncOperationStatus.PENDING
-                    Delivery.AccessLost -> SyncOperationStatus.ACCESS_LOST
-                },
-                attempts = operation.attempts + 1,
-                lastTriedAt = at
-            )
+            operations[id] = if (outcome is Delivery.Stale) {
+                operation.with(status = SyncOperationStatus.PENDING, dropPrepared = true)
+            } else {
+                operation.with(
+                    status = when (outcome) {
+                        is Delivery.Applied -> SyncOperationStatus.APPLIED
+                        is Delivery.Refused -> SyncOperationStatus.REFUSED
+                        is Delivery.Retry -> SyncOperationStatus.PENDING
+                        Delivery.AccessLost -> SyncOperationStatus.ACCESS_LOST
+                        is Delivery.Stale -> error("разобрано выше")
+                    },
+                    attempts = operation.attempts + 1,
+                    lastTriedAt = at
+                )
+            }
         }
 
         private fun SyncOperation.with(
             status: SyncOperationStatus = this.status,
             prepared: PreparedRequest? = this.prepared,
             attempts: Int = this.attempts,
-            lastTriedAt: Instant? = this.lastTriedAt
+            lastTriedAt: Instant? = this.lastTriedAt,
+            dropPrepared: Boolean = false
         ) = SyncOperation(
-            id, command, sequence, createdAt, payloadVersion, prepared, groupId, dependsOn,
+            id, command, sequence, createdAt, payloadVersion, if (dropPrepared) null else prepared, groupId, dependsOn,
             status, attempts, lastError, lastTriedAt
         )
     }
@@ -144,9 +157,11 @@ class QueueWorkerTest {
             return answer(request)
         }
 
+        /** Первое чтение — перед подготовкой ([fresh]); дальнейшие — истина после ответа ([snapshotAnswer]). */
         override suspend fun packageSnapshot(packageId: Uuid): ApiResult<PackageSnapshotNetworkDTO> {
             snapshots++
-            return requireNotNull(fresh ?: snapshotAnswer) { "снимок в этом тесте не ожидался" }
+            val answer = if (snapshots == 1) fresh ?: snapshotAnswer else snapshotAnswer ?: fresh
+            return requireNotNull(answer) { "снимок в этом тесте не ожидался" }
         }
     }
 
@@ -211,9 +226,9 @@ class QueueWorkerTest {
         assertEquals(1, report.settled)
         assertEquals("POST", transport.sent.single().method)
         assertEquals("/v1/drugs/$PACK/intakes", transport.sent.single().path)
-        assertEquals(Delivery.Done(PackageState.Present(snapshot)), storage.settled.single().second)
+        assertEquals(Delivery.Applied(PackageState.Present(snapshot)), storage.settled.single().second)
         assertEquals(Expected.SNAPSHOT_OR_GONE, transport.expected.single())
-        assertEquals(SyncOperationStatus.DONE, storage.operations.getValue(INTAKE).status)
+        assertEquals(SyncOperationStatus.APPLIED, storage.operations.getValue(INTAKE).status)
         assertNull(report.retryAt)
     }
 
@@ -257,7 +272,7 @@ class QueueWorkerTest {
 
         assertEquals(0, transport.snapshots)
         assertSame(frozen, transport.sent.single())
-        assertEquals(SyncOperationStatus.DONE, storage.operations.getValue(INTAKE).status)
+        assertEquals(SyncOperationStatus.APPLIED, storage.operations.getValue(INTAKE).status)
     }
 
     /** Пачки на сервере нет уже при чтении: доступа к ней нет, и отправлять нечего. */
@@ -273,32 +288,79 @@ class QueueWorkerTest {
         assertEquals(Delivery.AccessLost, storage.settled.single().second)
     }
 
+    /**
+     * 409 у `sync` — версия устарела, запрос отвергнут до применения (PLAN B3, E3): состояние
+     * читается и ложится в базу, запрос готовится заново под тем же номером и уходит тем же
+     * проходом — со свежей версией.
+     */
     @Test
-    fun conflictOnSyncReadsTheSnapshotAndCloses() = runTest {
-        // 409 у `sync` — «уже применено»: штатный исход, истина читается снимком (PLAN B4).
+    fun staleSyncIsRepreparedFromTheFreshStateUnderTheSameNumber() = runTest {
         val storage = Storage(listOf(operation(sync)))
-        val transport = transport { ApiResult.Failure(ApiFailure.Conflict) }
-        transport.snapshotAnswer = ApiResult.Success(snapshot)
+        var attempts = 0
+        val transport = transport(fresh = snapshotWithVersion(3)) {
+            attempts++
+            if (attempts == 1) ApiResult.Failure(ApiFailure.Conflict) else ApiResult.Success(QueueAnswer.Snapshot(snapshotWithVersion(8)))
+        }
+        transport.snapshotAnswer = ApiResult.Success(snapshotWithVersion(7))
 
         val report = worker(storage, transport).drain()
 
         assertEquals(1, report.settled)
-        assertEquals(2, transport.snapshots) // чтение перед подготовкой и чтение истины после отказа
-        assertEquals(Delivery.Done(PackageState.Present(snapshot), refusal = null), storage.settled.single().second)
-        assertTrue(transport.sent.single().path.endsWith("/sync/$INTAKE"))
+        assertEquals(Delivery.Stale(snapshotWithVersion(7)), storage.settled[0].second)
+        assertEquals(Delivery.Applied(PackageState.Present(snapshotWithVersion(8))), storage.settled[1].second)
+        assertEquals(2, transport.sent.size)
+        assertTrue(transport.sent.all { it.path.endsWith("/sync/$INTAKE") })
+        assertEquals(listOf(ResourceVersion(3), ResourceVersion(7)), transport.sent.map { it.drugVersion })
+        // Тело то же — меняется только версия: иначе журнал ответил бы 409 навсегда.
+        assertEquals(
+            transport.sent[0].body!!.replace("\"drugVersion\":3", "\"drugVersion\":7"),
+            transport.sent[1].body
+        )
+        assertEquals(SyncOperationStatus.APPLIED, storage.operations.getValue(INTAKE).status)
     }
 
+    /** Потерянный ответ, за которым пришёл 409: своя бронь уже равна заявленной — расход применён. */
     @Test
-    fun refusalByPreconditionClosesWithTheRefusalNamedAndTheTruthRead() = runTest {
-        val storage = Storage(listOf(operation()))
+    fun staleSyncWhoseClaimAlreadyMatchesIsAppliedWithoutResending() = runTest {
+        val frozen = sync.toPreparedRequest(INTAKE, PackageSyncState(PACK, ResourceVersion(3), ResourceVersion(1)), tablets("20"), tablets("7"), EARLIER)
+        val storage = Storage(listOf(operation(sync, status = SyncOperationStatus.SENDING, prepared = frozen)))
+        val transport = Transport { ApiResult.Failure(ApiFailure.Conflict) }
+        transport.snapshotAnswer = ApiResult.Success(snapshot) // mine = 4 = claimAfter, было 7
+
+        val report = worker(storage, transport).drain()
+
+        assertEquals(1, report.settled)
+        assertEquals(1, transport.sent.size)
+        assertEquals(Delivery.Applied(PackageState.Present(snapshot)), storage.settled.single().second)
+    }
+
+    /** Чужая правка перекрыла описание: отказ с названной причиной, истина прочитана, человек смотрит заново. */
+    @Test
+    fun staleDescriptionIsRefusedWithTheReasonNamedAndTheTruthRead() = runTest {
+        val describe = PackageSyncCommand.Describe(
+            PACK,
+            com.kert0n.medapp.domain.pack.PackageSharedFacts("Парацетамол", TABLET_FORM),
+            com.kert0n.medapp.domain.pack.PackageSharedFacts("Парацетамол 500", TABLET_FORM)
+        )
+        val storage = Storage(listOf(operation(describe)))
         val transport = transport { ApiResult.Failure(ApiFailure.PreconditionFailed) }
         transport.snapshotAnswer = ApiResult.Success(snapshot)
 
         worker(storage, transport).drain()
 
-        val outcome = storage.settled.single().second as Delivery.Done
-        assertEquals(PackageState.Present(snapshot), outcome.state)
-        assertNotNull(outcome.refusal)
+        assertEquals(Delivery.Refused(RefusalReason.STALE, PackageState.Present(snapshot)), storage.settled.single().second)
+        assertEquals(SyncOperationStatus.REFUSED, storage.operations.getValue(INTAKE).status)
+    }
+
+    @Test
+    fun invalidInputIsRefusedAndTheTruthRead() = runTest {
+        val storage = Storage(listOf(operation()))
+        val transport = transport { ApiResult.Failure(ApiFailure.Invalid(emptyList())) }
+        transport.snapshotAnswer = ApiResult.Success(snapshot)
+
+        worker(storage, transport).drain()
+
+        assertEquals(Delivery.Refused(RefusalReason.INVALID, PackageState.Present(snapshot)), storage.settled.single().second)
     }
 
     @Test

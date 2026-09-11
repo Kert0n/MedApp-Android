@@ -98,7 +98,7 @@ class PackageRoomRepositoryTest {
     @Test
     fun settledOperationStopsAffectingTheAmount() = runTest {
         queue.enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
-        queue.settle(operation, SyncOperationStatus.DONE)
+        queue.settle(operation, SyncOperationStatus.APPLIED)
 
         assertEquals(
             tablets("20"),
