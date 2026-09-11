@@ -16,6 +16,7 @@ import com.kert0n.medapp.network.pack.PackageSyncCommand
 import com.kert0n.medapp.queue.PreparedRequest
 import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.queue.SyncOperation
+import com.kert0n.medapp.queue.StoredSyncOperation
 import com.kert0n.medapp.queue.SyncOperationStatus
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import java.time.Instant

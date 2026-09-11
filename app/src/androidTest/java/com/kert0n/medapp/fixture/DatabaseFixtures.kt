@@ -68,5 +68,6 @@ fun MedAppDatabase.intakeRepository() = com.kert0n.medapp.storage.intake.IntakeR
     this, intakes(), packages(), courses(), syncOperations(), vocabulary()
 )
 
-fun MedAppDatabase.queueRepository() =
-    com.kert0n.medapp.storage.server.SyncOperationRoomRepository(syncOperations(), vocabulary())
+fun MedAppDatabase.queueRepository() = com.kert0n.medapp.storage.server.SyncOperationRoomRepository(
+    this, syncOperations(), packages(), intakes(), vocabulary()
+)

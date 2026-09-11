@@ -78,6 +78,10 @@ interface IntakeDao {
         operationId: Uuid?
     ): Int
 
+    /** Операция расхода закрыта — факт учтён на сервере; закрытие и учёт ложатся одной транзакцией. */
+    @Query("UPDATE intakes SET accounting = 'REMOTE_APPLIED' WHERE operation_id = :operationId AND accounting = 'PENDING'")
+    suspend fun markRemoteApplied(operationId: Uuid): Int
+
     @Query("DELETE FROM intakes WHERE id = :id")
     suspend fun delete(id: Uuid)
 }

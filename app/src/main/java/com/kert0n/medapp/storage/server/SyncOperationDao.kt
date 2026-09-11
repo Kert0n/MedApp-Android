@@ -81,6 +81,46 @@ interface SyncOperationDao {
     @Query("SELECT * FROM sync_operations WHERE status = :status ORDER BY sequence")
     suspend fun withStatus(status: SyncOperationStatus): List<SyncOperationStorageRow>
 
+    /**
+     * Готовые к отправке: ожидающие и отправлявшиеся в момент смерти процесса, у которых нет
+     * незакрытой зависимости. Порядок — номер очереди; кто ещё не готов, ждёт своей зависимости.
+     */
+    @Transaction
+    @Query(
+        "SELECT * FROM sync_operations o WHERE status IN ('PENDING', 'SENDING') " +
+            "AND NOT EXISTS (" +
+            "  SELECT 1 FROM sync_operation_dependencies d JOIN sync_operations p ON p.id = d.depends_on_id " +
+            "  WHERE d.operation_id = o.id AND p.status NOT IN ('DONE', 'ACCESS_LOST')" +
+            ") ORDER BY sequence"
+    )
+    suspend fun ready(): List<SyncOperationStorageRow>
+
+    /** Замораживает запрос и берёт в отправку — только если операция ещё не закрыта. */
+    @Query(
+        "UPDATE sync_operations SET status = 'SENDING', " +
+            "prepared_method = :method, prepared_path = :path, prepared_query = :query, prepared_body = :body, " +
+            "prepared_drug_version = :drugVersion, prepared_claims_version = :claimsVersion, " +
+            "prepared_quantity_before = :quantityBefore, prepared_mine_before = :mineBefore, " +
+            "prepared_unit_id = :unitId, prepared_at = :preparedAt " +
+            "WHERE id = :id AND status IN ('PENDING', 'SENDING') AND prepared_method IS NULL"
+    )
+    suspend fun freeze(
+        id: Uuid,
+        method: String,
+        path: String,
+        query: String,
+        body: String?,
+        drugVersion: Long?,
+        claimsVersion: Long?,
+        quantityBefore: String?,
+        mineBefore: String?,
+        unitId: Uuid?,
+        preparedAt: Instant
+    ): Int
+
+    @Query("UPDATE sync_operations SET status = 'SENDING' WHERE id = :id AND status IN ('PENDING', 'SENDING')")
+    suspend fun markSending(id: Uuid): Int
+
     @Query(
         "UPDATE sync_operations SET status = :status, last_error = :lastError, " +
             "last_tried_at = :at, attempts = attempts + :attempted WHERE id = :id"

@@ -4,6 +4,7 @@ import androidx.room.Embedded
 import androidx.room.Relation
 import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.queue.SyncOperation
+import com.kert0n.medapp.queue.StoredSyncOperation
 import com.kert0n.medapp.network.value.VocabularyMiss
 
 /**

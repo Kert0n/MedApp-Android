@@ -23,6 +23,7 @@ import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
 import com.kert0n.medapp.network.pack.PackageSyncNetworkDTO
 import com.kert0n.medapp.network.template.PackageTemplateNetworkDTO
 import com.kert0n.medapp.network.value.VocabularyEntryNetworkDTO
+import com.kert0n.medapp.queue.PreparedRequest
 import io.ktor.client.HttpClient
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.basicAuth
@@ -197,6 +198,35 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
 
     suspend fun template(templateId: Uuid): ApiResult<PackageTemplateNetworkDTO> =
         call(HttpMethod.Get, "/v1/drug-templates/$templateId", HttpStatusCode.OK, required(PackageTemplateNetworkDTO.serializer()))
+
+    // Очередь
+
+    /**
+     * Замороженный запрос очереди как есть: метод, путь, параметры и тело собраны при первой
+     * отправке, и здесь они не пересобираются (PLAN E2). Успех — любой 2xx, тело отдаётся
+     * строкой: какая форма за ним стоит, знает та команда, что запрос готовила. Пустое тело —
+     * `null`: так отвечают 204 и уничтоженная пачка.
+     */
+    suspend fun send(request: PreparedRequest): ApiResult<String?> = try {
+        val response = http.request(request.path) {
+            method = HttpMethod.parse(request.method)
+            request.query.forEach { (name, value) -> parameter(name, value) }
+            request.body?.let {
+                contentType(ContentType.Application.Json)
+                setBody(it)
+            }
+        }
+        when {
+            response.status.isSuccess() -> ApiResult.Success(response.bodyAsText().takeIf { it.isNotEmpty() })
+            else -> ApiResult.Failure(refusal(response, command = true, path = request.path))
+        }
+    } catch (cause: AccessTokenThrottled) {
+        ApiResult.Failure(ApiFailure.TooManyRequests(cause.retryAfter))
+    } catch (_: AccessTokenUnavailable) {
+        ApiResult.Failure(ApiFailure.Unavailable)
+    } catch (_: IOException) {
+        ApiResult.Failure(ApiFailure.OutcomeUnknown)
+    }
 
     // Исполнение
 

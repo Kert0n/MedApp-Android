@@ -2,6 +2,8 @@ package com.kert0n.medapp.network.pack
 
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageFacts
+import com.kert0n.medapp.domain.pack.PackageSharedFacts
+import com.kert0n.medapp.network.server.ResourceVersion
 
 /**
  * Сравнивает сохранённую доменную форму с тем, что известно о пачке, и оставляет только
@@ -24,20 +26,31 @@ fun PackageFacts.toPatchNetworkMapping(
     // Правка была только локальной — на провод не идёт ничего. Вопрос задаётся структуре, а не
     // перечислением шести полей, где седьмое забудут (PLAN E2, D3).
     if (shared == known.shared) return PackagePatchNetworkMapping(dto = null, formIdClearUnsupported = false)
-    val dto = PackagePatchNetworkDTO(
-        name = name.takeIf { it != known.name },
-        formId = form?.takeIf { it != known.form }?.id,
-        category = clearableText(known.category, category),
-        manufacturer = clearableText(known.manufacturer, manufacturer),
-        country = clearableText(known.country, country),
-        description = clearableText(known.description, description)
-    )
+    val dto = shared.toPatchNetworkDTO(known.shared)
     val formCleared = known.form != null && form == null
     return PackagePatchNetworkMapping(
         dto = dto.takeIf { !it.isEmpty },
         formIdClearUnsupported = formCleared && sync.isOnServer
     )
 }
+
+/**
+ * Разница двух общих описаний как намерение PATCH: неизменённое не отправляется, очищенный текст
+ * становится `""`. [version] — предусловие; при подготовке запроса очереди оно замораживается
+ * вместе с телом.
+ */
+fun PackageSharedFacts.toPatchNetworkDTO(
+    known: PackageSharedFacts,
+    version: ResourceVersion? = null
+): PackagePatchNetworkDTO = PackagePatchNetworkDTO(
+    name = name.takeIf { it != known.name },
+    formId = form?.takeIf { it != known.form }?.id,
+    category = clearableText(known.category, category),
+    manufacturer = clearableText(known.manufacturer, manufacturer),
+    country = clearableText(known.country, country),
+    description = clearableText(known.description, description),
+    version = version
+)
 
 /**
  * Перевод доменного «сведений нет» в сетевое «очистить».

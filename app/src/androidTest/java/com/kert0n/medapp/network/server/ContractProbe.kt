@@ -27,6 +27,14 @@ import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.BeforeClass
 import org.junit.Test
+import com.kert0n.medapp.domain.value.Dose
+import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.domain.value.QuantityUnit
+import com.kert0n.medapp.network.pack.PackageSyncCommand
+import com.kert0n.medapp.network.pack.PackageSyncState
+import com.kert0n.medapp.network.pack.toPreparedRequest
+import java.math.BigDecimal
+import java.time.Instant
 
 /**
  * Проба контракта против боевого сервера (PLAN PR 5, AGENTS «Связь с сервером»): тот же клиент,
@@ -275,5 +283,37 @@ class ContractProbe {
 
         assertEquals(Unit, success(owner.deletePackage(pack.id, pack.version)))
         assertEquals(ApiFailure.NotFound, failure(owner.packageSnapshot(pack.id)))
+    }
+
+    /**
+     * Отправка очереди: замороженный запрос уходит как есть и отвечает снимком; повтор `sync`
+     * под тем же номером сервер применяет один раз (PLAN B4, E3).
+     */
+    @Test
+    fun preparedRequestOfTheQueueIsAcceptedAsIs() = runBlocking {
+        val pack = newPackage(newKit(), amount = "10").pack
+        val unitObject = QuantityUnit(unit, "проба")
+        val sync = PackageSyncState(pack.id, version = pack.version)
+        val operationId = Uuid.random()
+        val consume = PackageSyncCommand.Consume(
+            pack.id, Dose(Quantity(BigDecimal("2"), unitObject)), operationId,
+            claimAfter = Quantity(BigDecimal("3"), unitObject)
+        )
+        val request = consume.toPreparedRequest(operationId, sync, confirmed = null, mine = null, at = Instant.EPOCH)
+
+        val body = requireNotNull(success(owner.send(request))) { "sync отвечает снимком" }
+        val snapshot = medAppJson.decodeFromString(PackageSnapshotNetworkDTO.serializer(), body)
+        assertEquals("8.000000", snapshot.pack.amount)
+        assertEquals("3.000000", snapshot.claims.mine)
+        // Тот же замороженный запрос второй раз: сервер применил его один раз и отвечает тем же
+        // снимком; 409 он отдаёт только другому телу под тем же номером.
+        val repeated = medAppJson.decodeFromString(
+            PackageSnapshotNetworkDTO.serializer(), requireNotNull(success(owner.send(request)))
+        )
+        assertEquals("8.000000", repeated.pack.amount)
+        // Снятие брони и удаление — без тела.
+        assertNull(success(owner.send(PackageSyncCommand.ReleaseClaim(pack.id).toPreparedRequest(
+            Uuid.random(), PackageSyncState(pack.id, snapshot.pack.version, snapshot.claims.version), null, null, Instant.EPOCH
+        ))))
     }
 }

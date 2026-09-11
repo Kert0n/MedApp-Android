@@ -312,4 +312,26 @@ class MedAppApiTest {
             always(HttpStatusCode.NotFound).packageSnapshot(pack)
         )
     }
+
+    /** Замороженный запрос очереди уходит как есть: метод, путь, параметры и тело не пересобираются. */
+    @Test
+    fun preparedRequestIsSentVerbatimAndAnsweredWithTheRawBody() = runTest {
+        val api = api()
+        val request = com.kert0n.medapp.queue.PreparedRequest(
+            method = "PUT",
+            path = "/v1/med-kits/$otherKit/drugs/$pack",
+            query = mapOf("version" to "3"),
+            preparedAt = java.time.Instant.EPOCH
+        )
+        val result = api.send(request)
+        assertTrue("$result", result is ApiResult.Success && result.value!!.contains("\"version\":3"))
+        assertEquals("PUT /v1/med-kits/$otherKit/drugs/$pack?version=3", requests.single())
+
+        val empty = api.send(com.kert0n.medapp.queue.PreparedRequest("DELETE", "/v1/drugs/$pack", preparedAt = java.time.Instant.EPOCH))
+        assertEquals(ApiResult.Success(null), empty)
+
+        val refused = api { HttpStatusCode.PreconditionFailed to "" }
+            .send(com.kert0n.medapp.queue.PreparedRequest("DELETE", "/v1/drugs/$pack", preparedAt = java.time.Instant.EPOCH))
+        assertEquals(ApiResult.Failure(ApiFailure.PreconditionFailed), refused)
+    }
 }
