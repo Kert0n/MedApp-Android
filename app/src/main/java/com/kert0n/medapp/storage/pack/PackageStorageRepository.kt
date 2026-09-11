@@ -6,7 +6,6 @@ import com.kert0n.medapp.domain.pack.PackageAvailability
 import com.kert0n.medapp.domain.pack.PackageFacts
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.storage.course.CourseReallocation
-import com.kert0n.medapp.storage.server.QueuedCommand
 import java.time.Instant
 import java.time.LocalDate
 import kotlin.uuid.Uuid
@@ -64,7 +63,8 @@ interface PackageStorageRepository {
 
     /**
      * Пересчёт, утилизация и перенос: движение и новое состояние пачки ложатся одной транзакцией
-     * вместе с пересчитанными выделениями [reallocation] и исходящей командой [command] (PLAN F5).
+     * вместе с пересчитанными выделениями [reallocation] (PLAN F5). Команду серверу, если она
+     * нужна, ставит служба очереди в той же транзакции — репозиторий про очередь не знает.
      *
      * Переход применяется к нынешнему состоянию пачки, прочитанному в той же транзакции, поэтому
      * «было» в истории — настоящее «было». Обвязка синхронизации при этом не трогается: версии и
@@ -76,7 +76,6 @@ interface PackageStorageRepository {
     suspend fun adjust(
         adjustment: PackageAdjustment,
         reallocation: CourseReallocation? = null,
-        command: QueuedCommand? = null,
         at: Instant
     ): Boolean
 }

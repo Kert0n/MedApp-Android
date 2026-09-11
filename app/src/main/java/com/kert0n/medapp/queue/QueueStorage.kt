@@ -27,4 +27,10 @@ interface QueueStorage {
 
     /** Отпускает операцию с исходом; что исход значит для строк, решает хранилище. */
     suspend fun settle(id: Uuid, outcome: Delivery, at: Instant)
+
+    /** Одна транзакция на изменение и его команду: порознь их не бывает (PLAN F5). */
+    suspend fun <T> transaction(block: suspend () -> T): T
+
+    /** Ставит команду; номер выдаёт хранилище. Только внутри [transaction] с её причиной. */
+    suspend fun enqueue(queued: QueuedCommand, at: Instant): SyncOperation
 }

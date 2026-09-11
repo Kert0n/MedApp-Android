@@ -44,7 +44,7 @@ import com.kert0n.medapp.storage.course.CourseReallocation
 import com.kert0n.medapp.storage.course.CourseStorageEntity
 import com.kert0n.medapp.storage.pack.PackageAdjustment
 import com.kert0n.medapp.storage.pack.PackageRoomRepository
-import com.kert0n.medapp.storage.server.QueuedCommand
+import com.kert0n.medapp.queue.QueuedCommand
 import java.time.Instant
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.test.runTest
@@ -57,6 +57,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import com.kert0n.medapp.fixture.VOCABULARY
+import com.kert0n.medapp.queue.QueueService
+import com.kert0n.medapp.domain.medkit.MedKit
+import com.kert0n.medapp.fixture.queueRepository
 
 /**
  * Связанные изменения сохраняются атомарно: откат не оставляет ни отдельного расхода, ни
@@ -68,6 +71,7 @@ class TransactionBoundariesTest {
     private lateinit var packages: PackageRoomRepository
     private lateinit var courses: CourseRoomRepository
     private lateinit var intakes: IntakeRoomRepository
+    private lateinit var queue: QueueService
 
     private val operation: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000091")
     private val movementId: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000081")
@@ -82,6 +86,7 @@ class TransactionBoundariesTest {
         packages = database.packageRepository()
         courses = database.courseRepository()
         intakes = database.intakeRepository()
+        queue = QueueService(database.queueRepository())
         database.medKits().upsert(medKit().toMedKitStorageEntity())
         database.medKits().upsert(medKit(id = SHARED_KIT, name = "Дача").toMedKitStorageEntity())
         packages.add(paracetamol)
@@ -92,6 +97,9 @@ class TransactionBoundariesTest {
         database.close()
     }
 
+    /** Опубликованная аптечка: команды ей ставятся; местной — нет. */
+    private val published = medKit(publication = MedKit.Publication.PUBLISHED)
+
     private fun draft(): CourseDraft.Activation {
         val plan = activeCourse(sources = listOf(source(PACK, 5)))
         return CourseDraft.Activation(plan, courseRecord(prescription = plan.prescription))
@@ -100,7 +108,7 @@ class TransactionBoundariesTest {
     @Test
     fun activationWritesPlanAndRecordTogether() = runTest {
         val activation = draft()
-        courses.activate(activation, planned = listOf(plannedIntake()), at = at)
+        courses.activate(activation, planned = listOf(plannedIntake()))
 
         assertNotNull(courses.findPlan(COURSE))
         assertNotNull(courses.findRecord(COURSE))
@@ -118,7 +126,7 @@ class TransactionBoundariesTest {
         database.courses().upsertCourse(activeCourse(id = other).toCourseStorageEntity())
         database.courses().assignPackage(ActivePackageAssignmentStorageEntity(PACK, other))
 
-        val failure = runCatching { courses.activate(draft(), at = at) }.exceptionOrNull()
+        val failure = runCatching { courses.activate(draft()) }.exceptionOrNull()
 
         assertNotNull(failure)
         assertNull(courses.findPlan(COURSE))
@@ -129,13 +137,12 @@ class TransactionBoundariesTest {
     @Test
     fun closingRemovesThePlanAndKeepsTheRecord() = runTest {
         val activation = draft()
-        courses.activate(activation, planned = listOf(plannedIntake()), at = at)
+        courses.activate(activation, planned = listOf(plannedIntake()))
 
         val closed = activation.record.close(CourseRecord.Outcome.CANCELLED, LATER)
         courses.close(
             record = closed,
-            cancelled = listOf(plannedIntake().cancel(LATER)),
-            at = LATER
+            cancelled = listOf(plannedIntake().cancel(LATER))
         )
 
         assertNull(courses.findPlan(COURSE))
@@ -149,7 +156,7 @@ class TransactionBoundariesTest {
 
     @Test
     fun confirmingAnIntakeWritesFactStockAndMovementTogether() = runTest {
-        courses.activate(draft(), planned = listOf(plannedIntake()), at = at)
+        courses.activate(draft(), planned = listOf(plannedIntake()))
 
         val applied = intakes.record(
             IntakeOutcome(
@@ -171,7 +178,7 @@ class TransactionBoundariesTest {
     /** Повтор уже совершённого подтверждения ничего не списывает второй раз (PLAN D6). */
     @Test
     fun repeatingAConfirmationChangesNothing() = runTest {
-        courses.activate(draft(), planned = listOf(plannedIntake()), at = at)
+        courses.activate(draft(), planned = listOf(plannedIntake()))
         val outcome = {
             IntakeOutcome(
                 intake = plannedIntake().confirm(paracetamol, dose("2"), LATER),
@@ -186,24 +193,25 @@ class TransactionBoundariesTest {
     }
 
     /**
-     * Откат не оставляет отдельного расхода, факта или брони: несуществующая пачка в команде
-     * очереди роняет всю транзакцию (PLAN F5).
+     * Откат не оставляет отдельного расхода, факта или брони: команда очереди, которую база
+     * отвергла, роняет транзакцию службы вместе с записью приёма (PLAN F5).
      */
     @Test
     fun rollbackLeavesNeitherFactNorStockNorQueuedCommand() = runTest {
-        courses.activate(draft(), planned = listOf(plannedIntake()), at = at)
+        courses.activate(draft(), planned = listOf(plannedIntake()))
         val clash = QueuedCommand(operation, PackageSyncCommand.Consume(PACK, dose("2"), INTAKE))
         database.syncOperations().enqueue(operation, PackageSyncCommand.Delete(PACK), at)
 
         val failure = runCatching {
-            intakes.record(
-                IntakeOutcome(
-                    intake = plannedIntake().confirm(paracetamol, dose("2"), LATER),
-                    expected = setOf(IntakeStatus.PLANNED),
-                    sync = IntakeSyncState(INTAKE, IntakeAccounting.PENDING, operationId = operation),
-                    command = clash
+            queue.change(published, listOf(clash), at) {
+                intakes.record(
+                    IntakeOutcome(
+                        intake = plannedIntake().confirm(paracetamol, dose("2"), LATER),
+                        expected = setOf(IntakeStatus.PLANNED),
+                        sync = IntakeSyncState(INTAKE, IntakeAccounting.PENDING, operationId = operation)
+                    )
                 )
-            )
+            }
         }.exceptionOrNull()
 
         assertNotNull(failure)
@@ -238,13 +246,12 @@ class TransactionBoundariesTest {
     @Test
     fun closingDoesNotCancelAnIntakeAnsweredInTheMeantime() = runTest {
         val activation = draft()
-        courses.activate(activation, planned = listOf(plannedIntake()), at = at)
+        courses.activate(activation, planned = listOf(plannedIntake()))
         assertTrue(intakes.record(confirmedOutcome()))
 
         courses.close(
             record = activation.record.close(CourseRecord.Outcome.CANCELLED, LATER),
-            cancelled = listOf(plannedIntake().cancel(LATER)),
-            at = LATER
+            cancelled = listOf(plannedIntake().cancel(LATER))
         )
 
         assertEquals(IntakeStatus.TAKEN, requireNotNull(intakes.find(INTAKE)).status)
@@ -264,7 +271,7 @@ class TransactionBoundariesTest {
             syncedAt = at
         )
         packages.add(paracetamol, sync)
-        courses.activate(draft(), planned = listOf(plannedIntake()), at = at)
+        courses.activate(draft(), planned = listOf(plannedIntake()))
 
         assertTrue(intakes.record(confirmedOutcome()))
 
@@ -278,24 +285,53 @@ class TransactionBoundariesTest {
      */
     @Test
     fun spendingThatLeavesByCommandDoesNotTouchTheLocalAmount() = runTest {
-        courses.activate(draft(), planned = listOf(plannedIntake()), at = at)
+        courses.activate(draft(), planned = listOf(plannedIntake()))
+        val consume = QueuedCommand(operation, PackageSyncCommand.Consume(PACK, dose("2"), INTAKE))
 
         assertTrue(
-            intakes.record(
-                IntakeOutcome(
-                    intake = plannedIntake().confirm(paracetamol, dose("2"), LATER),
-                    expected = setOf(IntakeStatus.PLANNED),
-                    sync = IntakeSyncState(INTAKE, IntakeAccounting.PENDING, operationId = operation),
-                    command = QueuedCommand(
-                        operation,
-                        PackageSyncCommand.Consume(PACK, dose("2"), INTAKE)
+            queue.change(published, listOf(consume), at) {
+                intakes.record(
+                    IntakeOutcome(
+                        intake = plannedIntake().confirm(paracetamol, dose("2"), LATER),
+                        expected = setOf(IntakeStatus.PLANNED),
+                        sync = IntakeSyncState(INTAKE, IntakeAccounting.PENDING, operationId = operation)
                     )
                 )
-            )
+            }
         )
 
         assertEquals(tablets("20"), requireNotNull(packages.find(PACK)).quantity)
         assertEquals(1, database.syncOperations().all().size)
+    }
+
+    /** Местной аптечке команд не ставится: на сервере её нет, и везти туда нечего (PLAN E1). */
+    @Test
+    fun localKitGetsNoCommandsEvenWhenTheChangeGoesThrough() = runTest {
+        val local = medKit(publication = MedKit.Publication.LOCAL)
+        val recount = QueuedCommand(operation, PackageSyncCommand.CorrectStock(PACK, tablets("17")))
+
+        assertTrue(
+            queue.change(local, listOf(recount), at) {
+                packages.adjust(PackageAdjustment.Recount(PACK, tablets("17"), movementId), at = LATER)
+            }
+        )
+
+        assertEquals(tablets("17"), requireNotNull(packages.find(PACK)).quantity)
+        assertEquals(0, database.syncOperations().all().size)
+    }
+
+    /** Изменение, которому некуда лечь, команды не порождает: серверу не везут то, чего не записали. */
+    @Test
+    fun aChangeWithNowhereToLandQueuesNothing() = runTest {
+        val gone = Uuid.parse("00000000-0000-4000-8000-0000000000ee")
+        val recount = QueuedCommand(operation, PackageSyncCommand.CorrectStock(gone, tablets("17")))
+
+        assertFalse(
+            queue.change(published, listOf(recount), at) {
+                packages.adjust(PackageAdjustment.Recount(gone, tablets("17"), movementId), at = LATER)
+            }
+        )
+        assertEquals(0, database.syncOperations().all().size)
     }
 
     /** Пачки, из которой принято, уже нет — тогда и факт не записывается: половины расхода не бывает. */
@@ -315,10 +351,9 @@ class TransactionBoundariesTest {
     @Test
     fun adjustmentDoesNotResurrectAClosedPlan() = runTest {
         val activation = draft()
-        courses.activate(activation, at = at)
+        courses.activate(activation)
         courses.close(
-            record = activation.record.close(CourseRecord.Outcome.CANCELLED, LATER),
-            at = LATER
+            record = activation.record.close(CourseRecord.Outcome.CANCELLED, LATER)
         )
 
         packages.adjust(
@@ -339,7 +374,7 @@ class TransactionBoundariesTest {
     fun aDraftIsNotWrittenOverAStartedTreatment() = runTest {
         val activation = draft()
         val stale = course(title = "Старый черновик")
-        courses.activate(activation, at = at)
+        courses.activate(activation)
 
         assertFalse(courses.saveDraft(stale))
         assertNull(courses.findDraft(COURSE))
@@ -353,8 +388,8 @@ class TransactionBoundariesTest {
     @Test
     fun aDraftDoesNotResurrectAFinishedEpisode() = runTest {
         val activation = draft()
-        courses.activate(activation, at = at)
-        courses.close(activation.record.close(CourseRecord.Outcome.COMPLETED, LATER), at = LATER)
+        courses.activate(activation)
+        courses.close(activation.record.close(CourseRecord.Outcome.COMPLETED, LATER))
 
         assertFalse(courses.saveDraft(course(title = "Старый черновик")))
         assertNull(courses.findDraft(COURSE))
@@ -371,7 +406,7 @@ class TransactionBoundariesTest {
     @Test
     fun aStaleReallocationAbortsTheWholeTransaction() = runTest {
         val activation = draft()
-        courses.activate(activation, planned = listOf(plannedIntake()), at = at)
+        courses.activate(activation, planned = listOf(plannedIntake()))
         val stale = CourseReallocation(activation.course, activation.course.revision)
         database.courses().updateAllocations(
             activation.course.toCourseStorageEntity().let {
@@ -424,8 +459,8 @@ class TransactionBoundariesTest {
     @Test
     fun renamingDoesNotReopenAClosedRecord() = runTest {
         val activation = draft()
-        courses.activate(activation, at = at)
-        courses.close(activation.record.close(CourseRecord.Outcome.COMPLETED, LATER), at = LATER)
+        courses.activate(activation)
+        courses.close(activation.record.close(CourseRecord.Outcome.COMPLETED, LATER))
 
         assertTrue(courses.rename(COURSE, "Другое название", note = null))
 
@@ -508,13 +543,12 @@ class TransactionBoundariesTest {
     @Test
     fun failedAdjustmentLeavesNeitherStockNorMovement() = runTest {
         database.syncOperations().enqueue(operation, PackageSyncCommand.Delete(PACK), at)
+        val recount = QueuedCommand(operation, PackageSyncCommand.CorrectStock(PACK, tablets("4")))
 
         val failure = runCatching {
-            packages.adjust(
-                PackageAdjustment.Recount(PACK, tablets("4"), movementId),
-                command = QueuedCommand(operation, PackageSyncCommand.CorrectStock(PACK, tablets("4"))),
-                at = LATER
-            )
+            queue.change(published, listOf(recount), at) {
+                packages.adjust(PackageAdjustment.Recount(PACK, tablets("4"), movementId), at = LATER)
+            }
         }.exceptionOrNull()
 
         assertNotNull(failure)

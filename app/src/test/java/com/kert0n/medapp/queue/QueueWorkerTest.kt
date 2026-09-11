@@ -89,6 +89,11 @@ class QueueWorkerTest {
             return operation.with(status = SyncOperationStatus.SENDING, prepared = prepared).also { operations[id] = it }
         }
 
+        override suspend fun <T> transaction(block: suspend () -> T): T = block()
+
+        override suspend fun enqueue(queued: QueuedCommand, at: Instant): SyncOperation =
+            error("работник команд не ставит")
+
         override suspend fun settle(id: Uuid, outcome: Delivery, at: Instant) {
             settled += id to outcome
             val operation = operations.getValue(id)

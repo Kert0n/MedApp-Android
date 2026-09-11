@@ -12,7 +12,6 @@ import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.storage.pack.PackageDao
 import com.kert0n.medapp.storage.pack.toDetailsStorageEntity
 import com.kert0n.medapp.storage.pack.toStorageEntity as toPackageStorageEntity
-import com.kert0n.medapp.storage.server.SyncOperationDao
 import com.kert0n.medapp.storage.value.VocabularyDao
 import com.kert0n.medapp.storage.value.toStorageAmount
 import java.time.Instant
@@ -26,7 +25,6 @@ class IntakeRoomRepository @Inject constructor(
     private val intakes: IntakeDao,
     private val packages: PackageDao,
     private val courses: CourseDao,
-    private val queue: SyncOperationDao,
     private val vocabulary: VocabularyDao
 ) : IntakeStorageRepository {
 
@@ -95,15 +93,6 @@ class IntakeRoomRepository @Inject constructor(
                 course.toCourseStorageEntity(),
                 course.medicine.toSourceStorageEntities(course.id),
                 expected
-            )
-        }
-        outcome.command?.let {
-            queue.enqueue(
-                id = it.id,
-                command = it.command,
-                createdAt = outcome.answeredAt,
-                groupId = it.groupId,
-                dependsOn = it.dependsOn
             )
         }
         true

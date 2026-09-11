@@ -10,8 +10,6 @@ import com.kert0n.medapp.domain.intake.IntakeAnswer
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.storage.intake.IntakeDao
 import com.kert0n.medapp.storage.intake.toStorageEntity as toIntakeStorageEntity
-import com.kert0n.medapp.storage.server.QueuedCommand
-import com.kert0n.medapp.storage.server.SyncOperationDao
 import com.kert0n.medapp.storage.value.VocabularyDao
 import java.time.Instant
 import javax.inject.Inject
@@ -23,7 +21,6 @@ class CourseRoomRepository @Inject constructor(
     private val database: MedAppDatabase,
     private val courses: CourseDao,
     private val intakes: IntakeDao,
-    private val queue: SyncOperationDao,
     private val vocabulary: VocabularyDao
 ) : CourseStorageRepository {
 
@@ -93,9 +90,7 @@ class CourseRoomRepository @Inject constructor(
 
     override suspend fun activate(
         activation: CourseDraft.Activation,
-        planned: List<CourseIntake>,
-        commands: List<QueuedCommand>,
-        at: Instant
+        planned: List<CourseIntake>
     ) = database.withTransaction {
         val plan = activation.course
         courses.upsertRecord(activation.record.toStorageEntity())
@@ -108,14 +103,12 @@ class CourseRoomRepository @Inject constructor(
             courses.assignPackage(ActivePackageAssignmentStorageEntity(source.packageId, plan.id))
         }
         intakes.insertPlannedIfMissing(planned.map { it.toIntakeStorageEntity() })
-        enqueue(commands, at)
+        Unit
     }
 
     override suspend fun close(
         record: CourseRecord,
-        cancelled: List<CourseIntake>,
-        commands: List<QueuedCommand>,
-        at: Instant
+        cancelled: List<CourseIntake>
     ) = database.withTransaction {
         check(!record.isOpen) { "закрывается законченное лечение, а не идущее" }
         courses.upsertRecord(record.toStorageEntity())
@@ -128,18 +121,5 @@ class CourseRoomRepository @Inject constructor(
         courses.releaseAssignmentsOf(record.id)
         courses.deleteSourcesOf(record.id)
         courses.deletePlan(record.id)
-        enqueue(commands, at)
-    }
-
-    private suspend fun enqueue(commands: List<QueuedCommand>, at: Instant) {
-        for (command in commands) {
-            queue.enqueue(
-                id = command.id,
-                command = command.command,
-                createdAt = at,
-                groupId = command.groupId,
-                dependsOn = command.dependsOn
-            )
-        }
     }
 }

@@ -8,14 +8,14 @@ import com.kert0n.medapp.domain.intake.UnplannedIntake
 import com.kert0n.medapp.network.intake.IntakeAccounting
 import com.kert0n.medapp.network.intake.IntakeSyncState
 import com.kert0n.medapp.storage.course.CourseReallocation
-import com.kert0n.medapp.storage.server.QueuedCommand
 import java.time.Instant
 
 /**
  * Что записывается вместе с ответом на приём — всё то, чего порознь не бывает (PLAN F5).
  *
- * Ответ, локальный остаток либо команда расхода, пересчитанные выделения курса и учёт расхода
- * ложатся одной транзакцией. Откат не оставляет ни отдельного расхода, ни факта, ни брони.
+ * Ответ, локальный остаток, пересчитанные выделения курса и учёт расхода ложатся одной
+ * транзакцией; команду расхода, если факт уезжает на сервер, ставит служба очереди в ней же —
+ * репозиторий про очередь не знает. Откат не оставляет ни отдельного расхода, ни факта, ни брони.
  *
  * Решения принимает домен: из какой пачки принято и сколько — сказано самим приёмом, а
  * применяет расход хранение — к тому состоянию пачки, которое лежит в базе. Готового нового
@@ -29,8 +29,7 @@ class IntakeOutcome(
     val intake: Intake,
     expected: Set<IntakeStatus>,
     val sync: IntakeSyncState = IntakeSyncState(intake.id),
-    val reallocation: CourseReallocation? = null,
-    val command: QueuedCommand? = null
+    val reallocation: CourseReallocation? = null
 ) {
     /**
      * Ожидаемые статусы условного перехода: повтор уже совершённого ничего не меняет (D6).
@@ -66,13 +65,5 @@ class IntakeOutcome(
             "условный переход называет, из какого состояния идёт"
         }
         require(intake.status !in expected) { "переход в тот же статус не является переходом" }
-        // Учёт называет операцию, а очередь получает её в этой же транзакции. Порознь это
-        // оставило бы приём вечно ожидающим расход, которого в очереди нет.
-        require(sync.accounting != IntakeAccounting.PENDING || command != null) {
-            "ожидающий расход ставится в очередь вместе с приёмом"
-        }
-        require(sync.operationId == null || command == null || command.id == sync.operationId) {
-            "приём называет ту операцию, которая ставится вместе с ним"
-        }
     }
 }

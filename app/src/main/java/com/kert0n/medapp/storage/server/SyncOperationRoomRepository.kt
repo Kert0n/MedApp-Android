@@ -10,6 +10,7 @@ import com.kert0n.medapp.network.pack.toPreparedRequest
 import com.kert0n.medapp.network.medkit.toPreparedRequest as toMedKitPreparedRequest
 import com.kert0n.medapp.queue.Delivery
 import com.kert0n.medapp.queue.QueueStorage
+import com.kert0n.medapp.queue.QueuedCommand
 import com.kert0n.medapp.queue.StoredSyncOperation
 import com.kert0n.medapp.queue.SyncCommand
 import com.kert0n.medapp.queue.SyncOperation
@@ -68,6 +69,11 @@ class SyncOperationRoomRepository @Inject constructor(
             val words = vocabulary.snapshot()
             rows.mapNotNull { it.toDomain(words) as? StoredSyncOperation.Unreadable }
         }
+
+    override suspend fun <T> transaction(block: suspend () -> T): T = database.withTransaction { block() }
+
+    override suspend fun enqueue(queued: QueuedCommand, at: Instant): SyncOperation =
+        queue.enqueue(queued.id, queued.command, at, queued.groupId, queued.dependsOn)
 
     override suspend fun ready(): List<StoredSyncOperation> = database.withTransaction {
         val words = vocabulary.snapshot()

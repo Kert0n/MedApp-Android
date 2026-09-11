@@ -15,7 +15,6 @@ import com.kert0n.medapp.storage.course.CourseReallocation
 import com.kert0n.medapp.storage.course.toSourceStorageEntities
 import com.kert0n.medapp.storage.course.toStorageEntity as toCourseStorageEntity
 import com.kert0n.medapp.storage.database.MedAppDatabase
-import com.kert0n.medapp.storage.server.QueuedCommand
 import com.kert0n.medapp.queue.StoredSyncOperation
 import com.kert0n.medapp.storage.server.SyncOperationDao
 import com.kert0n.medapp.storage.server.SyncOperationStorageRow
@@ -95,7 +94,6 @@ class PackageRoomRepository @Inject constructor(
     override suspend fun adjust(
         adjustment: PackageAdjustment,
         reallocation: CourseReallocation?,
-        command: QueuedCommand?,
         at: Instant
     ): Boolean = database.withTransaction {
         val stored = packages.find(adjustment.packageId) ?: return@withTransaction false
@@ -111,15 +109,6 @@ class PackageRoomRepository @Inject constructor(
                 plan.toCourseStorageEntity(),
                 plan.medicine.toSourceStorageEntities(plan.id),
                 expected
-            )
-        }
-        command?.let {
-            queue.enqueue(
-                id = it.id,
-                command = it.command,
-                createdAt = at,
-                groupId = it.groupId,
-                dependsOn = it.dependsOn
             )
         }
         true

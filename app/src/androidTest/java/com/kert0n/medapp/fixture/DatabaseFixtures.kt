@@ -61,11 +61,11 @@ fun MedAppDatabase.packageRepository() = com.kert0n.medapp.storage.pack.PackageR
 )
 
 fun MedAppDatabase.courseRepository() = com.kert0n.medapp.storage.course.CourseRoomRepository(
-    this, courses(), intakes(), syncOperations(), vocabulary()
+    this, courses(), intakes(), vocabulary()
 )
 
 fun MedAppDatabase.intakeRepository() = com.kert0n.medapp.storage.intake.IntakeRoomRepository(
-    this, intakes(), packages(), courses(), syncOperations(), vocabulary()
+    this, intakes(), packages(), courses(), vocabulary()
 )
 
 fun MedAppDatabase.queueRepository() = com.kert0n.medapp.storage.server.SyncOperationRoomRepository(
