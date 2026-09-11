@@ -96,12 +96,9 @@ class CourseDraft(
         medicine.attach(pkg, doses)
             .map { changed(medicine = it, revision = revision.next(), updatedAt = at) }
 
-    /**
-     * Отвязка последней пачки форму и единицу не забывает: препарат назначения выбран, и
-     * заменить его другим — это другое лечение, а не правка этого черновика.
-     */
+    /** Отвязка последней пачки у черновика забывает форму и единицу: терять ещё нечего. */
     fun detach(pkg: Package, at: Instant): CourseDraft = changed(
-        medicine = medicine.detach(pkg.id),
+        medicine = medicine.detach(pkg.id, forgetFormWhenEmpty = true),
         revision = revision.next(),
         updatedAt = at
     )
