@@ -69,11 +69,10 @@ class IntakeStorageMapperTest {
 
     @Test
     fun everyAnswerComesBackAsItself() {
-        val skipped = plannedIntake().skip(LATER)
         val missed = plannedIntake().miss(LATER)
         val cancelled = plannedIntake().cancel(LATER)
 
-        for (answered in listOf(skipped, missed, cancelled)) {
+        for (answered in listOf(missed, cancelled)) {
             val restored = answered.toStorageEntity().toDomain(VOCABULARY) as CourseIntake
             assertEquals(answered.status, restored.status)
             assertEquals(answered.answer, restored.answer)

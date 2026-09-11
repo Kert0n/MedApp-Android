@@ -139,13 +139,13 @@ class PackageForecastTest {
     }
 
     @Test
-    fun skippedIntakeSpendsNothing() {
-        val skipped = plannedIntake().skip(LATER)
+    fun missedIntakeSpendsNothing() {
+        val missed = plannedIntake().miss(LATER)
         val forecast = remainingOn(
             date = today.plusDays(2),
             packages = listOf(stockOf()),
             courses = listOf(course),
-            resolved = listOf(skipped)
+            resolved = listOf(missed)
         )
         assertEquals(tablets("16"), forecast.single().remaining)
     }

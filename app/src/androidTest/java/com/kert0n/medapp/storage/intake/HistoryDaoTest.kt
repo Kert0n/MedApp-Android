@@ -111,7 +111,7 @@ class HistoryDaoTest {
         val second = intakes.answerIfStatusIs(
             id = INTAKE,
             from = listOf(IntakeStatus.PLANNED),
-            to = IntakeStatus.SKIPPED,
+            to = IntakeStatus.MISSED,
             at = LATER.plusSeconds(60),
             packageId = null,
             medKitId = null,

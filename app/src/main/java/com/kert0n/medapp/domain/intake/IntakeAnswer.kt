@@ -15,10 +15,10 @@ sealed interface IntakeAnswer {
         override val at: Instant get() = dose.at
     }
 
-    /** Человек отказался: расхода нет, потребность уменьшается. */
-    data class Skipped(override val at: Instant) : IntakeAnswer
-
-    /** Ответа не было до конца календарного дня курса в его зоне (PLAN C1). Ещё подтверждаем. */
+    /**
+     * Не принято — отказался или не ответил до конца календарного дня курса в его зоне. Расхода
+     * нет, доза уезжает вперёд, и подтвердить её ещё можно (PLAN C1, D6).
+     */
     data class Missed(override val at: Instant) : IntakeAnswer
 
     /** Пункт отменён вместе с курсом. Состоявшиеся приёмы этим не затрагиваются. */

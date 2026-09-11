@@ -85,21 +85,25 @@ class IntakeTest {
     }
 
     @Test
-    fun skippedIntakeIsNotConfirmedImplicitly() {
-        // Отмена пропуска — отдельное явное действие, и в первой версии её нет.
-        val skipped = plannedIntake().skip(LATER)
-        assertNull(skipped.taken?.amount)
-        assertEquals(LATER, skipped.answer?.at)
-        assertThrows(IllegalStateException::class.java) {
-            skipped.confirm(pack(), dose("2"), LATER)
-        }
-        assertThrows(IllegalStateException::class.java) { skipped.miss(LATER) }
+    fun refusalAndNoAnswerAreOneAnswerAndBothCanStillBeConfirmed() {
+        // Отказался и не ответил — в жизни одно и то же: лечение не короче, доза уезжает вперёд,
+        // а выпить её потом всё ещё можно. Статусов на два случая один.
+        assertEquals(
+            listOf("PLANNED", "TAKEN", "MISSED", "CANCELLED"),
+            IntakeStatus.entries.map { it.name }
+        )
+        val missed = plannedIntake().miss(LATER)
+        assertNull(missed.taken?.amount)
+        assertEquals(LATER, missed.answer?.at)
+        val late = missed.confirm(pack(), dose("2"), LATER.plusSeconds(3600))
+        assertEquals(IntakeStatus.TAKEN, late.status)
+        assertEquals(dose("2"), late.taken?.amount)
     }
 
     @Test
     fun repeatingTheSameAnswerChangesNothing() {
-        val skipped = plannedIntake().skip(LATER)
-        assertEquals(skipped.answer?.at, skipped.skip(LATER.plusSeconds(60)).answer?.at)
+        val missed = plannedIntake().miss(LATER)
+        assertEquals(missed.answer?.at, missed.miss(LATER.plusSeconds(60)).answer?.at)
         val cancelled = plannedIntake().cancel(LATER)
         assertEquals(IntakeStatus.CANCELLED, cancelled.cancel(LATER).status)
     }

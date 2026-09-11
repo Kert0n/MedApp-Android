@@ -124,7 +124,6 @@ class IntakeStorageEntity(
     private fun answer(unit: QuantityUnit): IntakeAnswer? = when (status) {
         IntakeStatus.PLANNED -> null
         IntakeStatus.TAKEN -> IntakeAnswer.Taken(requireNotNull(taken(unit)))
-        IntakeStatus.SKIPPED -> IntakeAnswer.Skipped(answeredMoment())
         IntakeStatus.MISSED -> IntakeAnswer.Missed(answeredMoment())
         IntakeStatus.CANCELLED -> IntakeAnswer.Cancelled(answeredMoment())
     }
