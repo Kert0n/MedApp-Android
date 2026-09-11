@@ -6,6 +6,7 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.kert0n.medapp.domain.stock.StockMovement
+import com.kert0n.medapp.storage.medkit.MedKitStorageEntity
 import com.kert0n.medapp.storage.pack.PackageStorageEntity
 import com.kert0n.medapp.storage.value.toStorageAmount
 import java.time.Instant
@@ -16,7 +17,8 @@ import kotlin.uuid.Uuid
  * переноса не расходятся и знак в отчёте не переворачивается (PLAN D7, F1).
  *
  * Ключ на пачку — `RESTRICT`: строка упаковки не удаляется, она архивируется, а ограничение
- * защищает историю от случайного каскада. Пачка и аптечки — колонками; в домен их собирает
+ * защищает историю от случайного каскада. Аптечки движения — те же ключи: движение случилось в
+ * аптечке, и без неё его не прочитать. Пачка и аптечки — колонками; в домен их собирает
  * `StockMovementStorageRow` связями.
  */
 @Entity(
@@ -27,9 +29,32 @@ import kotlin.uuid.Uuid
             parentColumns = ["id"],
             childColumns = ["package_id"],
             onDelete = ForeignKey.RESTRICT
+        ),
+        ForeignKey(
+            entity = MedKitStorageEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["med_kit_id"],
+            onDelete = ForeignKey.RESTRICT
+        ),
+        ForeignKey(
+            entity = MedKitStorageEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["source_med_kit_id"],
+            onDelete = ForeignKey.RESTRICT
+        ),
+        ForeignKey(
+            entity = MedKitStorageEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["target_med_kit_id"],
+            onDelete = ForeignKey.RESTRICT
         )
     ],
-    indices = [Index(value = ["package_id", "observed_at"])]
+    indices = [
+        Index(value = ["package_id", "observed_at"]),
+        Index("med_kit_id"),
+        Index("source_med_kit_id"),
+        Index("target_med_kit_id")
+    ]
 )
 class StockMovementStorageEntity(
     @PrimaryKey val id: Uuid,
