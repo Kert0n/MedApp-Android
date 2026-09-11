@@ -80,12 +80,32 @@ class CourseRoomRepository @Inject constructor(
 
     override suspend fun courseHolding(packageId: Uuid): Uuid? = courses.courseHolding(packageId)
 
-    override suspend fun reallocate(reallocation: CourseReallocation): Boolean =
+    override suspend fun reallocate(reallocation: CourseReallocation): Boolean = database.withTransaction {
+        val course = reallocation.course
+        if (courses.findPlan(course.id) == null) return@withTransaction false
+        check(courses.sourcePackagesOf(course.id).toSet() == course.sources.map { it.pkg.id }.toSet()) {
+            "пересчёт обеспечения не меняет состав пачек: смена состава — updateSources"
+        }
         courses.updateAllocations(
-            reallocation.course.toStorageEntity(),
-            reallocation.course.medicine.toSourceStorageEntities(reallocation.course.id),
+            course.toStorageEntity(),
+            course.medicine.toSourceStorageEntities(course.id),
             reallocation.expected
         )
+    }
+
+    override suspend fun updateSources(course: Course, expected: Revision): Boolean = database.withTransaction {
+        val revised = courses.updateAllocations(
+            course.toStorageEntity(),
+            course.medicine.toSourceStorageEntities(course.id),
+            expected
+        )
+        if (!revised) return@withTransaction false
+        courses.releaseAssignmentsOf(course.id)
+        for (source in course.sources) {
+            courses.assignPackage(ActivePackageAssignmentStorageEntity(source.pkg.id, course.id))
+        }
+        true
+    }
 
     override suspend fun setTotalDoses(course: Course, expected: Revision): Boolean =
         courses.updateTotalDoses(

@@ -10,8 +10,10 @@ import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.INTAKE
 import com.kert0n.medapp.fixture.LATER
+import com.kert0n.medapp.domain.value.doses
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
+import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.SHARED_KIT
 import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.course
@@ -132,6 +134,46 @@ class TransactionBoundariesTest {
         assertNull(courses.findPlan(COURSE))
         assertNull(courses.findRecord(COURSE))
         assertEquals(other, courses.courseHolding(PACK))
+    }
+
+    /**
+     * Источники и назначения — два представления одного отношения, и пишутся вместе:
+     * привязанная пачка занята курсом, отвязанная свободна (PLAN F1, F2).
+     */
+    @Test
+    fun changingTheSourcesReassignsThePackagesInTheSameTransaction() = runTest {
+        val activation = draft()
+        courses.activate(activation, planned = listOf(plannedIntake()))
+        val ibuprofen = pack(id = OTHER_PACK, quantity = tablets("10"), form = TABLET_FORM)
+        packages.add(ibuprofen)
+
+        val extended = activation.course.attach(ibuprofen, 3.doses, LATER).getOrThrow()
+        assertTrue(courses.updateSources(extended, expected = activation.course.revision))
+        assertEquals(COURSE, courses.courseHolding(PACK))
+        assertEquals(COURSE, courses.courseHolding(OTHER_PACK))
+
+        val shrunk = extended.detach(paracetamol, LATER)
+        assertTrue(courses.updateSources(shrunk, expected = extended.revision))
+        assertNull(courses.courseHolding(PACK))
+        assertEquals(COURSE, courses.courseHolding(OTHER_PACK))
+        assertEquals(listOf(OTHER_PACK), requireNotNull(courses.findPlan(COURSE)).sources.map { it.pkg.id })
+    }
+
+    /** Пересчёт обеспечения состав не меняет: иначе назначения пачек разошлись бы с источниками. */
+    @Test
+    fun reallocationWithAnotherCompositionIsRefused() = runTest {
+        val activation = draft()
+        courses.activate(activation, planned = listOf(plannedIntake()))
+        val ibuprofen = pack(id = OTHER_PACK, quantity = tablets("10"), form = TABLET_FORM)
+        packages.add(ibuprofen)
+        val extended = activation.course.attach(ibuprofen, 3.doses, LATER).getOrThrow()
+
+        val failure = runCatching {
+            courses.reallocate(CourseReallocation(extended, activation.course.revision))
+        }.exceptionOrNull()
+
+        assertEquals(IllegalStateException::class, failure!!::class)
+        assertNull(courses.courseHolding(OTHER_PACK))
     }
 
     @Test

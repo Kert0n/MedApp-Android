@@ -161,6 +161,9 @@ interface CourseDao {
     @Query("DELETE FROM course_sources WHERE course_id = :courseId")
     suspend fun deleteSourcesOf(courseId: Uuid)
 
+    @Query("SELECT package_id FROM course_sources WHERE course_id = :courseId")
+    suspend fun sourcePackagesOf(courseId: Uuid): List<Uuid>
+
     @Query("DELETE FROM courses WHERE id = :id")
     suspend fun deletePlan(id: Uuid)
 
