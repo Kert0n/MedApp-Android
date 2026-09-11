@@ -15,7 +15,6 @@ import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.domain.value.doses
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -63,15 +62,6 @@ class CourseShortageTest {
         assertEquals(7.doses, found.requiredDoses)
         assertEquals(2.doses, found.coveredDoses)
         assertEquals(plan[2].at, found.firstUncoveredAt)
-    }
-
-    @Test
-    fun unknownAvailabilityKeepsTheLastAllocation() {
-        // Без числа снижать выделение догадкой нельзя; обеспечение при этом требует сверки.
-        val partial = availability(OTHER_PACK to tablets("12"))
-        val clamped28 = twoPacks.clamped(28.doses, partial, LATER)
-        assertEquals(listOf(5.doses, 4.doses), clamped28.allocations())
-        assertTrue(twoPacks.coverage(emptyList(), partial).requiresRecount)
     }
 
     @Test

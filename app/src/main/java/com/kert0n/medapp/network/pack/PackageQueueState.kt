@@ -1,30 +1,25 @@
 package com.kert0n.medapp.network.pack
 
-import com.kert0n.medapp.domain.pack.EffectiveAmount
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.value.Quantity
 import kotlin.uuid.Uuid
 
 /**
- * Остаток пачки глазами очереди: подтверждённое сервером число, незакрытые команды в порядке
- * `sequence` — уже без отсечённого ручной сверкой — и операции с неустановленным исходом
- * (PLAN E1, E3). Домену отдаётся [amount]; признаки очереди остаются здесь, и экран сводит их с
- * доменным результатом сам.
+ * Остаток пачки глазами очереди: подтверждённое сервером число и незакрытые команды в порядке
+ * `sequence` (PLAN E1). Домену отдаётся [amount]; признаки очереди остаются здесь, и экран
+ * сводит их с доменным результатом сам.
  */
 class PackageQueueState(
     val packageId: Uuid,
     val confirmed: Quantity,
-    unclosed: List<PackageSyncCommand> = emptyList(),
-    unresolvedOperationIds: List<Uuid> = emptyList()
+    unclosed: List<PackageSyncCommand> = emptyList()
 ) {
 
     /**
-     * Свои копии: свёртка считается один раз при сборке, и список, оставшийся у вызывающего,
+     * Своя копия: свёртка считается один раз при сборке, и список, оставшийся у вызывающего,
      * иначе расходился бы с уже посчитанным остатком.
      */
     val unclosed: List<PackageSyncCommand> = unclosed.toList()
-
-    val unresolvedOperationIds: List<Uuid> = unresolvedOperationIds.toList()
 
     init {
         // Чужая команда в этой свёртке дала бы неверный остаток молча.
@@ -37,21 +32,15 @@ class PackageQueueState(
      * Собирается из пачки: подтверждённое число и тождество берутся у неё, поэтому соединить
      * остаток одной пачки с идентификатором другой нечем.
      */
-    constructor(
-        pkg: Package,
-        unclosed: List<PackageSyncCommand> = emptyList(),
-        unresolvedOperationIds: List<Uuid> = emptyList()
-    ) : this(pkg.id, pkg.quantity, unclosed, unresolvedOperationIds)
+    constructor(pkg: Package, unclosed: List<PackageSyncCommand> = emptyList()) :
+        this(pkg.id, pkg.quantity, unclosed)
 
     /**
-     * Количество для домена: подтверждённое число с применёнными по порядку командами. При
-     * неустановленном исходе — [EffectiveAmount.Unknown]: вошёл ли наш расход в серверный
-     * остаток, неизвестно, и любое число было бы догадкой.
+     * Количество для домена: подтверждённое число с применёнными по порядку командами. Число есть
+     * всегда: команда, которая ещё не доехала, уже отправлена или ждёт повтора, и устройство
+     * знает, что именно оно отправило; истину потом читает снимок.
      */
-    val amount: EffectiveAmount
-        get() =
-            if (unresolvedOperationIds.isNotEmpty()) EffectiveAmount.Unknown
-            else EffectiveAmount.Known(projected.amount)
+    val amount: Quantity get() = projected.amount
 
     /** В число вложено незакрытое изменение количества; правка описания или брони не в счёт. */
     val hasUnconfirmedChanges: Boolean get() = projected.changed

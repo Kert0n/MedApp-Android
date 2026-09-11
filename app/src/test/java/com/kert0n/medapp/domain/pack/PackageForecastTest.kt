@@ -27,7 +27,6 @@ import java.time.ZoneId
 import kotlin.uuid.Uuid
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -46,14 +45,12 @@ class PackageForecastTest {
         id: Uuid = PACK,
         quantity: String = "20",
         claims: Claims? = null,
-        known: Boolean = true,
         expiresOn: ExpiryDate? = null
     ) = packAvailability(
         id = id,
         quantity = tablets(quantity),
         claims = claims,
-        expiresOn = expiresOn,
-        known = known
+        expiresOn = expiresOn
     )
 
     private val course = activeCourse(schedule = week, sources = listOf(source(PACK, 7)))
@@ -184,38 +181,6 @@ class PackageForecastTest {
     }
 
     @Test
-    fun unresolvedOperationLeavesNoInventedRemainder() {
-        // При требуемой сверке выдуманный остаток не рисуется: ноль и «неизвестно» — разные
-        // ответы (PLAN D4).
-        val forecast = remainingOn(
-            date = today.plusDays(2),
-            packages = listOf(stockOf(known = false)),
-            courses = listOf(course),
-            resolved = emptyList()
-        )
-        assertNull(forecast.single().remaining)
-        assertTrue(forecast.single().requiresRecount)
-        assertEquals(EffectiveAmount.Unknown, forecast.single().amount)
-    }
-
-    @Test
-    fun unknownPackIsNotSpentAndSpendingMovesToTheNext() {
-        // Первая пачка ждёт сверки: расход идёт со второй, а у первой прогноз остаётся неизвестным.
-        val twoSources = activeCourse(
-            schedule = week,
-            sources = listOf(source(PACK, 2), source(OTHER_PACK, 5))
-        )
-        val forecast = remainingOn(
-            date = today.plusDays(6),
-            packages = listOf(stockOf(known = false), stockOf(id = OTHER_PACK, quantity = "12")),
-            courses = listOf(twoSources),
-            resolved = emptyList()
-        )
-        assertEquals(EffectiveAmount.Unknown, forecast.first { it.packageId == PACK }.amount)
-        assertEquals(tablets("2"), forecast.first { it.packageId == OTHER_PACK }.remaining)
-    }
-
-    @Test
     fun reservedByOthersIsShownSeparatelyAndNotSubtracted() {
         // Таблетки физически лежат в пачке, просто заявлены другими людьми.
         val forecast = remainingOn(
@@ -246,7 +211,6 @@ class PackageForecastTest {
         // «только действующие» не нужен — отбирать не из чего.
         val forecast = remainingOn(date = today.plusDays(6), courses = emptyList())
         assertEquals(tablets("20"), forecast.single().remaining)
-        assertFalse(forecast.single().requiresRecount)
     }
 
     @Test

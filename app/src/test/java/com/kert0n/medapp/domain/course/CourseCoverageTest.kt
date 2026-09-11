@@ -13,6 +13,7 @@ import java.time.LocalTime
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -109,16 +110,13 @@ class CourseCoverageTest {
     }
 
     @Test
-    fun unknownAvailabilityIsNotPassedOffAsCoverage() {
-        // Исход операции по первой пачке не установлен: выделение сохраняется, но обеспеченным
-        // не считается, и обеспечение помечено требующим проверки.
+    fun aSourceMissingFromTheAvailabilityIsACallerError() {
+        // Число есть у каждой пачки: расклад без источника — не «неизвестно», а ошибка того, кто
+        // его собрал, и молча она не проходит.
         val partial = availability(OTHER_PACK to tablets("12"))
-        val found = twoPacks(first = 5, second = 4).coverage(remaining, partial)
-        assertTrue(found.requiresRecount)
-        assertEquals(4.doses, found.coveredDoses)
-        assertEquals(5.doses, found.perSource.first().allocatedDoses)
-        assertEquals(0.doses, found.perSource.first().coveredDoses)
-        assertNull(found.perSource.first().leftover)
+        assertThrows(IllegalArgumentException::class.java) {
+            twoPacks(first = 5, second = 4).coverage(remaining, partial)
+        }
     }
 
     @Test

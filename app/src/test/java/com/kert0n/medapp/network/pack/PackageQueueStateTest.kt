@@ -1,6 +1,5 @@
 package com.kert0n.medapp.network.pack
 
-import com.kert0n.medapp.domain.pack.EffectiveAmount
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
 import com.kert0n.medapp.fixture.INTAKE
 import com.kert0n.medapp.fixture.OTHER_PACK
@@ -31,14 +30,14 @@ class PackageQueueStateTest {
     fun confirmedAmountPassesThroughUntouched() {
         // В локальной аптечке исходящих команд нет вовсе (PLAN E1).
         val state = PackageQueueState(pack(quantity = tablets("20")))
-        assertEquals(EffectiveAmount.Known(tablets("20")), state.amount)
+        assertEquals(tablets("20"), state.amount)
         assertFalse(state.hasUnconfirmedChanges)
     }
 
     @Test
     fun consumptionIsSubtractedOnceAndLeavesTheNumberUnconfirmed() {
         val state = PackageQueueState(pack(quantity = tablets("20")), listOf(consume("3")))
-        assertEquals(EffectiveAmount.Known(tablets("17")), state.amount)
+        assertEquals(tablets("17"), state.amount)
         assertTrue(state.hasUnconfirmedChanges)
     }
 
@@ -59,7 +58,7 @@ class PackageQueueStateTest {
         val commands: MutableList<PackageSyncCommand> = mutableListOf(consume("3"))
         val state = PackageQueueState(pack(quantity = tablets("20")), commands)
         commands += PackageSyncCommand.Delete(PACK)
-        assertEquals(EffectiveAmount.Known(tablets("17")), state.amount)
+        assertEquals(tablets("17"), state.amount)
         assertEquals(1, state.unclosed.size)
     }
 
@@ -92,7 +91,7 @@ class PackageQueueStateTest {
             pack(quantity = tablets("20")),
             unclosed = listOf(consume("3"), PackageSyncCommand.CorrectStock(PACK, tablets("30")))
         )
-        assertEquals(tablets("30"), state.amount.quantityOrNull)
+        assertEquals(tablets("30"), state.amount)
     }
 
     @Test
@@ -101,7 +100,7 @@ class PackageQueueStateTest {
         val stored = pack(quantity = tablets("20"))
         val recount = PackageSyncCommand.CorrectStock(PACK, tablets("30"))
         val state = PackageQueueState(stored, listOf(recount))
-        assertEquals(stored.correctTo(tablets("30")).quantity, state.amount.quantityOrNull)
+        assertEquals(stored.correctTo(tablets("30")).quantity, state.amount)
     }
 
     @Test
@@ -114,14 +113,14 @@ class PackageQueueStateTest {
                 consume("2")
             )
         )
-        assertEquals(tablets("10"), state.amount.quantityOrNull)
+        assertEquals(tablets("10"), state.amount)
     }
 
     @Test
     fun deletionProjectsZero() {
         val state = PackageQueueState(
             pack(quantity = tablets("20")), listOf(PackageSyncCommand.Delete(PACK)))
-        assertEquals(tablets("0"), state.amount.quantityOrNull)
+        assertEquals(tablets("0"), state.amount)
     }
 
     @Test
@@ -133,7 +132,7 @@ class PackageQueueStateTest {
                 PackageSyncCommand.ReleaseClaim(PACK)
             )
         )
-        assertEquals(EffectiveAmount.Known(tablets("20")), state.amount)
+        assertEquals(tablets("20"), state.amount)
         assertFalse(state.hasUnconfirmedChanges)
     }
 
@@ -142,19 +141,18 @@ class PackageQueueStateTest {
         // Нехватка — конфликт операции, и разбирается она по состоянию очереди.
         val state = PackageQueueState(
             pack(quantity = tablets("2")), listOf(consume("5")))
-        assertEquals(tablets("0"), state.amount.quantityOrNull)
+        assertEquals(tablets("0"), state.amount)
     }
 
     @Test
-    fun unresolvedOperationMakesTheAmountUnknown() {
-        // Пока неизвестно, включён ли расход в серверный остаток, любое число было бы догадкой;
-        // какая операция тому виной, знает очередь.
+    fun aCommandStillOnItsWayIsAlreadyInTheNumber() {
+        // Расход, который ещё не доехал, устройство отправило само и знает, что отправило:
+        // число есть всегда, а истину потом читает снимок (PLAN E1).
         val state = PackageQueueState(
             pack(quantity = tablets("20")),
-            unclosed = listOf(consume("3")),
-            unresolvedOperationIds = listOf(INTAKE)
+            unclosed = listOf(consume("3"))
         )
-        assertEquals(EffectiveAmount.Unknown, state.amount)
-        assertEquals(listOf(INTAKE), state.unresolvedOperationIds)
+        assertEquals(tablets("17"), state.amount)
+        assertTrue(state.hasUnconfirmedChanges)
     }
 }

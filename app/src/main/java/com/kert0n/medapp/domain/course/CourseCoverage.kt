@@ -9,15 +9,13 @@ import kotlin.uuid.Uuid
 /**
  * Обеспечение курса: сколько из оставшихся приёмов покрывают пачки препарата и с какого приёма
  * не хватает. Вычисляется и не хранится (PLAN D5); нехватка меняет обеспечение, а не расписание.
- * [requiresRecount] — по какой-то пачке число неизвестно, и обеспечение неполно до сверки.
  */
 class CourseCoverage(
     val requiredDoses: Doses,        // сколько приёмов ещё впереди
     val coveredDoses: Doses,         // сколько из них обеспечено
     val coveredUntil: Instant?,      // до какого приёма хватит
     val firstUncoveredAt: Instant?,  // с какого приёма не хватает
-    perSource: List<Source>,
-    val requiresRecount: Boolean = false
+    perSource: List<Source>
 ) {
     /** Своя копия: посчитанное обеспечение не меняется вслед за списком у вызывающего. */
     val perSource: List<Source> = perSource.toList()
@@ -35,16 +33,15 @@ class CourseCoverage(
                 coveredDoses == other.coveredDoses &&
                 coveredUntil == other.coveredUntil &&
                 firstUncoveredAt == other.firstUncoveredAt &&
-                perSource == other.perSource &&
-                requiresRecount == other.requiresRecount
+                perSource == other.perSource
             )
 
     override fun hashCode(): Int = Objects.hash(
-        requiredDoses, coveredDoses, coveredUntil, firstUncoveredAt, perSource, requiresRecount
+        requiredDoses, coveredDoses, coveredUntil, firstUncoveredAt, perSource
     )
 
     override fun toString(): String =
-        "CourseCoverage(нужно $requiredDoses, обеспечено $coveredDoses, сверка $requiresRecount)"
+        "CourseCoverage(нужно $requiredDoses, обеспечено $coveredDoses)"
 
     val missingDoses: Doses get() = requiredDoses - coveredDoses
 
@@ -53,14 +50,13 @@ class CourseCoverage(
     /**
      * Строка по одной пачке. [coveredDoses] — часть выделения, которую подтверждает остаток;
      * разница с [allocatedDoses] объясняет человеку, почему обеспечено меньше выделенного.
-     * [leftover] — остаток меньше дозы, не переливающийся в следующую пачку; `null` — число
-     * неизвестно.
+     * [leftover] — остаток меньше дозы, не переливающийся в следующую пачку.
      */
     data class Source(
         val packageId: Uuid,
         val allocatedDoses: Doses,
         val coveredDoses: Doses,
-        val leftover: Quantity?
+        val leftover: Quantity
     ) {
         init {
             require(coveredDoses <= allocatedDoses) {

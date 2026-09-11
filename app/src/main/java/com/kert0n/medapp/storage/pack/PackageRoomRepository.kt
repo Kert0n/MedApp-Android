@@ -2,7 +2,6 @@ package com.kert0n.medapp.storage.pack
 
 import androidx.room.withTransaction
 import com.kert0n.medapp.domain.pack.Claims
-import com.kert0n.medapp.domain.pack.EffectiveAmount
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageAvailability
 import com.kert0n.medapp.domain.pack.PackageFacts
@@ -10,7 +9,6 @@ import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.network.pack.PackageQueueState
 import com.kert0n.medapp.network.pack.PackageSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncState
-import com.kert0n.medapp.network.server.SyncOperationStatus
 import com.kert0n.medapp.storage.course.CourseDao
 import com.kert0n.medapp.storage.course.CourseReallocation
 import com.kert0n.medapp.storage.course.toSourceStorageEntities
@@ -139,8 +137,7 @@ class PackageRoomRepository @Inject constructor(
 
     /**
      * «Есть свободное» запросом не выражается: это вычитание чужих броней и выделения из оценки
-     * количества, а оценка зависит от очереди (PLAN H4). Пачка, требующая сверки, свободной не
-     * считается — «неизвестно» это не «есть».
+     * количества, а оценка зависит от очереди (PLAN H4).
      */
     private suspend fun listing(query: PackageQuery, today: LocalDate): List<Package> =
         database.withTransaction {
@@ -152,7 +149,7 @@ class PackageRoomRepository @Inject constructor(
                     pkg,
                     queue.unclosedOfPackage(pkg.id),
                     allocations.firstOrNull { it.packageId == pkg.id }
-                ).freeForAnyone?.isZero == false
+                ).freeForAnyone.isZero.not()
             }
         }
 
@@ -162,36 +159,27 @@ class PackageRoomRepository @Inject constructor(
         allocation: PackageAllocationRow?
     ): PackageAvailability = PackageAvailability(
         pkg = pkg,
-        amount = amountOf(pkg, unclosed),
+        effective = amountOf(pkg, unclosed),
         myAllocation = allocation?.allocated ?: Quantity.zero(pkg.quantity.unitId)
     )
 
     /**
-     * Незакрытые команды применяются к подтверждённому остатку по возрастанию номера. Операция,
-     * чей исход не установлен, и команда, которую нечем прочитать после обновления приложения,
-     * делают число неизвестным, а не нулевым (PLAN E1, F4).
+     * Незакрытые команды применяются к подтверждённому остатку по возрастанию номера. Команда,
+     * которую нечем прочитать после обновления приложения, в число не входит: она названа среди
+     * нечитаемых отдельно, а число остаётся тем, что известно (PLAN E1, F4).
      *
      * Ожидающая ручная сверка отсекает всё до своего среза `throughSequence`: пересчитанное число
-     * эти факты уже включает, и их неустановленный исход больше не делает его неизвестным (E3).
+     * эти факты уже включает (E3).
      */
-    private fun amountOf(pkg: Package, unclosed: List<SyncOperationStorageRow>): EffectiveAmount {
-        val read = unclosed.map { it.operation.sequence to it.toDomain() }
-        val cut = read.maxOfOrNull { (_, stored) ->
-            (stored.readable()?.command as? PackageSyncCommand.Reconcile)?.throughSequence ?: -1L
+    private fun amountOf(pkg: Package, unclosed: List<SyncOperationStorageRow>): Quantity {
+        val read = unclosed.map { it.operation.sequence to it.toDomain().readable() }
+        val cut = read.maxOfOrNull { (_, operation) ->
+            (operation?.command as? PackageSyncCommand.Reconcile)?.throughSequence ?: -1L
         } ?: -1L
-        val commands = ArrayList<PackageSyncCommand>(unclosed.size)
-        val unresolved = ArrayList<Uuid>()
-        for ((sequence, stored) in read) {
-            if (sequence <= cut) continue
-            val operation = stored.readable()
-            val command = operation?.command as? PackageSyncCommand
-            when {
-                command == null -> unresolved += stored.id
-                operation.status == SyncOperationStatus.NEEDS_RECOUNT -> unresolved += operation.id
-                else -> commands += command
-            }
-        }
-        return PackageQueueState(pkg, commands, unresolved).amount
+        val commands = read
+            .filter { (sequence, _) -> sequence > cut }
+            .mapNotNull { (_, operation) -> operation?.command as? PackageSyncCommand }
+        return PackageQueueState(pkg, commands).amount
     }
 
     private fun StoredSyncOperation.readable() = (this as? StoredSyncOperation.Readable)?.operation

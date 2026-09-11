@@ -2,7 +2,6 @@ package com.kert0n.medapp.fixture
 
 import com.kert0n.medapp.domain.pack.PackageAvailability
 import com.kert0n.medapp.domain.pack.Claims
-import com.kert0n.medapp.domain.pack.EffectiveAmount
 import com.kert0n.medapp.domain.pack.ExpiryDate
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageFacts
@@ -87,17 +86,16 @@ fun PackageFacts.withShared(
     shared = PackageSharedFacts(name, formId, category, manufacturer, country, description)
 )
 
-/** Доступность пачки для тестов, которым нужны её числа; [known] = false — нужна сверка. */
+/** Доступность пачки для тестов, которым нужны её числа: оценка равна остатку пачки. */
 fun packAvailability(
     id: Uuid = PACK,
     quantity: Quantity = tablets("20"),
     claims: Claims? = null,
     expiresOn: ExpiryDate? = null,
-    known: Boolean = true,
     myAllocation: Quantity = Quantity.zero(quantity.unitId)
 ): PackageAvailability = PackageAvailability(
     pkg = pack(id = id, quantity = quantity, claims = claims, expiresOn = expiresOn),
-    amount = if (known) EffectiveAmount.Known(quantity) else EffectiveAmount.Unknown,
+    effective = quantity,
     myAllocation = myAllocation
 )
 

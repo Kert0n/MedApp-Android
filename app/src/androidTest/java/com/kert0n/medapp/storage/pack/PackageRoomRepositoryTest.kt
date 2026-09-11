@@ -1,7 +1,6 @@
 package com.kert0n.medapp.storage.pack
 
 import com.kert0n.medapp.domain.pack.Claims
-import com.kert0n.medapp.domain.pack.EffectiveAmount
 import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.INTAKE
@@ -82,7 +81,7 @@ class PackageRoomRepositoryTest {
     @Test
     fun withoutQueueTheAmountIsTheConfirmedOne() = runTest {
         val availability = requireNotNull(repository.observeAvailability(PACK).first())
-        assertEquals(EffectiveAmount.Known(tablets("20")), availability.amount)
+        assertEquals(tablets("20"), availability.effective)
         assertEquals(tablets("20"), availability.availableToMe)
         assertEquals(tablets("20"), availability.freeForAnyone)
     }
@@ -93,7 +92,7 @@ class PackageRoomRepositoryTest {
         queue.enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
 
         val availability = requireNotNull(repository.observeAvailability(PACK).first())
-        assertEquals(EffectiveAmount.Known(tablets("17")), availability.amount)
+        assertEquals(tablets("17"), availability.effective)
     }
 
     @Test
@@ -102,21 +101,20 @@ class PackageRoomRepositoryTest {
         queue.settle(operation, SyncOperationStatus.DONE)
 
         assertEquals(
-            EffectiveAmount.Known(tablets("20")),
-            requireNotNull(repository.observeAvailability(PACK).first()).amount
+            tablets("20"),
+            requireNotNull(repository.observeAvailability(PACK).first()).effective
         )
     }
 
-    /** Неустановленный исход делает число неизвестным, а не нулевым (PLAN E1, D4). */
+    /** Расход, чей ответ потерялся, из числа не выпадает: устройство знает, что отправило (E1). */
     @Test
-    fun operationWithUnknownOutcomeMakesTheAmountUnknown() = runTest {
+    fun operationWithALostAnswerStillCounts() = runTest {
         queue.enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
-        queue.settle(operation, SyncOperationStatus.NEEDS_RECOUNT)
+        queue.settle(operation, SyncOperationStatus.PENDING, lastError = "обрыв", at = at, attempted = true)
 
         val availability = requireNotNull(repository.observeAvailability(PACK).first())
-        assertEquals(EffectiveAmount.Unknown, availability.amount)
-        assertTrue(availability.requiresRecount)
-        assertNull(availability.freeForAnyone)
+        assertEquals(tablets("17"), availability.effective)
+        assertEquals(tablets("17"), availability.freeForAnyone)
     }
 
     /**
@@ -126,12 +124,12 @@ class PackageRoomRepositoryTest {
     @Test
     fun pendingReconcileCutsOffWhatItAlreadyCounts() = runTest {
         val counted = queue.enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
-        queue.settle(operation, SyncOperationStatus.NEEDS_RECOUNT)
+        queue.settle(operation, SyncOperationStatus.PENDING, lastError = "обрыв", at = at, attempted = true)
         queue.enqueue(reconcile, PackageSyncCommand.Reconcile(PACK, tablets("10"), counted.sequence), at)
         queue.enqueue(later, PackageSyncCommand.Consume(PACK, dose("2"), OTHER_INTAKE), at)
 
         val availability = requireNotNull(repository.observeAvailability(PACK).first())
-        assertEquals(EffectiveAmount.Known(tablets("8")), availability.amount)
+        assertEquals(tablets("8"), availability.effective)
     }
 
     @Test
@@ -192,16 +190,6 @@ class PackageRoomRepositoryTest {
             emptyList<String>(),
             repository.list(PackageQuery(filter = PackageQuery.Filter.HasFree), today).first().map { it.name }
         )
-    }
-
-    /** «Неизвестно» — это не «есть свободное»: пачка, требующая сверки, из списка уходит. */
-    @Test
-    fun packageThatNeedsRecountIsNotCountedAsFree() = runTest {
-        queue.enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
-        queue.settle(operation, SyncOperationStatus.NEEDS_RECOUNT)
-
-        val found = repository.list(PackageQuery(filter = PackageQuery.Filter.HasFree), today)
-        assertEquals(emptyList<String>(), found.first().map { it.name })
     }
 
     /**

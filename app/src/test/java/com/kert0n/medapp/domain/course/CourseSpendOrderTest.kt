@@ -77,15 +77,6 @@ class CourseSpendOrderTest {
     }
 
     @Test
-    fun unknownAvailabilityIsNotSpentEither() {
-        // Исход операции по первой пачке не установлен: до сверки она не выдаётся за источник,
-        // и расход идёт со второй.
-        val found = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 2)))
-            .spendOrder(ahead, availability(OTHER_PACK to tablets("12")))
-        assertEquals(listOf(OTHER_PACK, OTHER_PACK, null, null, null), found)
-    }
-
-    @Test
     fun similarPacksAreNotSubstituted() {
         // Третья пачка того же лекарства лежит рядом и доступна, но в препарат не встаёт сама.
         val elsewhere = Uuid.parse("00000000-0000-4000-8000-000000000023")

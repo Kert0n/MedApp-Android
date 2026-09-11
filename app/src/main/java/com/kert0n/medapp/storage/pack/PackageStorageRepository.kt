@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.Flow
  * серверной части, личных сведений и картины броней (PLAN F1, H1).
  *
  * Оценку количества считает очередь: репозиторий берёт незакрытые команды по номеру и сворачивает
- * их существующим `PackageQueueState`, а домену отдаёт готовый `EffectiveAmount` (PLAN E1).
+ * их существующим `PackageQueueState`, а домену отдаёт готовое число (PLAN E1).
  */
 interface PackageStorageRepository {
 

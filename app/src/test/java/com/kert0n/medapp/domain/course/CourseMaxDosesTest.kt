@@ -79,17 +79,6 @@ class CourseMaxDosesTest {
     }
 
     @Test
-    fun unknownAvailabilityKeepsTheLastAllocation() {
-        // Без числа снижать выделение догадкой нельзя, а повышать нечем.
-        val unknown = Availability.nothingKnown
-        assertEquals(5.doses, twoPacks(5, 4).limit(home, required = 28, availability = unknown))
-        assertEquals(
-            0.doses,
-            twoPacks(5, 0).limit(dacha, required = 28, availability = unknown)
-        )
-    }
-
-    @Test
     fun fractionalRemainderNeverBecomesADose() {
         // Пять таблеток по две — две дозы; пятая таблетка остаётся физическим остатком.
         val odd = availability(PACK to tablets("5"))
