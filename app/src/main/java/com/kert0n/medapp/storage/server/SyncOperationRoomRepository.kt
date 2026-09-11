@@ -9,6 +9,7 @@ import com.kert0n.medapp.network.pack.toDomain
 import com.kert0n.medapp.queue.pack.toPreparedRequest
 import com.kert0n.medapp.queue.medkit.toPreparedRequest as toMedKitPreparedRequest
 import com.kert0n.medapp.queue.Delivery
+import com.kert0n.medapp.queue.PackageState
 import com.kert0n.medapp.queue.QueueStorage
 import com.kert0n.medapp.queue.QueuedCommand
 import com.kert0n.medapp.queue.StoredSyncOperation
@@ -145,25 +146,29 @@ class SyncOperationRoomRepository @Inject constructor(
                 queue.settle(id, SyncOperationStatus.DONE, outcome.refusal, at, attempted = 1)
                 intakes.markRemoteApplied(id)
                 val command = operation.command as? PackageSyncCommand ?: return@withTransaction
-                val snapshot = outcome.snapshot
-                if (snapshot != null) {
-                    // Аптечка снимка — объектом из базы; перенос мог сменить её, и берётся та,
-                    // которую называет снимок.
-                    val medKit = requireNotNull(medKits.find(snapshot.pack.medKitId)) {
-                        "снимок пачки называет аптечку, которой нет: ${snapshot.pack.medKitId}"
-                    }.toDomain()
-                    val resolved = snapshot.toDomain(words, medKit, addedAt = at, observedAt = at)
-                    packages.applyServerSnapshot(resolved.pack.toStorageEntity(resolved.sync), observedAt = at)
-                    resolved.pack.claims?.let { packages.upsertClaims(it.toStorageEntity(command.packageId)) }
-                } else {
-                    // Пачки на сервере больше нет: истина — ноль, и локально она архивируется.
-                    val row = packages.find(command.packageId) ?: return@withTransaction
-                    val pkg = row.toDomain(words)
-                    if (pkg.suppliesStock) {
-                        val gone = pkg.correctTo(Quantity.zero(pkg.quantity.unit))
-                        packages.save(gone.toStorageEntity(row.pack.syncState()), gone.toDetailsStorageEntity())
+                when (val state = outcome.state) {
+                    is PackageState.Present -> {
+                        // Аптечка снимка — объектом из базы; перенос мог сменить её, и берётся та,
+                        // которую называет снимок.
+                        val snapshot = state.snapshot
+                        val medKit = requireNotNull(medKits.find(snapshot.pack.medKitId)) {
+                            "снимок пачки называет аптечку, которой нет: ${snapshot.pack.medKitId}"
+                        }.toDomain()
+                        val resolved = snapshot.toDomain(words, medKit, addedAt = at, observedAt = at)
+                        packages.applyServerSnapshot(resolved.pack.toStorageEntity(resolved.sync), observedAt = at)
+                        resolved.pack.claims?.let { packages.upsertClaims(it.toStorageEntity(command.packageId)) }
                     }
-                    packages.deleteClaims(command.packageId)
+                    PackageState.Gone -> {
+                        // Пачки на сервере больше нет: истина — ноль, и локально она архивируется.
+                        val row = packages.find(command.packageId) ?: return@withTransaction
+                        val pkg = row.toDomain(words)
+                        if (pkg.suppliesStock) {
+                            val gone = pkg.correctTo(Quantity.zero(pkg.quantity.unit))
+                            packages.save(gone.toStorageEntity(row.pack.syncState()), gone.toDetailsStorageEntity())
+                        }
+                        packages.deleteClaims(command.packageId)
+                    }
+                    PackageState.None -> Unit
                 }
             }
             is Delivery.Retry ->

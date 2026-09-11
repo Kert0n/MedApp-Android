@@ -3,6 +3,7 @@ package com.kert0n.medapp.queue.pack
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.queue.Expected
 import com.kert0n.medapp.queue.SyncCommand
 import kotlin.uuid.Uuid
 
@@ -27,6 +28,20 @@ sealed interface PackageSyncCommand : SyncCommand {
         is Delete -> Quantity.zero(amount.unit)
         is Create, is Describe, is Move, is SetClaim, is ReleaseClaim -> null
     }
+
+    /**
+     * Форма успешного ответа по контракту операции (PLAN B4, B5): создание, правка и перенос
+     * отвечают снимком; расход — снимком либо нулём байтов, когда пачка кончилась; бронь —
+     * бронью без версии картины, и снимок читается следом; удаление и снятие брони — `204`.
+     */
+    override val expects: Expected
+        get() = when (this) {
+            is Create, is Describe, is Move -> Expected.SNAPSHOT
+            is CorrectStock -> if (actual.isZero) Expected.NOTHING else Expected.SNAPSHOT
+            is Consume -> Expected.SNAPSHOT_OR_GONE
+            is SetClaim -> Expected.CLAIM
+            is Delete, is ReleaseClaim -> Expected.NOTHING
+        }
 
     /**
      * Завести упаковку на сервере.

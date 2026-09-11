@@ -21,6 +21,7 @@ import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.network.server.medAppJson
 import com.kert0n.medapp.queue.Delivery
+import com.kert0n.medapp.queue.PackageState
 import com.kert0n.medapp.queue.StoredSyncOperation
 import com.kert0n.medapp.queue.SyncOperationStatus
 import com.kert0n.medapp.storage.database.MedAppDatabase
@@ -117,7 +118,7 @@ class QueueStorageTest {
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
         storage.take(operation, at)
 
-        storage.settle(operation, Delivery.Done(snapshot), at.plusSeconds(1))
+        storage.settle(operation, Delivery.Done(PackageState.Present(snapshot)), at.plusSeconds(1))
 
         val row = requireNotNull(database.packages().find(PACK))
         val pkg = row.toDomain(VOCABULARY)
@@ -151,7 +152,7 @@ class QueueStorageTest {
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("20"), INTAKE), at)
         storage.take(operation, at)
 
-        storage.settle(operation, Delivery.Done(snapshot = null), at.plusSeconds(1))
+        storage.settle(operation, Delivery.Done(PackageState.Gone), at.plusSeconds(1))
 
         val pkg = requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY)
         assertEquals(tablets("0"), pkg.quantity)
@@ -179,7 +180,7 @@ class QueueStorageTest {
 
         assertEquals(listOf(operation), storage.ready().map { it.id })
         storage.take(operation, at)
-        storage.settle(operation, Delivery.Done(snapshot), at)
+        storage.settle(operation, Delivery.Done(PackageState.Present(snapshot)), at)
         assertEquals(listOf(release), storage.ready().map { it.id })
     }
 }

@@ -146,15 +146,6 @@ fun PackageSyncCommand.toPreparedRequest(
     }
 }
 
-/** Отвечает ли сервер на этот запрос снимком пачки — или снимок после него читается отдельно. */
-val PackageSyncCommand.answersWithSnapshot: Boolean
-    get() = when (this) {
-        is PackageSyncCommand.Create, is PackageSyncCommand.Describe, is PackageSyncCommand.Move,
-        is PackageSyncCommand.Consume -> true
-        is PackageSyncCommand.CorrectStock -> !actual.isZero
-        is PackageSyncCommand.Delete, is PackageSyncCommand.SetClaim, is PackageSyncCommand.ReleaseClaim -> false
-    }
-
 /** Курсовой расход едет `sync` под своим номером: повтор сервер применит один раз (PLAN B4). */
 val PackageSyncCommand.isSync: Boolean
     get() = this is PackageSyncCommand.Consume && claimAfter != null

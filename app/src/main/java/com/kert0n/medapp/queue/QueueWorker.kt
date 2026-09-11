@@ -1,14 +1,11 @@
 package com.kert0n.medapp.queue
 
-import com.kert0n.medapp.queue.medkit.MedKitSyncCommand
-import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
-import com.kert0n.medapp.queue.pack.PackageSyncCommand
-import com.kert0n.medapp.queue.pack.answersWithSnapshot
-import com.kert0n.medapp.queue.pack.isSync
 import com.kert0n.medapp.network.server.ApiFailure
 import com.kert0n.medapp.network.server.ApiResult
-import com.kert0n.medapp.network.server.medAppJson
 import com.kert0n.medapp.network.value.VocabularyResolver
+import com.kert0n.medapp.queue.medkit.MedKitSyncCommand
+import com.kert0n.medapp.queue.pack.PackageSyncCommand
+import com.kert0n.medapp.queue.pack.isSync
 import java.time.Clock
 import java.time.Instant
 import javax.inject.Inject
@@ -94,7 +91,7 @@ class QueueWorker @Inject constructor(
     /** Отправка одной операции и чтение исхода; отказы сервера — исходы, а не сбои. */
     private suspend fun deliver(operation: SyncOperation, request: PreparedRequest): Step {
         val command = operation.command
-        return when (val result = transport.send(request)) {
+        return when (val result = transport.send(request, command.expects)) {
             is ApiResult.Success -> Step.Settled(done(command, result.value))
             is ApiResult.Failure -> when (val failure = result.failure) {
                 ApiFailure.Conflict, ApiFailure.PreconditionFailed, ApiFailure.PreconditionRequired,
@@ -112,13 +109,23 @@ class QueueWorker @Inject constructor(
         }
     }
 
-    /** Успех: снимок из ответа, где он есть, иначе — чтением следом; команде аптечки снимок не нужен. */
-    private suspend fun done(command: SyncCommand, body: String?): Delivery = when (command) {
-        is PackageSyncCommand ->
-            if (command.answersWithSnapshot) Delivery.Done(body?.let(::decodeSnapshot))
-            else if (command is PackageSyncCommand.Delete || (command is PackageSyncCommand.CorrectStock && command.actual.isZero)) Delivery.Done(null)
-            else snapshotRead(command.packageId, refusal = null)
-        is MedKitSyncCommand -> Delivery.Done(null)
+    /**
+     * Успех, прочитанный по форме, которую ждала команда: снимок ложится как есть, «пачки нет»
+     * — как есть, а после брони и удаления без тела снимок читается следом; команде аптечки
+     * состояние пачки не нужно.
+     */
+    private suspend fun done(command: SyncCommand, answer: QueueAnswer): Delivery = when (command) {
+        is PackageSyncCommand -> when (answer) {
+            is QueueAnswer.Snapshot -> Delivery.Done(PackageState.Present(answer.snapshot))
+            QueueAnswer.Gone -> Delivery.Done(PackageState.Gone)
+            is QueueAnswer.Claim, QueueAnswer.Nothing ->
+                if (command is PackageSyncCommand.Delete || (command is PackageSyncCommand.CorrectStock && command.actual.isZero)) {
+                    Delivery.Done(PackageState.Gone)
+                } else {
+                    snapshotRead(command.packageId, refusal = null)
+                }
+        }
+        is MedKitSyncCommand -> Delivery.Done(PackageState.None)
         else -> command.unknownRoot()
     }
 
@@ -131,20 +138,17 @@ class QueueWorker @Inject constructor(
             val refusal = if (command.isSync && failure == ApiFailure.Conflict) null else failure.toString()
             snapshotRead(command.packageId, refusal)
         }
-        else -> Delivery.Done(null, refusal = failure.toString())
+        else -> Delivery.Done(PackageState.None, refusal = failure.toString())
     }
 
     private suspend fun snapshotRead(packageId: Uuid, refusal: String?): Delivery =
         when (val read = transport.packageSnapshot(packageId)) {
-            is ApiResult.Success -> Delivery.Done(read.value, refusal)
+            is ApiResult.Success -> Delivery.Done(PackageState.Present(read.value), refusal)
             is ApiResult.Failure -> when (read.failure) {
                 ApiFailure.NotFound -> Delivery.AccessLost
                 else -> Delivery.Retry("снимок не прочитан: ${read.failure}")
             }
         }
-
-    private fun decodeSnapshot(body: String): PackageSnapshotNetworkDTO =
-        medAppJson.decodeFromString(PackageSnapshotNetworkDTO.serializer(), body)
 
     /** Не раньше чем: последняя попытка плюс задержка по их числу; первая попытка — сразу. */
     private fun SyncOperation.notBefore(): Instant? =

@@ -11,6 +11,7 @@ import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.network.server.ResourceVersion
+import com.kert0n.medapp.queue.Expected
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -85,12 +86,14 @@ class PackageSyncCommandNetworkMapperTest {
         assertFalse(describe.body!!.contains("name"))
     }
 
+    /** Форма ответа — по контракту операции, и «пачки нет» ждёт только расход (PLAN B4, B5). */
     @Test
-    fun whichCommandsAnswerWithASnapshot() {
-        assertTrue(PackageSyncCommand.Consume(PACK, dose("3"), INTAKE).answersWithSnapshot)
-        assertTrue(PackageSyncCommand.CorrectStock(PACK, tablets("5")).answersWithSnapshot)
-        assertFalse(PackageSyncCommand.CorrectStock(PACK, tablets("0")).answersWithSnapshot)
-        assertFalse(PackageSyncCommand.SetClaim(PACK, tablets("6")).answersWithSnapshot)
-        assertFalse(PackageSyncCommand.Delete(PACK).answersWithSnapshot)
+    fun eachCommandNamesTheShapeOfItsAnswer() {
+        assertEquals(Expected.SNAPSHOT_OR_GONE, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE).expects)
+        assertEquals(Expected.SNAPSHOT, PackageSyncCommand.CorrectStock(PACK, tablets("5")).expects)
+        assertEquals(Expected.NOTHING, PackageSyncCommand.CorrectStock(PACK, tablets("0")).expects)
+        assertEquals(Expected.CLAIM, PackageSyncCommand.SetClaim(PACK, tablets("6")).expects)
+        assertEquals(Expected.NOTHING, PackageSyncCommand.Delete(PACK).expects)
+        assertEquals(Expected.SNAPSHOT, PackageSyncCommand.Create(PACK, HOME_KIT, tablets("5"), PackageSharedFacts("Парацетамол", TABLET_FORM)).expects)
     }
 }

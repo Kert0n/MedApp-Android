@@ -119,13 +119,15 @@ class QueueWorkerTest {
         )
     }
 
-    private class Transport(private val answer: (PreparedRequest) -> ApiResult<String?>) : QueueTransport {
+    private class Transport(private val answer: (PreparedRequest) -> ApiResult<QueueAnswer>) : QueueTransport {
         val sent = mutableListOf<PreparedRequest>()
+        val expected = mutableListOf<Expected>()
         var snapshots = 0
         var snapshotAnswer: ApiResult<PackageSnapshotNetworkDTO>? = null
 
-        override suspend fun send(request: PreparedRequest): ApiResult<String?> {
+        override suspend fun send(request: PreparedRequest, expects: Expected): ApiResult<QueueAnswer> {
             sent += request
+            expected += expects
             return answer(request)
         }
 
@@ -176,14 +178,15 @@ class QueueWorkerTest {
     @Test
     fun pendingOperationIsSentAndSettledDoneWithTheSnapshot() = runTest {
         val storage = Storage(listOf(operation()))
-        val transport = Transport { ApiResult.Success(snapshotJson) }
+        val transport = Transport { ApiResult.Success(QueueAnswer.Snapshot(snapshot)) }
 
         val report = worker(storage, transport).drain()
 
         assertEquals(1, report.settled)
         assertEquals("POST", transport.sent.single().method)
         assertEquals("/v1/drugs/$PACK/intakes", transport.sent.single().path)
-        assertEquals(Delivery.Done(snapshot), storage.settled.single().second)
+        assertEquals(Delivery.Done(PackageState.Present(snapshot)), storage.settled.single().second)
+        assertEquals(Expected.SNAPSHOT_OR_GONE, transport.expected.single())
         assertEquals(SyncOperationStatus.DONE, storage.operations.getValue(INTAKE).status)
         assertNull(report.retryAt)
     }
@@ -199,7 +202,7 @@ class QueueWorkerTest {
 
         assertEquals(1, report.settled)
         assertEquals(1, transport.snapshots)
-        assertEquals(Delivery.Done(snapshot, refusal = null), storage.settled.single().second)
+        assertEquals(Delivery.Done(PackageState.Present(snapshot), refusal = null), storage.settled.single().second)
         assertTrue(transport.sent.single().path.endsWith("/sync/$INTAKE"))
     }
 
@@ -212,7 +215,7 @@ class QueueWorkerTest {
         worker(storage, transport).drain()
 
         val outcome = storage.settled.single().second as Delivery.Done
-        assertEquals(snapshot, outcome.snapshot)
+        assertEquals(PackageState.Present(snapshot), outcome.state)
         assertNotNull(outcome.refusal)
     }
 
@@ -235,7 +238,7 @@ class QueueWorkerTest {
         // версия пачки с тех пор изменилась бы (PLAN E2, E3).
         val storage = Storage(listOf(operation()))
         var broken = true
-        val transport = Transport { if (broken) ApiResult.Failure(ApiFailure.OutcomeUnknown) else ApiResult.Success(snapshotJson) }
+        val transport = Transport { if (broken) ApiResult.Failure(ApiFailure.OutcomeUnknown) else ApiResult.Success(QueueAnswer.Snapshot(snapshot)) }
 
         val first = worker(storage, transport).drain()
         assertEquals(0, first.settled)
@@ -268,7 +271,7 @@ class QueueWorkerTest {
         val storage = Storage(emptyList())
         val broken = StoredSyncOperation.Unreadable(OTHER_PACK, StoredSyncOperation.Reason.Format("payload не разбирается"))
         storage.unreadable += broken
-        val transport = Transport { ApiResult.Success(snapshotJson) }
+        val transport = Transport { ApiResult.Success(QueueAnswer.Snapshot(snapshot)) }
 
         val report = worker(storage, transport).drain()
 
@@ -281,13 +284,26 @@ class QueueWorkerTest {
         val storage = Storage(emptyList())
         val miss = VocabularyMiss(VocabularyMiss.Kind.UNIT, MILLILITRES.id)
         storage.unreadable += StoredSyncOperation.Unreadable(OTHER_PACK, StoredSyncOperation.Reason.VocabularyStale(miss))
-        val transport = Transport { ApiResult.Success(snapshotJson) }
+        val transport = Transport { ApiResult.Success(QueueAnswer.Snapshot(snapshot)) }
 
         val report = worker(storage, transport, online = true).drain()
 
         assertEquals(1, store.refreshed)
         // Словарь дочитан, строка всё ещё не читается — второй проход её уже пропускает.
         assertEquals(1, report.skipped.size)
+    }
+
+    /** Ответ не по форме — сбой протокола, а не «пустая пачка» и не исключение: повтор тем же запросом. */
+    @Test
+    fun answerOutOfShapeIsRetriedAndNothingIsApplied() = runTest {
+        val storage = Storage(listOf(operation()))
+        val transport = Transport { ApiResult.Failure(ApiFailure.Protocol("пустое тело там, где контракт обещает снимок")) }
+
+        val report = worker(storage, transport).drain()
+
+        assertEquals(0, report.settled)
+        assertEquals(Delivery.Retry("пустое тело там, где контракт обещает снимок"), storage.settled.single().second)
+        assertEquals(SyncOperationStatus.PENDING, storage.operations.getValue(INTAKE).status)
     }
 
     @Test
