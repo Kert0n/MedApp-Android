@@ -104,19 +104,6 @@ class PackageQueueStateTest {
     }
 
     @Test
-    fun reconciliationNamesTheStockAndLaterCommandsApplyOnTop() {
-        val state = PackageQueueState(
-            pack(quantity = tablets("20")),
-            unclosed = listOf(
-                consume("3"),
-                PackageSyncCommand.Reconcile(PACK, tablets("12"), throughSequence = 5),
-                consume("2")
-            )
-        )
-        assertEquals(tablets("10"), state.amount)
-    }
-
-    @Test
     fun deletionProjectsZero() {
         val state = PackageQueueState(
             pack(quantity = tablets("20")), listOf(PackageSyncCommand.Delete(PACK)))

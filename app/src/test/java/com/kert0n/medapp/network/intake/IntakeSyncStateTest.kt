@@ -18,7 +18,6 @@ class IntakeSyncStateTest {
         // В локальной аптечке исходящих операций нет вовсе.
         val local = IntakeSyncState(INTAKE, IntakeAccounting.LOCAL_APPLIED)
         assertNull(local.operationId)
-        assertNull(local.reconciliationId)
     }
 
     @Test
@@ -34,28 +33,10 @@ class IntakeSyncStateTest {
         assertThrows(IllegalArgumentException::class.java) {
             IntakeSyncState(INTAKE, IntakeAccounting.PENDING)
         }
-        assertThrows(IllegalArgumentException::class.java) {
-            IntakeSyncState(INTAKE, IntakeAccounting.NEEDS_RECOUNT)
-        }
         assertEquals(
             PACK,
             IntakeSyncState(INTAKE, IntakeAccounting.PENDING, operationId = PACK).operationId
         )
-    }
-
-    @Test
-    fun reconciledConsumptionNamesItsReconciliation() {
-        // Исход прежнего запроса так и остаётся неизвестным, но факт учтён названной сверкой.
-        assertThrows(IllegalArgumentException::class.java) {
-            IntakeSyncState(INTAKE, IntakeAccounting.RECONCILED, operationId = PACK)
-        }
-        val reconciled = IntakeSyncState(
-            intakeId = INTAKE,
-            accounting = IntakeAccounting.RECONCILED,
-            operationId = PACK,
-            reconciliationId = INTAKE
-        )
-        assertEquals(INTAKE, reconciled.reconciliationId)
     }
 
     @Test

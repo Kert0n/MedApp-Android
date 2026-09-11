@@ -21,13 +21,13 @@ import kotlinx.serialization.json.jsonPrimitive
  * колонкой, знает слой хранения, а не сама величина (PLAN F1, AGENTS).
  *
  * У общего маркера `SyncCommand` исчерпывающего `when` нет — цена деления команд по понятиям
- * (E2). Вместо него набор закрыт круговым тестом по всем двенадцати видам.
+ * (E2). Вместо него набор закрыт круговым тестом по всем одиннадцати видам.
  */
 object SyncCommandStorageConverter {
 
     /**
      * Версия формата payload. Незавершённые операции переживают обновление приложения:
-     * неизвестная версия переводит операцию в `CONFLICT`, а не роняет процесс (PLAN F4).
+     * неизвестную версию работник пропускает и называет, а не роняет процесс (PLAN F4).
      */
     const val PAYLOAD_VERSION = 1
 
@@ -41,7 +41,6 @@ object SyncCommandStorageConverter {
             is PackageSyncCommand.Consume -> PACKAGE_CONSUME
             is PackageSyncCommand.SetClaim -> PACKAGE_SET_CLAIM
             is PackageSyncCommand.ReleaseClaim -> PACKAGE_RELEASE_CLAIM
-            is PackageSyncCommand.Reconcile -> PACKAGE_RECONCILE
         }
         is MedKitSyncCommand -> when (command) {
             is MedKitSyncCommand.Create -> MEDKIT_CREATE
@@ -70,10 +69,6 @@ object SyncCommandStorageConverter {
         }
     )
 
-    /**
-     * Команда из строки. `null` означает «прочитать нечем»: неизвестный вид или чужая версия
-     * payload переводят операцию в `CONFLICT`, а не роняют разбор очереди.
-     */
     /**
      * Команда строки очереди. `null` значит ровно одно: этой сборке неизвестен вид команды или
      * версия payload — обычное следствие обновления приложения. Повреждённый payload известного
@@ -123,11 +118,6 @@ object SyncCommandStorageConverter {
         PACKAGE_RELEASE_CLAIM -> PackageSyncCommand.ReleaseClaim(
             packageId = fields.uuid("packageId")
         )
-        PACKAGE_RECONCILE -> PackageSyncCommand.Reconcile(
-            packageId = fields.uuid("packageId"),
-            actual = fields.quantity("actual"),
-            throughSequence = fields.text("throughSequence").toLong()
-        )
         MEDKIT_CREATE -> MedKitSyncCommand.Create(medKitId = fields.uuid("medKitId"))
         MEDKIT_DELETE -> MedKitSyncCommand.Delete(
             medKitId = fields.uuid("medKitId"),
@@ -161,10 +151,6 @@ object SyncCommandStorageConverter {
             }
             is PackageSyncCommand.SetClaim -> putQuantity("amount", command.amount)
             is PackageSyncCommand.ReleaseClaim -> Unit
-            is PackageSyncCommand.Reconcile -> {
-                putQuantity("actual", command.actual)
-                put("throughSequence", JsonPrimitive(command.throughSequence.toString()))
-            }
         }
     }
 
@@ -190,7 +176,6 @@ object SyncCommandStorageConverter {
     private const val PACKAGE_CONSUME = "PACKAGE_CONSUME"
     private const val PACKAGE_SET_CLAIM = "PACKAGE_SET_CLAIM"
     private const val PACKAGE_RELEASE_CLAIM = "PACKAGE_RELEASE_CLAIM"
-    private const val PACKAGE_RECONCILE = "PACKAGE_RECONCILE"
     private const val MEDKIT_CREATE = "MEDKIT_CREATE"
     private const val MEDKIT_DELETE = "MEDKIT_DELETE"
     private const val MEDKIT_LEAVE = "MEDKIT_LEAVE"

@@ -50,10 +50,9 @@ class PackageSyncCommandTest {
             PackageSyncCommand.Delete(PACK),
             PackageSyncCommand.Consume(PACK, dose("2"), INTAKE),
             PackageSyncCommand.SetClaim(PACK, tablets("10")),
-            PackageSyncCommand.ReleaseClaim(PACK),
-            PackageSyncCommand.Reconcile(PACK, tablets("12"), throughSequence = 7)
+            PackageSyncCommand.ReleaseClaim(PACK)
         )
-        assertEquals(9, commands.size)
+        assertEquals(8, commands.size)
         assertEquals(listOf(PACK), commands.map { it.packageId }.distinct())
     }
 
@@ -134,13 +133,5 @@ class PackageSyncCommandTest {
             PackageSyncCommand.SetClaim(PACK, tablets("0"))
         }
         assertEquals(PACK, PackageSyncCommand.ReleaseClaim(PACK).packageId)
-    }
-
-    @Test
-    fun reconciliationNamesHowFarItAnswersFor() {
-        assertEquals(7L, PackageSyncCommand.Reconcile(PACK, tablets("12"), 7).throughSequence)
-        assertThrows(IllegalArgumentException::class.java) {
-            PackageSyncCommand.Reconcile(PACK, tablets("12"), -1)
-        }
     }
 }

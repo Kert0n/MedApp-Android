@@ -23,8 +23,7 @@ class SyncOperation(
     val status: SyncOperationStatus = SyncOperationStatus.PENDING,
     val attempts: Int = 0,
     val lastError: String? = null,
-    val lastTriedAt: Instant? = null,
-    val reconciledBy: Uuid? = null
+    val lastTriedAt: Instant? = null
 ) {
     /** Своя копия: множество, оставшееся у вызывающего, меняло бы порядок отправки очереди. */
     val dependsOn: Set<Uuid> = dependsOn.toSet()
@@ -50,13 +49,12 @@ class SyncOperation(
                 status == other.status &&
                 attempts == other.attempts &&
                 lastError == other.lastError &&
-                lastTriedAt == other.lastTriedAt &&
-                reconciledBy == other.reconciledBy
+                lastTriedAt == other.lastTriedAt
             )
 
     override fun hashCode(): Int = Objects.hash(
         id, command, sequence, createdAt, payloadVersion, prepared, groupId, dependsOn,
-        status, attempts, lastError, lastTriedAt, reconciledBy
+        status, attempts, lastError, lastTriedAt
     )
 
     override fun toString(): String =

@@ -182,10 +182,10 @@ class SyncOperationDaoTest {
         queue.enqueue(first, PackageSyncCommand.Delete(PACK), createdAt)
         val at = createdAt.plusSeconds(30)
 
-        queue.settle(first, SyncOperationStatus.NEEDS_RECOUNT, "нет ответа", at, attempted = 1)
+        queue.settle(first, SyncOperationStatus.PENDING, "нет ответа", at, attempted = 1)
 
         val stored = requireNotNull(queue.find(first)).operation
-        assertEquals(SyncOperationStatus.NEEDS_RECOUNT, stored.status)
+        assertEquals(SyncOperationStatus.PENDING, stored.status)
         assertEquals("нет ответа", stored.lastError)
         assertEquals(at, stored.lastTriedAt)
         assertEquals(1, stored.attempts)
@@ -203,8 +203,8 @@ class SyncOperationDaoTest {
     }
 
     /**
-     * Строка с чужой версией payload не собирается в операцию и не роняет очередь: вызывающий
-     * переведёт её в `CONFLICT` (PLAN F4).
+     * Строка с чужой версией payload не собирается в операцию и не роняет очередь: работник
+     * её пропустит и назовёт (PLAN F4).
      */
     @Test
     fun operationWithForeignPayloadVersionReadsAsUnreadable() = runTest {

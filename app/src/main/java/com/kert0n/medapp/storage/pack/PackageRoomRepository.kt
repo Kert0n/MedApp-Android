@@ -167,22 +167,13 @@ class PackageRoomRepository @Inject constructor(
      * Незакрытые команды применяются к подтверждённому остатку по возрастанию номера. Команда,
      * которую нечем прочитать после обновления приложения, в число не входит: она названа среди
      * нечитаемых отдельно, а число остаётся тем, что известно (PLAN E1, F4).
-     *
-     * Ожидающая ручная сверка отсекает всё до своего среза `throughSequence`: пересчитанное число
-     * эти факты уже включает (E3).
      */
     private fun amountOf(pkg: Package, unclosed: List<SyncOperationStorageRow>): Quantity {
-        val read = unclosed.map { it.operation.sequence to it.toDomain().readable() }
-        val cut = read.maxOfOrNull { (_, operation) ->
-            (operation?.command as? PackageSyncCommand.Reconcile)?.throughSequence ?: -1L
-        } ?: -1L
-        val commands = read
-            .filter { (sequence, _) -> sequence > cut }
-            .mapNotNull { (_, operation) -> operation?.command as? PackageSyncCommand }
+        val commands = unclosed.mapNotNull {
+            (it.toDomain() as? StoredSyncOperation.Readable)?.operation?.command as? PackageSyncCommand
+        }
         return PackageQueueState(pkg, commands).amount
     }
-
-    private fun StoredSyncOperation.readable() = (this as? StoredSyncOperation.Readable)?.operation
 
     private companion object {
 

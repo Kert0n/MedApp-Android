@@ -31,8 +31,8 @@ import kotlin.uuid.Uuid
  * `status` хранится, хотя домен выводит его из ответа: подтверждение идёт условным `UPDATE` по
  * ожидаемому статусу, и без колонки условие писать не по чему (PLAN F2).
  *
- * `accounting`, `operation_id` и `reconciliation_id` живут в той же строке, но доменная модель
- * их не носит: это `IntakeSyncState` сетевого слоя, и правила о приёме его не читают (PLAN D6).
+ * `accounting` и `operation_id` живут в той же строке, но доменная модель их не носит: это
+ * `IntakeSyncState` сетевого слоя, и правила о приёме его не читают (PLAN D6).
  *
  * Ключи на пачки и на запись эпизода — `RESTRICT`: история не удаляется каскадом.
  */
@@ -81,16 +81,14 @@ class IntakeStorageEntity(
     @ColumnInfo(name = "taken_med_kit_id") val takenMedKitId: Uuid? = null,
     @ColumnInfo(name = "taken_amount") val takenAmount: String? = null,
     val accounting: IntakeAccounting = IntakeAccounting.NOT_APPLICABLE,
-    @ColumnInfo(name = "operation_id") val operationId: Uuid? = null,
-    @ColumnInfo(name = "reconciliation_id") val reconciliationId: Uuid? = null
+    @ColumnInfo(name = "operation_id") val operationId: Uuid? = null
 ) {
     fun toDomain(): Intake = if (courseId == null) unplanned() else scheduled()
 
     fun syncState(): IntakeSyncState = IntakeSyncState(
         intakeId = id,
         accounting = accounting,
-        operationId = operationId,
-        reconciliationId = reconciliationId
+        operationId = operationId
     )
 
     private fun scheduled(): CourseIntake = CourseIntake(
@@ -150,8 +148,7 @@ fun Intake.toStorageEntity(sync: IntakeSyncState = IntakeSyncState(id)): IntakeS
         takenMedKitId = takenDose?.medKitId,
         takenAmount = takenDose?.amount?.quantity?.toStorageAmount(),
         accounting = sync.accounting,
-        operationId = sync.operationId,
-        reconciliationId = sync.reconciliationId
+        operationId = sync.operationId
     )
     return when (this) {
         is UnplannedIntake -> common
@@ -171,8 +168,7 @@ fun Intake.toStorageEntity(sync: IntakeSyncState = IntakeSyncState(id)): IntakeS
             takenMedKitId = common.takenMedKitId,
             takenAmount = common.takenAmount,
             accounting = common.accounting,
-            operationId = common.operationId,
-            reconciliationId = common.reconciliationId
+            operationId = common.operationId
         )
     }
 }

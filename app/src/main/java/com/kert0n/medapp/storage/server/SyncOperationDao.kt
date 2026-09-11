@@ -72,7 +72,7 @@ interface SyncOperationDao {
     @Transaction
     @Query(
         "SELECT * FROM sync_operations WHERE package_id = :packageId " +
-            "AND status NOT IN ('DONE', 'RECONCILED', 'SUPERSEDED', 'CONFLICT', 'ACCESS_LOST') " +
+            "AND status NOT IN ('DONE', 'ACCESS_LOST') " +
             "ORDER BY sequence"
     )
     suspend fun unclosedOfPackage(packageId: Uuid): List<SyncOperationStorageRow>

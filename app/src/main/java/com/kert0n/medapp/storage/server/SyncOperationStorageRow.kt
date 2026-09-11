@@ -36,8 +36,7 @@ class SyncOperationStorageRow(
                 status = operation.status,
                 attempts = operation.attempts,
                 lastError = operation.lastError,
-                lastTriedAt = operation.lastTriedAt,
-                reconciledBy = operation.reconciledBy
+                lastTriedAt = operation.lastTriedAt
             )
         )
     } catch (cause: IllegalArgumentException) {

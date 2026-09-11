@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "ae15e65c9f968440f35506a6ba303779",
+    "identityHash": "23a3ab045e338e8a08363328bd832ec2",
     "entities": [
       {
         "tableName": "quantity_units",
@@ -684,7 +684,7 @@
       },
       {
         "tableName": "intakes",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `unit_id` TEXT NOT NULL, `status` TEXT NOT NULL, `course_id` TEXT, `course_revision` INTEGER, `scheduled_on` TEXT, `scheduled_time` INTEGER, `scheduled_at` INTEGER, `planned_amount` TEXT, `planned_package_id` TEXT, `answered_at` INTEGER, `taken_package_id` TEXT, `taken_med_kit_id` TEXT, `taken_amount` TEXT, `accounting` TEXT NOT NULL, `operation_id` TEXT, `reconciliation_id` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`course_id`) REFERENCES `course_records`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`planned_package_id`) REFERENCES `packages`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`taken_package_id`) REFERENCES `packages`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `unit_id` TEXT NOT NULL, `status` TEXT NOT NULL, `course_id` TEXT, `course_revision` INTEGER, `scheduled_on` TEXT, `scheduled_time` INTEGER, `scheduled_at` INTEGER, `planned_amount` TEXT, `planned_package_id` TEXT, `answered_at` INTEGER, `taken_package_id` TEXT, `taken_med_kit_id` TEXT, `taken_amount` TEXT, `accounting` TEXT NOT NULL, `operation_id` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`course_id`) REFERENCES `course_records`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`planned_package_id`) REFERENCES `packages`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`taken_package_id`) REFERENCES `packages`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
         "fields": [
           {
             "fieldPath": "id",
@@ -768,11 +768,6 @@
           {
             "fieldPath": "operationId",
             "columnName": "operation_id",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "reconciliationId",
-            "columnName": "reconciliation_id",
             "affinity": "TEXT"
           }
         ],
@@ -977,7 +972,7 @@
       },
       {
         "tableName": "sync_operations",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `kind` TEXT NOT NULL, `payload` TEXT NOT NULL, `payload_version` INTEGER NOT NULL, `sequence` INTEGER NOT NULL, `status` TEXT NOT NULL, `attempts` INTEGER NOT NULL, `created_at` INTEGER NOT NULL, `package_id` TEXT, `med_kit_id` TEXT, `group_id` TEXT, `last_error` TEXT, `last_tried_at` INTEGER, `reconciled_by` TEXT, `prepared_method` TEXT, `prepared_path` TEXT, `prepared_query` TEXT, `prepared_body` TEXT, `prepared_drug_version` INTEGER, `prepared_claims_version` INTEGER, `prepared_quantity_before` TEXT, `prepared_mine_before` TEXT, `prepared_unit_id` TEXT, `prepared_at` INTEGER, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `kind` TEXT NOT NULL, `payload` TEXT NOT NULL, `payload_version` INTEGER NOT NULL, `sequence` INTEGER NOT NULL, `status` TEXT NOT NULL, `attempts` INTEGER NOT NULL, `created_at` INTEGER NOT NULL, `package_id` TEXT, `med_kit_id` TEXT, `group_id` TEXT, `last_error` TEXT, `last_tried_at` INTEGER, `prepared_method` TEXT, `prepared_path` TEXT, `prepared_query` TEXT, `prepared_body` TEXT, `prepared_drug_version` INTEGER, `prepared_claims_version` INTEGER, `prepared_quantity_before` TEXT, `prepared_mine_before` TEXT, `prepared_unit_id` TEXT, `prepared_at` INTEGER, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -1051,11 +1046,6 @@
             "fieldPath": "lastTriedAt",
             "columnName": "last_tried_at",
             "affinity": "INTEGER"
-          },
-          {
-            "fieldPath": "reconciledBy",
-            "columnName": "reconciled_by",
-            "affinity": "TEXT"
           },
           {
             "fieldPath": "prepared.method",
@@ -1265,7 +1255,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'ae15e65c9f968440f35506a6ba303779')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '23a3ab045e338e8a08363328bd832ec2')"
     ]
   }
 }

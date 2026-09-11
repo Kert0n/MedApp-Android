@@ -18,7 +18,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Круговой тест по **всем двенадцати** видам команд: исчерпывающего `when` по обоим корням
+ * Круговой тест по **всем одиннадцати** видам команд: исчерпывающего `when` по обоим корням
  * сразу у маркера нет, и закрытость набора держит именно этот перечень (PLAN E2, PR 4).
  */
 class SyncCommandStorageConverterTest {
@@ -42,7 +42,6 @@ class SyncCommandStorageConverterTest {
         PackageSyncCommand.Consume(PACK, dose("1.5"), INTAKE, claimAfter = tablets("4")),
         PackageSyncCommand.SetClaim(PACK, tablets("6")),
         PackageSyncCommand.ReleaseClaim(PACK),
-        PackageSyncCommand.Reconcile(PACK, tablets("11"), throughSequence = 42),
         MedKitSyncCommand.Create(HOME_KIT),
         MedKitSyncCommand.Delete(HOME_KIT),
         MedKitSyncCommand.Delete(HOME_KIT, transferTo = SHARED_KIT),
@@ -63,12 +62,12 @@ class SyncCommandStorageConverterTest {
     }
 
     @Test
-    fun twelveKindsAndNoMore() {
+    fun elevenKindsAndNoMore() {
         assertEquals(
             listOf(
                 "PACKAGE_CREATE", "PACKAGE_DESCRIBE", "PACKAGE_CORRECT_STOCK", "PACKAGE_MOVE",
                 "PACKAGE_DELETE", "PACKAGE_CONSUME", "PACKAGE_SET_CLAIM", "PACKAGE_RELEASE_CLAIM",
-                "PACKAGE_RECONCILE", "MEDKIT_CREATE", "MEDKIT_DELETE", "MEDKIT_LEAVE"
+                "MEDKIT_CREATE", "MEDKIT_DELETE", "MEDKIT_LEAVE"
             ),
             everyKind.map(SyncCommandStorageConverter::kindOf).distinct()
         )

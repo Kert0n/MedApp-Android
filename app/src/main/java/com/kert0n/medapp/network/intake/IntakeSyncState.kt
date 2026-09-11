@@ -17,22 +17,16 @@ import kotlin.uuid.Uuid
 data class IntakeSyncState(
     val intakeId: Uuid,
     val accounting: IntakeAccounting = IntakeAccounting.NOT_APPLICABLE,
-    val operationId: Uuid? = null,       // связь с расходом в очереди
-    val reconciliationId: Uuid? = null   // ручная сверка, если факт включён в неё
+    val operationId: Uuid? = null        // связь с расходом в очереди
 ) {
     init {
-        // Расхода нет — и связывать не с чем: ни операции, ни сверки у такого приёма быть не
-        // может, иначе «не применимо» скрывало бы уехавшее списание.
-        require(
-            accounting != IntakeAccounting.NOT_APPLICABLE ||
-                (operationId == null && reconciliationId == null)
-        ) { "у приёма без расхода нет ни операции, ни сверки" }
-        require(
-            accounting != IntakeAccounting.PENDING &&
-                accounting != IntakeAccounting.NEEDS_RECOUNT || operationId != null
-        ) { "неустановленный расход называет свою операцию" }
-        require(
-            accounting != IntakeAccounting.RECONCILED || reconciliationId != null
-        ) { "учтённый сверкой расход называет сверку" }
+        // Расхода нет — и связывать не с чем: операции у такого приёма быть не может, иначе
+        // «не применимо» скрывало бы уехавшее списание.
+        require(accounting != IntakeAccounting.NOT_APPLICABLE || operationId == null) {
+            "у приёма без расхода нет операции"
+        }
+        require(accounting != IntakeAccounting.PENDING || operationId != null) {
+            "ожидающий расход называет свою операцию"
+        }
     }
 }

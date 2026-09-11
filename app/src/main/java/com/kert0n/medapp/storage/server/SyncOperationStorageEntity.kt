@@ -42,7 +42,6 @@ class SyncOperationStorageEntity(
     @ColumnInfo(name = "group_id") val groupId: Uuid? = null,
     @ColumnInfo(name = "last_error") val lastError: String? = null,
     @ColumnInfo(name = "last_tried_at") val lastTriedAt: Instant? = null,
-    @ColumnInfo(name = "reconciled_by") val reconciledBy: Uuid? = null,
     @Embedded(prefix = "prepared_") val prepared: PreparedRequestStorageColumns? = null
 )
 
@@ -64,6 +63,5 @@ fun SyncOperation.toStorageEntity(): SyncOperationStorageEntity = SyncOperationS
     groupId = groupId,
     lastError = lastError,
     lastTriedAt = lastTriedAt,
-    reconciledBy = reconciledBy,
     prepared = prepared?.toStorageColumns()
 )
