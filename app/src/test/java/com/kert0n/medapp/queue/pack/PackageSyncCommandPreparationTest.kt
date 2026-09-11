@@ -53,6 +53,17 @@ class PackageSyncCommandNetworkMapperTest {
             Preparation.Refuse(RefusalReason.UNIT_CHANGED),
             PackageSyncCommand.Consume(PACK, dose("3"), INTAKE).prepare(INTAKE, syrup, sync, EARLIER)
         )
+        // Бронь и пересчёт тоже везут голое число: сервер прочёл бы таблетки миллилитрами.
+        assertEquals(
+            Preparation.Refuse(RefusalReason.UNIT_CHANGED),
+            PackageSyncCommand.SetClaim(PACK, tablets("6")).prepare(INTAKE, syrup, sync, EARLIER)
+        )
+        assertEquals(
+            Preparation.Refuse(RefusalReason.UNIT_CHANGED),
+            PackageSyncCommand.CorrectStock(PACK, tablets("17")).prepare(INTAKE, syrup, sync, EARLIER)
+        )
+        // Ноль пересчёта — удаление: ноль в любой единице ноль.
+        assertTrue(PackageSyncCommand.CorrectStock(PACK, tablets("0")).prepare(INTAKE, syrup, sync, EARLIER) is Preparation.Request)
         val claimed = pack(quantity = tablets("20"), claims = Claims(BigDecimal("6"), BigDecimal("6")))
         assertEquals(Preparation.AlreadyApplied, PackageSyncCommand.SetClaim(PACK, tablets("6")).prepare(INTAKE, claimed, sync, EARLIER))
         assertTrue(PackageSyncCommand.SetClaim(PACK, tablets("7")).prepare(INTAKE, claimed, sync, EARLIER) is Preparation.Request)

@@ -82,7 +82,7 @@ class QueueWorker @Inject constructor(
             } else {
                 attempt(operation, packageId, drain)
             }
-            if (drain.record(operation, packageId, step)) break
+            if (drain.record(operation, step)) break
         }
         drain.report()
     }
@@ -299,7 +299,7 @@ class QueueWorker @Inject constructor(
             clock.instant().plus((wait ?: backoff(operation.attempts + 1)).toJavaDuration()).also(::retryNotBefore)
 
         /** Записывает шаг; `true` — проход надо остановить. */
-        suspend fun record(operation: SyncOperation, packageId: Uuid?, step: Step): Boolean {
+        suspend fun record(operation: SyncOperation, step: Step): Boolean {
             when (step) {
                 is Step.Settled -> {
                     val delivery = when (val delivery = step.delivery) {

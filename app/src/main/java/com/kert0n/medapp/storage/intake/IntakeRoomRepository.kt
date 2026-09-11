@@ -59,7 +59,7 @@ class IntakeRoomRepository @Inject constructor(
 
     override suspend fun prunePlanned(courseId: Uuid, keep: Set<ScheduledOccurrence>): Int = database.withTransaction {
         // Тождество пункта — назначенные дата и время (PLAN F4), по ним и сверяется.
-        val kept = keep.mapTo(HashSet()) { it.localDate to it.localTime }
+        val kept = keep.mapTo(HashSet()) { it.slot }
         val extra = intakes.plannedOf(courseId)
             .filter { (it.scheduledOn to it.scheduledTime) !in kept }
             .map { it.id }

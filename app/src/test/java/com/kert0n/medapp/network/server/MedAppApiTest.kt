@@ -295,6 +295,7 @@ class MedAppApiTest {
         for (broken in listOf(
             java.net.UnknownHostException("medapp.test"),
             java.net.ConnectException("отказано"),
+            java.net.NoRouteToHostException("маршрута нет"),
             javax.net.ssl.SSLHandshakeException("рукопожатие")
         )) {
             val api = MedAppApi(medAppHttpClient(MockEngine { throw broken }, "https://medapp.test"))

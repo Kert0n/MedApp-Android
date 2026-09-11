@@ -21,7 +21,13 @@ class CourseProgress(
     val missed: Set<ScheduledOccurrence> = missed.toSet()
 
     init {
-        require(this.taken.none { it in this.missed }) { "пункт либо принят, либо пропущен" }
+        // Пункт узнаётся по дате и времени: тот же пункт с другим моментом — всё тот же пункт.
+        val takenSlots = this.taken.mapTo(HashSet()) { it.slot }
+        val missedSlots = this.missed.mapTo(HashSet()) { it.slot }
+        require(takenSlots.size == this.taken.size && missedSlots.size == this.missed.size) {
+            "пункт отвечен один раз"
+        }
+        require(takenSlots.none { it in missedSlots }) { "пункт либо принят, либо пропущен" }
     }
 
     /** Принято по плану — по дозе на пункт: фактическое количество дозой курса не считается. */

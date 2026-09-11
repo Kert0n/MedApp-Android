@@ -22,15 +22,15 @@ import kotlin.uuid.Uuid
 /**
  * «Подумали» перед отправкой: команда смотрит на пачку, какой её знает устройство после свежего
  * чтения, и решает — уходит запрос, закрывается отказ или желаемое уже так (PLAN E2, E3).
- * Расход в единице, которой пачку больше не считают, на провод не идёт: единицы на проводе нет,
- * и сервер вычел бы число в своей. Бронь, равная желаемой, и снятие отсутствующей брони — уже
- * так. Всё остальное становится запросом по [toPreparedRequest].
+ * Число в единице, которой пачку больше не считают, на провод не идёт — ни расход, ни бронь, ни
+ * пересчёт ([PackageSyncCommand.measuredIn]). Бронь, равная желаемой, и снятие отсутствующей
+ * брони — уже так. Всё остальное становится запросом по [toPreparedRequest].
  */
 fun PackageSyncCommand.prepare(operationId: Uuid, pkg: Package, sync: PackageSyncState, at: Instant): Preparation {
     val mine = pkg.claims?.mine?.let { Quantity(it, pkg.quantity.unit) }
+    val unit = measuredIn
     return when {
-        this is PackageSyncCommand.Consume && amount.unit != pkg.quantity.unit ->
-            Preparation.Refuse(RefusalReason.UNIT_CHANGED)
+        unit != null && unit != pkg.quantity.unit -> Preparation.Refuse(RefusalReason.UNIT_CHANGED)
         this is PackageSyncCommand.SetClaim && mine == amount -> Preparation.AlreadyApplied
         this is PackageSyncCommand.ReleaseClaim && mine == null && sync.claimsVersion != null -> Preparation.AlreadyApplied
         else -> Preparation.Request(toPreparedRequest(operationId, sync, confirmed = pkg.quantity, mine = mine, at = at))

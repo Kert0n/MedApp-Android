@@ -13,4 +13,7 @@ data class ScheduledOccurrence(
     val localDate: LocalDate,
     val localTime: LocalTime,
     val at: Instant
-)
+) {
+    /** Тождество пункта — дата и время без момента: по нему пункт узнают календарь, прогресс и хранение. */
+    val slot: Pair<LocalDate, LocalTime> get() = localDate to localTime
+}

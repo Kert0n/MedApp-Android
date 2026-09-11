@@ -273,7 +273,7 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
      */
     private fun IOException.asFailure(command: Boolean): ApiFailure = when {
         !command -> ApiFailure.Unavailable
-        this is UnknownHostException || this is ConnectException ||
+        this is UnknownHostException || this is ConnectException || this is java.net.NoRouteToHostException ||
             this is ConnectTimeoutException || this is SSLHandshakeException -> ApiFailure.Unavailable
         else -> ApiFailure.OutcomeUnknown
     }

@@ -3,6 +3,7 @@ package com.kert0n.medapp.queue.pack
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.domain.value.QuantityUnit
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
 import com.kert0n.medapp.queue.Expected
 import com.kert0n.medapp.queue.NotFoundPolicy
@@ -22,6 +23,20 @@ import kotlin.uuid.Uuid
 sealed interface PackageSyncCommand : SyncCommand {
 
     val packageId: Uuid
+
+    /**
+     * В какой единице команда называет число, которое уедет без единицы: расход, бронь, пересчёт.
+     * Сервер прочёл бы его в своей единице, поэтому по пачке в другой единице такая команда не
+     * уходит (PLAN E3). `null` — голого числа нет: создание везёт единицу с собой, ноль пересчёта
+     * становится удалением, у остальных числа нет вовсе.
+     */
+    val measuredIn: QuantityUnit?
+        get() = when (this) {
+            is Consume -> amount.unit
+            is SetClaim -> amount.unit
+            is CorrectStock -> actual.unit.takeUnless { actual.isZero }
+            is Create, is Describe, is Move, is Delete, is ReleaseClaim -> null
+        }
 
     /**
      * Остаток после этой команды (PLAN E1); `null` — количество команда не меняет. Пересчёт

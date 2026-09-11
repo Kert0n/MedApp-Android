@@ -109,6 +109,19 @@ class CourseScheduleRemainingTest {
         assertEquals(slots[2], day.expectedEnd(noonTaken))
     }
 
+    /** Пункт — это дата и время: тот же пункт с другим моментом дважды не принимается. */
+    @Test(expected = IllegalArgumentException::class)
+    fun oneSlotIsNotTakenTwiceUnderDifferentMoments() {
+        val slot = schedule().next(schedule().beginning, 1).single()
+        CourseProgress(taken = setOf(slot, slot.copy(at = slot.at.plusSeconds(3600))))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun oneSlotIsNotBothTakenAndMissedUnderDifferentMoments() {
+        val slot = schedule().next(schedule().beginning, 1).single()
+        CourseProgress(taken = setOf(slot), missed = setOf(slot.copy(at = slot.at.plusSeconds(3600))))
+    }
+
     @Test
     fun aLateAnswerToAMissedDoseMovesTheEndBack() {
         // Пропустили первый день — конец уехал на восьмой; ответили по нему позже — вернулся на

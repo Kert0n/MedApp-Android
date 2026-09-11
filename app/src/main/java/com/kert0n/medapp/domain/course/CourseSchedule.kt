@@ -109,7 +109,7 @@ class CourseSchedule(
     fun next(from: Instant, count: Int, except: Set<ScheduledOccurrence> = emptySet()): List<ScheduledOccurrence> {
         require(count >= 0) { "число пунктов не бывает отрицательным: $count" }
         if (count == 0) return emptyList()
-        val taken = except.mapTo(HashSet()) { it.localDate to it.localTime }
+        val taken = except.mapTo(HashSet()) { it.slot }
         val found = ArrayList<ScheduledOccurrence>(count)
         // Сутки запаса назад: момент зависит от перехода часов, отбор идёт по моменту.
         var date = maxOf(start, from.atZone(zone).toLocalDate().minusDays(1))
