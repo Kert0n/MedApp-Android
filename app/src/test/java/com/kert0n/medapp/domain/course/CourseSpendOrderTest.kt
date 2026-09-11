@@ -7,10 +7,10 @@ import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.availability
-import com.kert0n.medapp.fixture.doses
 import com.kert0n.medapp.fixture.plannedIntake
 import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
+import com.kert0n.medapp.domain.value.doses
 import java.time.LocalTime
 import kotlin.uuid.Uuid
 import org.junit.Assert.assertEquals
@@ -22,7 +22,7 @@ class CourseSpendOrderTest {
     private val availability = availability(PACK to tablets("20"), OTHER_PACK to tablets("12"))
 
     /** Пять ближайших доз — столько пунктов сценарий и отдаст на раскладку. */
-    private val ahead = doses(5)
+    private val ahead = 5.doses
 
     private fun order(vararg allocations: Pair<Uuid, Int>) =
         activeCourse(sources = allocations.map { source(it.first, it.second) })
@@ -105,8 +105,8 @@ class CourseSpendOrderTest {
                 .atStartOfDay(course.schedule.zone).toInstant()
         )
         val covered = course.coverage(remaining, availability).coveredDoses
-        val supplied = course.spendOrder(doses(remaining.size), availability).count { it != null }
-        assertEquals(covered, doses(supplied))
+        val supplied = course.spendOrder(remaining.size.doses, availability).count { it != null }
+        assertEquals(covered, supplied.doses)
     }
 
     @Test
@@ -122,7 +122,7 @@ class CourseSpendOrderTest {
             )
         }
         val course = activeCourse(sources = listOf(source(PACK, 2)))
-        val assigned = plan.zip(course.spendOrder(doses(plan.size), availability)).toMap()
+        val assigned = plan.zip(course.spendOrder(plan.size.doses, availability)).toMap()
         assertEquals(listOf(PACK, PACK, null, null, null), plan.map { assigned[it] })
     }
 }

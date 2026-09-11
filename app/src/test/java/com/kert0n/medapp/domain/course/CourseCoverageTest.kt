@@ -5,10 +5,10 @@ import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.availability
-import com.kert0n.medapp.fixture.doses
 import com.kert0n.medapp.fixture.schedule
 import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
+import com.kert0n.medapp.domain.value.doses
 import java.time.LocalTime
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -50,9 +50,9 @@ class CourseCoverageTest {
     fun twentyEightNeededWithFiveAndFourAllocatedCoversNineAndNamesTheFirstGap() {
         assertEquals(28, remaining.size)
         val found = twoPacks(first = 5, second = 4).coverage(remaining, availability)
-        assertEquals(doses(28), found.requiredDoses)
-        assertEquals(doses(9), found.coveredDoses)
-        assertEquals(doses(19), found.missingDoses)
+        assertEquals(28.doses, found.requiredDoses)
+        assertEquals(9.doses, found.coveredDoses)
+        assertEquals(19.doses, found.missingDoses)
         assertFalse(found.isFullyCovered)
         assertEquals(remaining[8].at, found.coveredUntil)
         assertEquals(remaining[9].at, found.firstUncoveredAt)
@@ -74,7 +74,7 @@ class CourseCoverageTest {
     @Test
     fun unsuppliedCourseIsCoveredFromTheVeryFirstIntake() {
         val found = activeCourse(schedule = fourTimesADay).coverage(remaining, availability)
-        assertEquals(doses(0), found.coveredDoses)
+        assertEquals(0.doses, found.coveredDoses)
         assertNull(found.coveredUntil)
         assertEquals(remaining.first().at, found.firstUncoveredAt)
     }
@@ -85,9 +85,9 @@ class CourseCoverageTest {
         // выделенного, и человек видит, почему.
         val shrunk = availability(PACK to tablets("6"), OTHER_PACK to tablets("12"))
         val found = twoPacks(first = 9, second = 0).coverage(remaining, shrunk)
-        assertEquals(doses(3), found.coveredDoses)
-        assertEquals(doses(9), found.perSource.first().allocatedDoses)
-        assertEquals(doses(3), found.perSource.first().coveredDoses)
+        assertEquals(3.doses, found.coveredDoses)
+        assertEquals(9.doses, found.perSource.first().allocatedDoses)
+        assertEquals(3.doses, found.perSource.first().coveredDoses)
     }
 
     @Test
@@ -96,7 +96,7 @@ class CourseCoverageTest {
         // видны каждый в своей строке, а не сложились в одну дозу.
         val singles = availability(PACK to tablets("1"), OTHER_PACK to tablets("1"))
         val found = twoPacks(first = 5, second = 4).coverage(remaining, singles)
-        assertEquals(doses(0), found.coveredDoses)
+        assertEquals(0.doses, found.coveredDoses)
         assertEquals(listOf(tablets("1"), tablets("1")), found.perSource.map { it.leftover })
     }
 
@@ -115,9 +115,9 @@ class CourseCoverageTest {
         val partial = availability(OTHER_PACK to tablets("12"))
         val found = twoPacks(first = 5, second = 4).coverage(remaining, partial)
         assertTrue(found.requiresRecount)
-        assertEquals(doses(4), found.coveredDoses)
-        assertEquals(doses(5), found.perSource.first().allocatedDoses)
-        assertEquals(doses(0), found.perSource.first().coveredDoses)
+        assertEquals(4.doses, found.coveredDoses)
+        assertEquals(5.doses, found.perSource.first().allocatedDoses)
+        assertEquals(0.doses, found.perSource.first().coveredDoses)
         assertNull(found.perSource.first().leftover)
     }
 
@@ -130,15 +130,15 @@ class CourseCoverageTest {
             until = week.endInclusive.plusDays(1).atStartOfDay(MOSCOW).toInstant()
         )
         val found = activeCourse(sources = listOf(source(PACK, 10))).coverage(plan, availability)
-        assertEquals(doses(7), found.requiredDoses)
-        assertEquals(doses(7), found.coveredDoses)
+        assertEquals(7.doses, found.requiredDoses)
+        assertEquals(7.doses, found.coveredDoses)
         assertNull(found.firstUncoveredAt)
     }
 
     @Test
     fun finishedCalendarNeedsNothing() {
         val found = twoPacks(first = 5, second = 4).coverage(emptyList(), availability)
-        assertEquals(doses(0), found.requiredDoses)
+        assertEquals(0.doses, found.requiredDoses)
         assertTrue(found.isFullyCovered)
         assertNull(found.coveredUntil)
         assertNull(found.firstUncoveredAt)

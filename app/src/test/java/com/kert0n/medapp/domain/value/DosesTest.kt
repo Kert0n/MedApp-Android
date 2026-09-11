@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.kert0n.medapp.domain.value.doses
 
 /**
  * Правило «доз не бывает отрицательное число» проверяется здесь — на самом типе, а не девять раз
@@ -34,7 +35,7 @@ class DosesTest {
         assertEquals(9.doses, 5.doses + 4.doses)
         assertEquals(4.doses, minOf(5.doses, 4.doses))
         assertTrue(0.doses.isNone)
-        assertTrue(1.dose > 0.doses)
+        assertTrue(3.doses-1.doses==2.doses)
     }
 
     @Test

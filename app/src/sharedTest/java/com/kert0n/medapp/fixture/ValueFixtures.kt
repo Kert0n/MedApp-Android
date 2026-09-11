@@ -21,7 +21,6 @@ fun tablets(amount: String): Quantity = Quantity(BigDecimal(amount), TABLETS)
 
 fun millilitres(amount: String): Quantity = Quantity(BigDecimal(amount), MILLILITRES)
 
-fun doses(count: Int): Doses = Doses(count)
 
 /** Доза: положительное количество, которое принимают за раз. */
 fun dose(amount: String): Dose = Dose(tablets(amount))

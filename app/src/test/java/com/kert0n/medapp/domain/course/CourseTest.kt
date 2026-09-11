@@ -3,6 +3,7 @@ package com.kert0n.medapp.domain.course
 import com.kert0n.medapp.domain.course.Revision
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.domain.value.doses
 import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.courseRecord
@@ -11,7 +12,6 @@ import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.course
 import com.kert0n.medapp.fixture.dose
-import com.kert0n.medapp.fixture.doses
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.schedule
 import com.kert0n.medapp.fixture.tablets
@@ -94,7 +94,7 @@ class CourseTest {
         // Менять их после активации нечем: переходов `setDose` и `setSchedule` у назначенного
         // курса нет вовсе. Изменившееся лечение — отмена прежнего курса и новый (PLAN D5).
         val draft = course(doseAmount = BigDecimal("2"), schedule = schedule())
-            .attach(pack(formId = TABLET_FORM), doses(1), LATER).getOrThrow()
+            .attach(pack(formId = TABLET_FORM), 1.doses, LATER).getOrThrow()
         val started = draft.activate(LATER).getOrThrow()
         assertEquals(dose("2"), started.course.dose)
         assertEquals(schedule(), started.course.schedule)

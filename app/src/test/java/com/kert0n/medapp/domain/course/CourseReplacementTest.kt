@@ -10,12 +10,12 @@ import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.course
 import com.kert0n.medapp.fixture.courseRecord
 import com.kert0n.medapp.fixture.dose
-import com.kert0n.medapp.fixture.doses
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.plannedIntake
 import com.kert0n.medapp.fixture.schedule
 import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
+import com.kert0n.medapp.domain.value.doses
 import java.math.BigDecimal
 import java.time.LocalTime
 import kotlin.uuid.Uuid
@@ -58,7 +58,7 @@ class CourseReplacementTest {
             updatedAt = LATER
         )
             .setSchedule(schedule(times = listOf(LocalTime.of(9, 0), LocalTime.of(21, 0))), LATER)
-            .attach(pack(id = PACK, formId = TABLET_FORM, quantity = tablets("20")), doses(5), LATER)
+            .attach(pack(id = PACK, formId = TABLET_FORM, quantity = tablets("20")), 5.doses, LATER)
             .getOrThrow()
             .activate(LATER)
             .getOrThrow()

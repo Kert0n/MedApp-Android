@@ -39,5 +39,3 @@ value class Doses(val count: Int) : Comparable<Doses> {
  */
 val Int.doses: Doses get() = Doses(this)
 
-/** То же самое числом один: грамматика — единственное отличие от [doses]. */
-val Int.dose: Doses get() = Doses(this)

@@ -1,8 +1,8 @@
 package com.kert0n.medapp.domain.value
 
 import com.kert0n.medapp.fixture.TABLETS
-import com.kert0n.medapp.fixture.doses
 import com.kert0n.medapp.fixture.tablets
+import com.kert0n.medapp.domain.value.doses
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -27,13 +27,13 @@ class DoseTest {
     @Test
     fun doseTakenSeveralTimesIsAQuantity() {
         // Доза × число приёмов — это уже количество в единицах пачки, а не доза.
-        assertEquals(tablets("6"), Dose(tablets("2")) * doses(3))
-        assertEquals(tablets("0"), Dose(tablets("2")) * doses(0))
+        assertEquals(tablets("6"), Dose(tablets("2")) * 3.doses)
+        assertEquals(tablets("0"), Dose(tablets("2")) * 0.doses)
     }
 
     @Test
     fun remainderHoldsWholeDosesOnly() {
         // Пять таблеток по две — две дозы; делить на ноль здесь нечем.
-        assertEquals(doses(2), tablets("5").dosesIn(Dose(tablets("2"))))
+        assertEquals(2.doses, tablets("5").dosesIn(Dose(tablets("2"))))
     }
 }
