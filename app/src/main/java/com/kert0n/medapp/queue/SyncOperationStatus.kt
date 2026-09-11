@@ -1,4 +1,4 @@
-package com.kert0n.medapp.network.server
+package com.kert0n.medapp.queue
 
 /**
  * Состояние операции очереди — ровно то, что различает работник (PLAN E2).

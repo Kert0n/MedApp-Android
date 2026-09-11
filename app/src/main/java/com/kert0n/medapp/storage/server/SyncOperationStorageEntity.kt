@@ -5,8 +5,8 @@ import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
-import com.kert0n.medapp.network.server.SyncOperation
-import com.kert0n.medapp.network.server.SyncOperationStatus
+import com.kert0n.medapp.queue.SyncOperation
+import com.kert0n.medapp.queue.SyncOperationStatus
 import java.time.Instant
 import kotlin.uuid.Uuid
 

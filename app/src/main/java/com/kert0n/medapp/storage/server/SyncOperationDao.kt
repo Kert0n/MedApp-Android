@@ -5,9 +5,9 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
-import com.kert0n.medapp.network.server.SyncCommand
-import com.kert0n.medapp.network.server.SyncOperation
-import com.kert0n.medapp.network.server.SyncOperationStatus
+import com.kert0n.medapp.queue.SyncCommand
+import com.kert0n.medapp.queue.SyncOperation
+import com.kert0n.medapp.queue.SyncOperationStatus
 import java.time.Instant
 import kotlin.uuid.Uuid
 

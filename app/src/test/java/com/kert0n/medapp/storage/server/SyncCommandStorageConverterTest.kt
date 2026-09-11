@@ -11,7 +11,7 @@ import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.network.medkit.MedKitSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncCommand
-import com.kert0n.medapp.network.server.SyncCommand
+import com.kert0n.medapp.queue.SyncCommand
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue

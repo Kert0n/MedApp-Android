@@ -1,6 +1,7 @@
-package com.kert0n.medapp.network.server
+package com.kert0n.medapp.queue
 
 import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.network.server.ResourceVersion
 import java.time.Instant
 import java.util.Objects
 

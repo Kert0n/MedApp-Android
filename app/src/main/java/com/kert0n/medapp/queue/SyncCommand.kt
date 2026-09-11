@@ -1,4 +1,4 @@
-package com.kert0n.medapp.network.server
+package com.kert0n.medapp.queue
 
 /**
  * Общий маркер команды очереди. Обычный интерфейс, а не `sealed`: корней два, по понятиям —

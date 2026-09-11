@@ -3,7 +3,7 @@ package com.kert0n.medapp.network.pack
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
-import com.kert0n.medapp.network.server.SyncCommand
+import com.kert0n.medapp.queue.SyncCommand
 import kotlin.uuid.Uuid
 
 /**

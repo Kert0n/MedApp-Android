@@ -1,6 +1,7 @@
-package com.kert0n.medapp.network.pack
+package com.kert0n.medapp.queue
 
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
+import com.kert0n.medapp.network.pack.PackageSyncCommand
 import com.kert0n.medapp.fixture.INTAKE
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK

@@ -1,4 +1,4 @@
-package com.kert0n.medapp.network.server
+package com.kert0n.medapp.queue
 
 import org.junit.Assert.assertEquals
 import org.junit.Test

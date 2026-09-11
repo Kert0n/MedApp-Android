@@ -1,6 +1,6 @@
 package com.kert0n.medapp.storage.server
 
-import com.kert0n.medapp.network.server.SyncOperation
+import com.kert0n.medapp.queue.SyncOperation
 import com.kert0n.medapp.network.value.VocabularyMiss
 import kotlin.uuid.Uuid
 

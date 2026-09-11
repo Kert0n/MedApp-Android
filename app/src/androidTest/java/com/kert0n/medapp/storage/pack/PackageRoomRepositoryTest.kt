@@ -19,7 +19,7 @@ import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.network.pack.PackageSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.network.server.ResourceVersion
-import com.kert0n.medapp.network.server.SyncOperationStatus
+import com.kert0n.medapp.queue.SyncOperationStatus
 import com.kert0n.medapp.storage.course.ActivePackageAssignmentStorageEntity
 import com.kert0n.medapp.storage.course.toSourceStorageEntities
 import com.kert0n.medapp.storage.course.toStorageEntity as toCourseStorageEntity

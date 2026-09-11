@@ -13,10 +13,10 @@ import com.kert0n.medapp.fixture.rejectedByDatabase
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.network.medkit.MedKitSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncCommand
-import com.kert0n.medapp.network.server.PreparedRequest
+import com.kert0n.medapp.queue.PreparedRequest
 import com.kert0n.medapp.network.server.ResourceVersion
-import com.kert0n.medapp.network.server.SyncOperation
-import com.kert0n.medapp.network.server.SyncOperationStatus
+import com.kert0n.medapp.queue.SyncOperation
+import com.kert0n.medapp.queue.SyncOperationStatus
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import java.time.Instant
 import kotlin.uuid.Uuid

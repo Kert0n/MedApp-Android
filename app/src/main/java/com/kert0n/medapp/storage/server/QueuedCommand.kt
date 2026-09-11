@@ -1,6 +1,6 @@
 package com.kert0n.medapp.storage.server
 
-import com.kert0n.medapp.network.server.SyncCommand
+import com.kert0n.medapp.queue.SyncCommand
 import kotlin.uuid.Uuid
 
 /**

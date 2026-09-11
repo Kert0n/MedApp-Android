@@ -3,7 +3,7 @@ package com.kert0n.medapp.storage.server
 import androidx.room.ColumnInfo
 import com.kert0n.medapp.domain.value.QuantityUnit
 import com.kert0n.medapp.domain.value.Vocabulary
-import com.kert0n.medapp.network.server.PreparedRequest
+import com.kert0n.medapp.queue.PreparedRequest
 import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.network.value.unitOrMiss
 import com.kert0n.medapp.storage.value.storedQuantity
