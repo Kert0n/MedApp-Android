@@ -3,6 +3,7 @@ package com.kert0n.medapp.storage.server
 import androidx.room.Embedded
 import androidx.room.Relation
 import com.kert0n.medapp.domain.value.Vocabulary
+import com.kert0n.medapp.network.server.RawResponse
 import com.kert0n.medapp.queue.SyncOperation
 import com.kert0n.medapp.queue.StoredSyncOperation
 import com.kert0n.medapp.network.value.VocabularyMiss
@@ -45,7 +46,8 @@ class SyncOperationStorageRow(
                 status = operation.status,
                 attempts = operation.attempts,
                 lastError = operation.lastError,
-                lastTriedAt = operation.lastTriedAt
+                lastTriedAt = operation.lastTriedAt,
+                answer = operation.answerStatus?.let { RawResponse(it, operation.answerBody.orEmpty()) }
             )
         )
     } catch (missed: VocabularyMiss) {

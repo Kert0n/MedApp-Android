@@ -82,13 +82,13 @@ interface SyncOperationDao {
     suspend fun withStatus(status: SyncOperationStatus): List<SyncOperationStorageRow>
 
     /**
-     * Готовые к отправке: ожидающие и отправлявшиеся в момент смерти процесса, у которых каждая
-     * зависимость **применена** — зависимость значит «нужен эффект», и закрытая отказом её не
+     * Готовые к работе: ожидающие, отправлявшиеся в момент смерти процесса и получившие ответ,
+     * который ещё не применён, — у которых каждая зависимость **применена** — зависимость значит «нужен эффект», и закрытая отказом её не
      * даёт. Порядок — номер очереди; кто ещё не готов, ждёт своей зависимости.
      */
     @Transaction
     @Query(
-        "SELECT * FROM sync_operations o WHERE status IN ('PENDING', 'SENDING') " +
+        "SELECT * FROM sync_operations o WHERE status IN ('PENDING', 'SENDING', 'ANSWERED') " +
             "AND NOT EXISTS (" +
             "  SELECT 1 FROM sync_operation_dependencies d JOIN sync_operations p ON p.id = d.depends_on_id " +
             "  WHERE d.operation_id = o.id AND p.status != 'APPLIED'" +
@@ -122,9 +122,24 @@ interface SyncOperationDao {
     @Query("UPDATE sync_operations SET status = 'SENDING' WHERE id = :id AND status IN ('PENDING', 'SENDING')")
     suspend fun markSending(id: Uuid): Int
 
+    /** Ответ записан до применения: полученное подтверждение не теряется. Только из отправки. */
+    @Query(
+        "UPDATE sync_operations SET status = 'ANSWERED', answer_status = :answerStatus, answer_body = :answerBody, " +
+            "last_tried_at = :at WHERE id = :id AND status = 'SENDING'"
+    )
+    suspend fun answered(id: Uuid, answerStatus: Int, answerBody: String, at: Instant): Int
+
+    /** Ответ есть, применить нечем: остаётся `ANSWERED`, попытка считается — от неё растёт задержка. */
+    @Query(
+        "UPDATE sync_operations SET last_error = :lastError, last_tried_at = :at, attempts = attempts + 1 " +
+            "WHERE id = :id AND status = 'ANSWERED'"
+    )
+    suspend fun defer(id: Uuid, lastError: String, at: Instant): Int
+
+    /** Закрытие или возврат в ожидание стирает записанный ответ: он либо применён, либо будет получен заново. */
     @Query(
         "UPDATE sync_operations SET status = :status, last_error = :lastError, " +
-            "last_tried_at = :at, attempts = attempts + :attempted WHERE id = :id"
+            "last_tried_at = :at, attempts = attempts + :attempted, answer_status = NULL, answer_body = NULL WHERE id = :id"
     )
     suspend fun settle(
         id: Uuid,
@@ -142,8 +157,9 @@ interface SyncOperationDao {
         "UPDATE sync_operations SET status = 'PENDING', last_error = :lastError, last_tried_at = :at, " +
             "prepared_method = NULL, prepared_path = NULL, prepared_query = NULL, prepared_body = NULL, " +
             "prepared_drug_version = NULL, prepared_claims_version = NULL, prepared_quantity_before = NULL, " +
-            "prepared_mine_before = NULL, prepared_unit_id = NULL, prepared_at = NULL " +
-            "WHERE id = :id AND status = 'SENDING'"
+            "prepared_mine_before = NULL, prepared_unit_id = NULL, prepared_at = NULL, " +
+            "answer_status = NULL, answer_body = NULL " +
+            "WHERE id = :id AND status IN ('SENDING', 'ANSWERED')"
     )
     suspend fun reprepare(id: Uuid, lastError: String, at: Instant): Int
 

@@ -4,6 +4,7 @@ import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
 import com.kert0n.medapp.network.pack.requireKnownIn
 import com.kert0n.medapp.network.server.ApiFailure
 import com.kert0n.medapp.network.server.ApiResult
+import com.kert0n.medapp.network.server.RawResponse
 import com.kert0n.medapp.network.value.VocabularyResolver
 import com.kert0n.medapp.queue.medkit.MedKitSyncCommand
 import com.kert0n.medapp.queue.pack.PackageSyncCommand
@@ -18,12 +19,15 @@ import kotlin.uuid.Uuid
 
 /**
  * Работник очереди: читает, что у сервера сейчас, готовит запрос по прочитанному, отправляет,
- * читает исход и отпускает. Сервер — истина по количеству; устройство доставляет случившееся
- * поверх свежего состояния и читает истину обратно (PLAN E2, E3). Поэтому проход по пачке
- * начинается с чтения её снимка, а следующие операции той же пачки готовятся по ответу
- * предыдущей — он уже лёг в базу. Запрос, замороженный раньше, — повтор с неизвестным исходом
- * либо отправка, пережившая смерть процесса, — уходит как есть: чтение перед ним ничего не
- * меняет и не делается.
+ * записывает ответ, применяет его и отпускает. Сервер — истина по количеству; устройство
+ * доставляет случившееся поверх свежего состояния и читает истину обратно (PLAN E2, E3).
+ * Поэтому проход по пачке начинается с чтения её снимка, а следующие операции той же пачки
+ * готовятся по ответу предыдущей — он уже лёг в базу. Запрос, замороженный раньше, — повтор с
+ * неизвестным исходом либо отправка, пережившая смерть процесса, — уходит как есть.
+ *
+ * Полученный ответ записывается до того, как применён: если применить его нечем — словарь не
+ * знает единицы, снимок следом не прочитался, — операция ждёт с ответом в руках и закрывается
+ * из него, не спрашивая сервер второй раз.
  *
  * Один проход — [drain]: пока есть связь, по одной операции в порядке очереди. Обрыв оставляет
  * операцию на повтор тем же запросом и останавливает проход; ограничение частоты соблюдает
@@ -58,15 +62,7 @@ class QueueWorker @Inject constructor(
      * пропуск, а не бесконечный круг.
      */
     private suspend fun pass(vocabularyRefreshable: Boolean): Report {
-        val now = clock.instant()
-        var sent = 0
-        var reprepared = 0
-        val skipped = ArrayList<StoredSyncOperation.Unreadable>()
-        var retryAt: Instant? = null
-        val heldPackages = HashSet<Uuid>()
-        // Пачки, чьё серверное состояние в этом проходе уже лежит в базе: прочитано перед первой
-        // подготовкой либо пришло ответом на предыдущую операцию.
-        val freshPackages = HashSet<Uuid>()
+        val pass = Pass(now = clock.instant())
         for (entry in storage.ready()) {
             val operation = when (entry) {
                 is StoredSyncOperation.Readable -> entry.operation
@@ -76,111 +72,64 @@ class QueueWorker @Inject constructor(
                     ) {
                         return pass(vocabularyRefreshable = false)
                     }
-                    skipped += entry
+                    pass.skipped += entry
                     continue
                 }
             }
             val packageId = (operation.command as? PackageSyncCommand)?.packageId
-            if (packageId != null && packageId in heldPackages) continue
+            if (packageId != null && packageId in pass.heldPackages) continue
             val notBefore = operation.notBefore()
-            if (notBefore != null && notBefore.isAfter(now)) {
-                retryAt = earliest(retryAt, notBefore)
+            if (notBefore != null && notBefore.isAfter(pass.now)) {
+                pass.retryNotBefore(notBefore)
                 continue
             }
-            val fresh = if (operation.prepared == null && packageId != null && packageId !in freshPackages &&
-                operation.command !is PackageSyncCommand.Create
-            ) {
-                when (val read = readFresh(packageId)) {
-                    is Fresh.Read -> read.snapshot
-                    is Fresh.Failed -> {
-                        storage.settle(operation.id, read.delivery, clock.instant())
-                        if (read.delivery is Delivery.Retry) {
-                            heldPackages += packageId
-                            retryAt = earliest(retryAt, clock.instant().plus(backoff(operation.attempts + 1).toJavaDuration()))
-                        }
-                        if (read.stop) return Report(sent, skipped, retryAt, reprepared)
-                        continue
-                    }
-                }
+            val step = if (operation.status == SyncOperationStatus.ANSWERED) {
+                resume(operation)
             } else {
-                null
+                attempt(operation, packageId, pass)
             }
-            val taken = when (val take = storage.take(operation.id, fresh, now)) {
-                null -> continue
-                is Take.Closed -> {
-                    packageId?.let(freshPackages::add)
-                    sent++
-                    continue
-                }
-                is Take.Sending -> take.operation
-            }
-            packageId?.let(freshPackages::add)
-            val request = checkNotNull(taken.prepared) { "взятая в отправку операция несёт запрос" }
-            when (val step = deliver(taken, request)) {
-                is Step.Settled -> {
-                    storage.settle(taken.id, step.delivery, clock.instant())
-                    when (step.delivery) {
-                        is Delivery.Retry -> {
-                            // Следующая команда той же пачки везёт предусловие, которое эта ещё
-                            // не сдвинула: в этом проходе пачка дальше не трогается.
-                            packageId?.let(heldPackages::add)
-                            val wait = step.retryAfter ?: backoff(attempts = taken.attempts + 1)
-                            retryAt = earliest(retryAt, clock.instant().plus(wait.toJavaDuration()))
-                        }
-                        is Delivery.Stale -> {
-                            // Операция снова первая по своей пачке и уйдёт следующим проходом;
-                            // остальные её команды ждут её, как ждали.
-                            packageId?.let(heldPackages::add)
-                            reprepared++
-                        }
-                        is Delivery.Applied, is Delivery.Refused, Delivery.AccessLost -> sent++
-                    }
-                    if (step.stop) return Report(sent, skipped, retryAt, reprepared)
-                }
-                Step.Unauthorized -> return Report(sent, skipped, retryAt, reprepared)
-            }
+            if (pass.record(operation, packageId, step)) return pass.report()
         }
-        return Report(sent, skipped, retryAt, reprepared)
+        return pass.report()
     }
 
-    /**
-     * Что у сервера сейчас по этой пачке — перед первой подготовкой в проходе. Снимок ложится в
-     * базу только словами, которые словарь знает: промах дочитывается, а без связи операция ждёт.
-     * Пачки нет — доступа к ней нет, и отправлять нечего.
-     */
-    private suspend fun readFresh(packageId: Uuid): Fresh = when (val read = transport.packageSnapshot(packageId)) {
-        is ApiResult.Success -> when (val known = vocabulary.resolve { read.value.requireKnownIn(it) }) {
-            is VocabularyResolver.Resolution.Resolved -> Fresh.Read(read.value)
-            is VocabularyResolver.Resolution.Unresolved ->
-                Fresh.Failed(Delivery.Retry("словарь не знает ${known.miss.message}"), stop = known.failure != null)
+    /** Подготовка по свежему состоянию, отправка, запись ответа и его применение — одна операция. */
+    private suspend fun attempt(operation: SyncOperation, packageId: Uuid?, pass: Pass): Step {
+        val fresh = if (operation.prepared == null && packageId != null && packageId !in pass.freshPackages &&
+            operation.command !is PackageSyncCommand.Create
+        ) {
+            when (val read = snapshotRead(packageId)) {
+                is Read.Snapshot -> read.snapshot
+                is Read.Failed -> return Step.Settled(read.delivery, stop = read.stop)
+            }
+        } else {
+            null
         }
-        is ApiResult.Failure -> when (val failure = read.failure) {
-            ApiFailure.NotFound -> Fresh.Failed(Delivery.AccessLost)
-            ApiFailure.Unauthorized, ApiFailure.RegistrationRefused -> Fresh.Failed(Delivery.Retry("нет пропуска"), stop = true)
-            is ApiFailure.TooManyRequests -> Fresh.Failed(Delivery.Retry("429"), stop = true)
-            ApiFailure.Unavailable -> Fresh.Failed(Delivery.Retry("связи нет"), stop = true)
-            else -> Fresh.Failed(Delivery.Retry("снимок не прочитан: $failure"))
+        val taken = when (val take = storage.take(operation.id, fresh, pass.now)) {
+            null -> return Step.Skipped
+            is Take.Closed -> {
+                packageId?.let(pass.freshPackages::add)
+                return Step.Closed(take.delivery)
+            }
+            is Take.Sending -> take.operation
         }
-    }
-
-    private sealed interface Fresh {
-        data class Read(val snapshot: PackageSnapshotNetworkDTO) : Fresh
-        data class Failed(val delivery: Delivery, val stop: Boolean = false) : Fresh
-    }
-
-    /** Отправка одной операции и чтение исхода; отказы сервера — исходы, а не сбои. */
-    private suspend fun deliver(operation: SyncOperation, request: PreparedRequest): Step {
-        val command = operation.command
-        return when (val result = transport.send(request, command.expects)) {
-            is ApiResult.Success -> Step.Settled(done(command, result.value))
+        packageId?.let(pass.freshPackages::add)
+        val request = checkNotNull(taken.prepared) { "взятая в отправку операция несёт запрос" }
+        return when (val result = transport.send(request)) {
+            is ApiResult.Success -> {
+                // Ответ записан до применения: полученное подтверждение не теряется.
+                storage.answered(taken.id, result.value, clock.instant())
+                resolve(taken.command, result.value)
+            }
             is ApiResult.Failure -> when (val failure = result.failure) {
                 ApiFailure.Conflict, ApiFailure.PreconditionFailed ->
                     // Версия устарела либо объект уже есть: сервер отверг запрос до применения.
                     // Что делать дальше, знает команда; истина в любом случае читается.
-                    Step.Settled(stale(command, request))
-                ApiFailure.PreconditionRequired -> Step.Settled(refused(command, RefusalReason.INVALID))
-                is ApiFailure.Invalid -> Step.Settled(refused(command, (command as? PackageSyncCommand)?.onInvalid ?: RefusalReason.INVALID))
-                ApiFailure.NotFound -> Step.Settled(notFound(command))
+                    Step.Settled(stale(taken.command, request))
+                ApiFailure.PreconditionRequired -> Step.Settled(refused(taken.command, RefusalReason.INVALID))
+                is ApiFailure.Invalid ->
+                    Step.Settled(refused(taken.command, (taken.command as? PackageSyncCommand)?.onInvalid ?: RefusalReason.INVALID))
+                ApiFailure.NotFound -> Step.Settled(notFound(taken.command))
                 ApiFailure.Unauthorized, ApiFailure.RegistrationRefused -> Step.Unauthorized
                 is ApiFailure.TooManyRequests ->
                     Step.Settled(Delivery.Retry("429"), retryAfter = failure.retryAfter, stop = true)
@@ -191,25 +140,49 @@ class QueueWorker @Inject constructor(
         }
     }
 
+    /** Ответ уже записан — применить его; сервер о нём больше не спрашивают. */
+    private suspend fun resume(operation: SyncOperation): Step =
+        resolve(operation.command, checkNotNull(operation.answer) { "операция с ответом несёт его" })
+
     /**
-     * Успех, прочитанный по форме, которую ждала команда: снимок ложится как есть, «пачки нет»
-     * — как есть, а после брони и удаления без тела снимок читается следом; команде аптечки
-     * состояние пачки не нужно.
+     * Применение записанного ответа: разбор по форме, которую ждала команда, и истина по пачке —
+     * из ответа либо чтением следом. Ответ не по форме — исход неизвестен, повтор тем же
+     * запросом. Применить нечем — операция ждёт с ответом в руках.
      */
-    private suspend fun done(command: SyncCommand, answer: QueueAnswer): Delivery = when (command) {
-        is PackageSyncCommand -> when (answer) {
-            is QueueAnswer.Snapshot -> Delivery.Applied(PackageState.Present(answer.snapshot))
-            QueueAnswer.Gone -> Delivery.Applied(PackageState.Gone)
-            is QueueAnswer.Claim, QueueAnswer.Nothing ->
-                if (command is PackageSyncCommand.Delete || (command is PackageSyncCommand.CorrectStock && command.actual.isZero)) {
-                    Delivery.Applied(PackageState.Gone)
-                } else {
-                    snapshotRead(command.packageId) { Delivery.Applied(PackageState.Present(it)) }
-                }
+    private suspend fun resolve(command: SyncCommand, answer: RawResponse): Step {
+        val read = when (val parsed = command.expects.read(answer)) {
+            is ApiResult.Success -> parsed.value
+            is ApiResult.Failure -> return Step.Settled(Delivery.Retry((parsed.failure as ApiFailure.Protocol).reason))
         }
-        is MedKitSyncCommand -> Delivery.Applied(PackageState.None)
-        else -> command.unknownRoot()
+        return when (command) {
+            is PackageSyncCommand -> when (read) {
+                is QueueAnswer.Snapshot -> known(read.snapshot) { Step.Settled(Delivery.Applied(PackageState.Present(it))) }
+                QueueAnswer.Gone -> Step.Settled(Delivery.Applied(PackageState.Gone))
+                is QueueAnswer.Claim, QueueAnswer.Nothing ->
+                    if (command is PackageSyncCommand.Delete || (command is PackageSyncCommand.CorrectStock && command.actual.isZero)) {
+                        Step.Settled(Delivery.Applied(PackageState.Gone))
+                    } else {
+                        when (val snapshot = snapshotRead(command.packageId)) {
+                            is Read.Snapshot -> Step.Settled(Delivery.Applied(PackageState.Present(snapshot.snapshot)))
+                            is Read.Failed -> when (snapshot.delivery) {
+                                Delivery.AccessLost -> Step.Settled(Delivery.AccessLost)
+                                else -> Step.Deferred((snapshot.delivery as Delivery.Retry).error, stop = snapshot.stop)
+                            }
+                        }
+                    }
+            }
+            is MedKitSyncCommand -> Step.Settled(Delivery.Applied(PackageState.None))
+            else -> command.unknownRoot()
+        }
     }
+
+    /** Снимок из ответа ложится в базу только словами, которые словарь знает: промах дочитывается. */
+    private suspend fun known(snapshot: PackageSnapshotNetworkDTO, then: (PackageSnapshotNetworkDTO) -> Step): Step =
+        when (val resolution = vocabulary.resolve { snapshot.requireKnownIn(it) }) {
+            is VocabularyResolver.Resolution.Resolved -> then(snapshot)
+            is VocabularyResolver.Resolution.Unresolved ->
+                Step.Deferred("словарь не знает ${resolution.miss.message}", stop = resolution.failure != null)
+        }
 
     /**
      * Версия устарела — сервер отверг запрос до применения, в журнал он не попал. Расход и бронь
@@ -219,7 +192,7 @@ class QueueWorker @Inject constructor(
      * оставляет след в `mine`, и тогда расход применён.
      */
     private suspend fun stale(command: SyncCommand, request: PreparedRequest): Delivery = when (command) {
-        is PackageSyncCommand -> snapshotRead(command.packageId) { snapshot ->
+        is PackageSyncCommand -> snapshotThen(command.packageId) { snapshot ->
             when {
                 // 409 у создания — «уже есть»: пачка с нашим номером видна нам, значит наша.
                 command is PackageSyncCommand.Create -> Delivery.Applied(PackageState.Present(snapshot))
@@ -239,7 +212,7 @@ class QueueWorker @Inject constructor(
      */
     private suspend fun refused(command: SyncCommand, reason: RefusalReason): Delivery = when (command) {
         is PackageSyncCommand.Create -> Delivery.Refused(reason, PackageState.None)
-        is PackageSyncCommand -> snapshotRead(command.packageId) { Delivery.Refused(reason, PackageState.Present(it)) }
+        is PackageSyncCommand -> snapshotThen(command.packageId) { Delivery.Refused(reason, PackageState.Present(it)) }
         else -> Delivery.Refused(reason, PackageState.None)
     }
 
@@ -247,9 +220,9 @@ class QueueWorker @Inject constructor(
     private suspend fun notFound(command: SyncCommand): Delivery = when (command) {
         is PackageSyncCommand -> when (command.onNotFound) {
             NotFoundPolicy.ACCESS_LOST -> Delivery.AccessLost
-            NotFoundPolicy.REPREPARE -> snapshotRead(command.packageId) { Delivery.Stale(it) }
+            NotFoundPolicy.REPREPARE -> snapshotThen(command.packageId) { Delivery.Stale(it) }
             NotFoundPolicy.APPLIED ->
-                if (command is PackageSyncCommand.ReleaseClaim) snapshotRead(command.packageId) { Delivery.Applied(PackageState.Present(it)) }
+                if (command is PackageSyncCommand.ReleaseClaim) snapshotThen(command.packageId) { Delivery.Applied(PackageState.Present(it)) }
                 else Delivery.Applied(PackageState.Gone)
         }
         // Аптечки нет или мы не участник: удаление и выход тем самым исполнены (PLAN E3).
@@ -257,15 +230,36 @@ class QueueWorker @Inject constructor(
         else -> command.unknownRoot()
     }
 
-    /** Истина по пачке, прочитанная следом; пачки нет — доступа нет, что бы ни значил ответ до того. */
-    private suspend fun snapshotRead(packageId: Uuid, then: (PackageSnapshotNetworkDTO) -> Delivery): Delivery =
-        when (val read = transport.packageSnapshot(packageId)) {
-            is ApiResult.Success -> then(read.value)
-            is ApiResult.Failure -> when (read.failure) {
-                ApiFailure.NotFound -> Delivery.AccessLost
-                else -> Delivery.Retry("снимок не прочитан: ${read.failure}")
-            }
+    /** Истина по пачке, прочитанная следом, — и исход по ней; не прочиталась — исход чтения. */
+    private suspend fun snapshotThen(packageId: Uuid, then: (PackageSnapshotNetworkDTO) -> Delivery): Delivery =
+        when (val read = snapshotRead(packageId)) {
+            is Read.Snapshot -> then(read.snapshot)
+            is Read.Failed -> read.delivery
         }
+
+    /**
+     * Что у сервера сейчас по этой пачке — словами, которые словарь знает: промах дочитывается.
+     * Пачки нет — доступа к ней нет; связи нет — проход останавливается; иначе — повтор позже.
+     */
+    private suspend fun snapshotRead(packageId: Uuid): Read = when (val read = transport.packageSnapshot(packageId)) {
+        is ApiResult.Success -> when (val resolution = vocabulary.resolve { read.value.requireKnownIn(it) }) {
+            is VocabularyResolver.Resolution.Resolved -> Read.Snapshot(read.value)
+            is VocabularyResolver.Resolution.Unresolved ->
+                Read.Failed(Delivery.Retry("словарь не знает ${resolution.miss.message}"), stop = resolution.failure != null)
+        }
+        is ApiResult.Failure -> when (val failure = read.failure) {
+            ApiFailure.NotFound -> Read.Failed(Delivery.AccessLost)
+            ApiFailure.Unauthorized, ApiFailure.RegistrationRefused -> Read.Failed(Delivery.Retry("нет пропуска"), stop = true)
+            is ApiFailure.TooManyRequests -> Read.Failed(Delivery.Retry("429"), stop = true)
+            ApiFailure.Unavailable -> Read.Failed(Delivery.Retry("связи нет"), stop = true)
+            else -> Read.Failed(Delivery.Retry("снимок не прочитан: $failure"))
+        }
+    }
+
+    private sealed interface Read {
+        data class Snapshot(val snapshot: PackageSnapshotNetworkDTO) : Read
+        data class Failed(val delivery: Delivery, val stop: Boolean = false) : Read
+    }
 
     /** Не раньше чем: последняя попытка плюс задержка по их числу; первая попытка — сразу. */
     private fun SyncOperation.notBefore(): Instant? =
@@ -275,11 +269,75 @@ class QueueWorker @Inject constructor(
     private fun backoff(attempts: Int): Duration =
         (INITIAL_BACKOFF * (1 shl minOf(attempts - 1, MAX_BACKOFF_STEPS).coerceAtLeast(0))).coerceAtMost(MAX_BACKOFF)
 
-    private fun earliest(a: Instant?, b: Instant): Instant = if (a == null || b.isBefore(a)) b else a
-
+    /** Чем кончился шаг по одной операции. */
     private sealed interface Step {
+        /** Исход установлен и записывается хранилищем. */
         data class Settled(val delivery: Delivery, val retryAfter: Duration? = null, val stop: Boolean = false) : Step
+
+        /** Подготовка закрыла операцию сама — хранилище уже записало исход. */
+        data class Closed(val delivery: Delivery) : Step
+
+        /** Ответ записан, применить его пока нечем: операция ждёт с ответом в руках. */
+        data class Deferred(val reason: String, val stop: Boolean = false) : Step
+
         data object Unauthorized : Step
+
+        data object Skipped : Step
+    }
+
+    /** Состояние одного прохода: что закрыто, что пропущено, какие пачки дальше не трогать. */
+    private inner class Pass(val now: Instant) {
+        var settled = 0
+        var reprepared = 0
+        val skipped = ArrayList<StoredSyncOperation.Unreadable>()
+        private var retryAt: Instant? = null
+        val heldPackages = HashSet<Uuid>()
+
+        /** Пачки, чьё серверное состояние в этом проходе уже лежит в базе. */
+        val freshPackages = HashSet<Uuid>()
+
+        fun retryNotBefore(at: Instant) {
+            retryAt = if (retryAt == null || at.isBefore(retryAt)) at else retryAt
+        }
+
+        /** Записывает шаг; `true` — проход надо остановить. */
+        suspend fun record(operation: SyncOperation, packageId: Uuid?, step: Step): Boolean {
+            when (step) {
+                is Step.Settled -> {
+                    storage.settle(operation.id, step.delivery, clock.instant())
+                    when (step.delivery) {
+                        is Delivery.Retry -> {
+                            // Следующая команда той же пачки везёт предусловие, которое эта ещё
+                            // не сдвинула: в этом проходе пачка дальше не трогается.
+                            packageId?.let(heldPackages::add)
+                            retryNotBefore(clock.instant().plus((step.retryAfter ?: backoff(operation.attempts + 1)).toJavaDuration()))
+                        }
+                        is Delivery.Stale -> {
+                            // Операция снова первая по своей пачке и уйдёт следующим проходом;
+                            // остальные её команды ждут её, как ждали.
+                            packageId?.let(heldPackages::add)
+                            reprepared++
+                        }
+                        is Delivery.Applied, is Delivery.Refused, Delivery.AccessLost -> settled++
+                    }
+                    return step.stop
+                }
+                is Step.Closed -> {
+                    settled++
+                    return false
+                }
+                is Step.Deferred -> {
+                    storage.defer(operation.id, step.reason, clock.instant())
+                    packageId?.let(heldPackages::add)
+                    retryNotBefore(clock.instant().plus(backoff(operation.attempts + 1).toJavaDuration()))
+                    return step.stop
+                }
+                Step.Unauthorized -> return true
+                Step.Skipped -> return false
+            }
+        }
+
+        fun report() = Report(settled, skipped, retryAt, reprepared)
     }
 
     /**

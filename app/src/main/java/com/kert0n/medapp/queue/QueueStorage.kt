@@ -1,6 +1,7 @@
 package com.kert0n.medapp.queue
 
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
+import com.kert0n.medapp.network.server.RawResponse
 import java.time.Instant
 import kotlin.uuid.Uuid
 
@@ -13,9 +14,10 @@ import kotlin.uuid.Uuid
 interface QueueStorage {
 
     /**
-     * Готовые к отправке, по порядку номера: ожидающие и те, что отправлялись в момент смерти
-     * процесса, у которых все зависимости закрыты. Нечитаемые строки — тоже здесь, с причиной:
-     * работник их пропускает, а промах словаря дочитывает.
+     * Готовые к работе, по порядку номера: ожидающие, отправлявшиеся в момент смерти процесса и
+     * получившие ответ, который ещё не применён, — у которых все зависимости применены.
+     * Нечитаемые строки — тоже здесь, с причиной: работник их пропускает, а промах словаря
+     * дочитывает.
      */
     suspend fun ready(): List<StoredSyncOperation>
 
@@ -29,6 +31,15 @@ interface QueueStorage {
      * же, той же транзакцией. `null` — операции нет или она уже закрыта.
      */
     suspend fun take(id: Uuid, fresh: PackageSnapshotNetworkDTO?, at: Instant): Take?
+
+    /**
+     * Записывает ответ сервера до того, как он применён: полученное подтверждение не теряется,
+     * даже если применить его сейчас нечем. Операция становится `ANSWERED`.
+     */
+    suspend fun answered(id: Uuid, answer: RawResponse, at: Instant)
+
+    /** Ответ есть, применить его пока нечем — операция остаётся `ANSWERED`, причина названа. */
+    suspend fun defer(id: Uuid, reason: String, at: Instant)
 
     /** Отпускает операцию с исходом; что исход значит для строк, решает хранилище. */
     suspend fun settle(id: Uuid, outcome: Delivery, at: Instant)

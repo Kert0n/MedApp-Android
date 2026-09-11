@@ -19,6 +19,7 @@ import com.kert0n.medapp.network.intake.IntakeSyncState
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
 import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncState
+import com.kert0n.medapp.network.server.RawResponse
 import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.network.server.medAppJson
 import com.kert0n.medapp.queue.Delivery
@@ -268,5 +269,27 @@ class QueueStorageTest {
         assertEquals(SyncOperationStatus.REFUSED, stored.operation.status)
         assertEquals(IntakeAccounting.REMOTE_REFUSED, requireNotNull(database.intakes().findEntity(INTAKE)).accounting)
         assertEquals(com.kert0n.medapp.fixture.millilitres("17"), requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY).quantity)
+    }
+
+    /** Полученный ответ записан до применения: он в базе, операция готова к закрытию без сети. */
+    @Test
+    fun anAnswerIsKeptWithTheOperationUntilItIsSettled() = runTest {
+        database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
+        storage.take(operation, null, at)
+
+        storage.answered(operation, RawResponse(200, snapshotJson), at.plusSeconds(1))
+        storage.defer(operation, "словарь не знает единицу", at.plusSeconds(2))
+
+        val stored = (requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable).operation
+        assertEquals(SyncOperationStatus.ANSWERED, stored.status)
+        assertEquals(RawResponse(200, snapshotJson), stored.answer)
+        assertEquals(1, stored.attempts)
+        assertEquals(listOf(operation), storage.ready().map { it.id })
+        assertNull(storage.take(operation, null, at.plusSeconds(3)))
+
+        storage.settle(operation, Delivery.Applied(PackageState.Present(snapshot)), at.plusSeconds(4))
+        val settled = (requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable).operation
+        assertEquals(SyncOperationStatus.APPLIED, settled.status)
+        assertNull(settled.answer)
     }
 }

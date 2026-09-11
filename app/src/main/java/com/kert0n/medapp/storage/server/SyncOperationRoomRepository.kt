@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
+import com.kert0n.medapp.network.server.RawResponse
 import com.kert0n.medapp.queue.medkit.MedKitSyncCommand
 import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncState
@@ -99,7 +100,10 @@ class SyncOperationRoomRepository @Inject constructor(
         val stored = queue.find(id)?.toDomain(words) as? StoredSyncOperation.Readable
             ?: return@withTransaction null
         val operation = stored.operation
-        if (operation.status.isClosed) return@withTransaction null
+        // Берётся только ожидающая или отправлявшаяся: закрытая и получившая ответ — нет.
+        if (operation.status != SyncOperationStatus.PENDING && operation.status != SyncOperationStatus.SENDING) {
+            return@withTransaction null
+        }
         fresh?.let { apply(it, words, at) }
         if (operation.prepared == null) {
             val request = when (val command = operation.command) {
@@ -138,6 +142,14 @@ class SyncOperationRoomRepository @Inject constructor(
             queue.markSending(id)
         }
         (queue.find(id)?.toDomain(words) as? StoredSyncOperation.Readable)?.operation?.let { Take.Sending(it) }
+    }
+
+    override suspend fun answered(id: Uuid, answer: RawResponse, at: Instant) {
+        queue.answered(id, answer.status, answer.body, at)
+    }
+
+    override suspend fun defer(id: Uuid, reason: String, at: Instant) {
+        queue.defer(id, reason, at)
     }
 
     /** Подготовка закрыла операцию сама: истина по пачке уже в базе — она только что легла свежим снимком. */
