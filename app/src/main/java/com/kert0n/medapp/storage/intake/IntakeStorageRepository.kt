@@ -16,6 +16,9 @@ interface IntakeStorageRepository {
 
     fun observeOfCourse(courseId: Uuid): Flow<List<Intake>>
 
+    /** Пункты курса одним чтением — из них сценарий собирает прогресс внутри своей транзакции. */
+    suspend fun ofCourse(courseId: Uuid): List<Intake>
+
     suspend fun find(id: Uuid): Intake?
 
     suspend fun syncStateOf(id: Uuid): IntakeSyncState?

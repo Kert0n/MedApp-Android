@@ -50,6 +50,8 @@ class PackageRoomRepository @Inject constructor(
     override fun observeAvailability(id: Uuid): Flow<PackageAvailability?> =
         onChange { availabilityOf(id) }
 
+    override suspend fun availability(id: Uuid): PackageAvailability? = availabilityOf(id)
+
     override fun list(query: PackageQuery, today: LocalDate): Flow<List<Package>> =
         onChange { listing(query, today) }
 

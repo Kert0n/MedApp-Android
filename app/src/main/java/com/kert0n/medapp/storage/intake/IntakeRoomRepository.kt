@@ -35,6 +35,11 @@ class IntakeRoomRepository @Inject constructor(
             rows.map { it.toDomain(words) }
         }
 
+    override suspend fun ofCourse(courseId: Uuid): List<Intake> {
+        val words = vocabulary.snapshot()
+        return intakes.ofCourse(courseId).map { it.toDomain(words) }
+    }
+
     override suspend fun find(id: Uuid): Intake? = intakes.find(id)?.toDomain(vocabulary.snapshot())
 
     override suspend fun syncStateOf(id: Uuid): IntakeSyncState? = intakes.findEntity(id)?.syncState()

@@ -28,6 +28,10 @@ interface IntakeDao {
     fun observeOfCourse(courseId: Uuid): Flow<List<IntakeStorageRow>>
 
     @Transaction
+    @Query("SELECT * FROM intakes WHERE course_id = :courseId ORDER BY scheduled_at")
+    suspend fun ofCourse(courseId: Uuid): List<IntakeStorageRow>
+
+    @Transaction
     @Query(
         "SELECT * FROM intakes WHERE status = 'PLANNED' AND scheduled_at < :until " +
             "ORDER BY scheduled_at"
