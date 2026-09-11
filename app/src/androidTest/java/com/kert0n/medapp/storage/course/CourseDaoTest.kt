@@ -26,6 +26,8 @@ import org.junit.Test
 import com.kert0n.medapp.fixture.VOCABULARY
 import com.kert0n.medapp.domain.value.doses
 import com.kert0n.medapp.fixture.LATER
+import com.kert0n.medapp.fixture.availability
+import com.kert0n.medapp.fixture.tablets
 
 /**
  * Курс и его источники хранят порядок, а времена не заводятся дважды. Черновик и живой план —
@@ -189,6 +191,30 @@ class CourseDaoTest {
             courses.updateTotalDoses(COURSE, 5, expected = plan.revision, revision = shortened.revision.next(), updatedAt = LATER)
         )
         assertEquals(3.doses, requireNotNull(courses.findRecord(COURSE)).toDomain(VOCABULARY).prescription.totalDoses)
+    }
+
+    /** Доза мимо плана ложится вместе с пересчитанными выделениями, условно по редакции. */
+    @Test
+    fun dosesTakenOffPlanAreWrittenWithTheReallocation() = runTest {
+        val plan = activeCourse(sources = listOf(source(PACK, 5)))
+        courses.saveCourse(
+            plan.toStorageEntity(),
+            plan.schedule.toTimeStorageEntities(COURSE),
+            plan.medicine.toSourceStorageEntities(COURSE)
+        )
+        val corrected = plan.setTakenOffPlan(2.doses, availability(PACK to tablets("20")), LATER)
+
+        assertTrue(
+            courses.updateAllocations(
+                corrected.toStorageEntity(),
+                corrected.medicine.toSourceStorageEntities(COURSE),
+                expected = plan.revision
+            )
+        )
+        val restored = requireNotNull(courses.findPlan(COURSE)).toPlan(VOCABULARY)
+        assertEquals(2.doses, restored.takenOffPlan)
+        assertEquals(listOf(3.doses), restored.sources.map { it.allocatedDoses })
+        assertEquals(corrected.revision, restored.revision)
     }
 
     /** Источник не переживает удаления пачки молча: `RESTRICT` не даёт остаться без пачки. */

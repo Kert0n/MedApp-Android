@@ -75,6 +75,13 @@ class CourseRoomRepository @Inject constructor(
 
     override suspend fun courseHolding(packageId: Uuid): Uuid? = courses.courseHolding(packageId)
 
+    override suspend fun reallocate(reallocation: CourseReallocation): Boolean =
+        courses.updateAllocations(
+            reallocation.course.toStorageEntity(),
+            reallocation.course.medicine.toSourceStorageEntities(reallocation.course.id),
+            reallocation.expected
+        )
+
     override suspend fun setTotalDoses(course: Course, expected: Revision): Boolean =
         courses.updateTotalDoses(
             id = course.id,

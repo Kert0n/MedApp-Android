@@ -7,6 +7,7 @@ import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.QuantityUnit
+import com.kert0n.medapp.domain.value.doses
 import java.time.Instant
 import kotlin.uuid.Uuid
 
@@ -17,9 +18,10 @@ import kotlin.uuid.Uuid
  * [CourseRecord] (PLAN D5). Имя лечения живёт там же, а не здесь: так называют лечение, а не
  * расписание.
  *
- * Курс владеет тем, сколько осталось: назначенное число доз за вычетом принятых. Пропущенная
- * доза никуда не исчезает — лечение растягивается, а ожидаемый конец сдвигается сам; закончить
- * раньше человек может, сократив число доз рукой. Все вопросы о лечении задаются курсу —
+ * Курс владеет тем, сколько осталось: назначенное число доз за вычетом принятых по плану и
+ * [takenOffPlan] — принятых мимо него. Пропущенная доза никуда не исчезает — лечение
+ * растягивается, а ожидаемый конец сдвигается сам; закончить раньше человек может, сократив
+ * число доз рукой. Все вопросы о лечении задаются курсу —
  * обеспечение, предел ползунка, зажим при нехватке, пересчёт после приёма, порядок расхода, —
  * потому что он один владеет и дозой, и препаратом. На входе пачка, на выходе её идентификатор:
  * подставить вместо пачки форму или единицу нечем, а самих пачек курс не хранит.
@@ -28,6 +30,7 @@ class Course(
     val id: Uuid,
     val prescription: Prescription,
     val medicine: CourseMedicine,
+    val takenOffPlan: Doses = 0.doses,
     val revision: Revision = Revision.initial,
     val createdAt: Instant,
     val updatedAt: Instant
@@ -48,10 +51,30 @@ class Course(
     val totalDoses: Doses get() = prescription.totalDoses
 
     /**
-     * Сколько доз ещё впереди при [taken] принятых. Сколько принято, знают приёмы — курс их не
-     * хранит и получает число аргументом; больше назначенного не бывает: лишнее — ноль.
+     * Сколько доз ещё впереди при [taken] принятых по плану. Сколько принято, знают приёмы —
+     * курс их не хранит и получает число аргументом; принятое мимо плана он знает сам. Больше
+     * назначенного не бывает: лишнее — ноль.
      */
-    fun remainingDoses(taken: Doses): Doses = totalDoses.minusOrNone(taken)
+    fun remainingDoses(taken: Doses): Doses = totalDoses.minusOrNone(taken + takenOffPlan)
+
+    /**
+     * Дозы, принятые мимо плана: таблетки ушли, а курс об этом не узнал — взяли одиночным
+     * приёмом, из чужой аптечки, из кармана. Это не приём, а поправка к счёту курса: расход уже
+     * учтён там, где произошёл, и второй раз не считается — остатка пачек она не касается и в
+     * аналитику не входит. Потребность уменьшается, а с ней и бронь — по порядку расходования,
+     * как ушла бы плановая доза; редакция растёт, потому что бронь изменилась. Уменьшение числа
+     * бронь обратно не растит: снимать её решал человек, и возвращать её догадкой нельзя.
+     */
+    fun setTakenOffPlan(total: Doses, availability: Availability, at: Instant): Course {
+        if (total == takenOffPlan) return this
+        val added = total.minusOrNone(takenOffPlan)
+        return changed(
+            medicine = medicine.spent(medicine.spend(dose, added, availability)),
+            takenOffPlan = total,
+            revision = revision.next(),
+            updatedAt = at
+        )
+    }
 
     /**
      * Когда наступят оставшиеся дозы, начиная с [from]: столько ближайших пунктов календаря,
@@ -172,12 +195,14 @@ class Course(
     private fun changed(
         prescription: Prescription = this.prescription,
         medicine: CourseMedicine = this.medicine,
+        takenOffPlan: Doses = this.takenOffPlan,
         revision: Revision = this.revision,
         updatedAt: Instant = this.updatedAt
     ): Course = Course(
         id = id,
         prescription = prescription,
         medicine = medicine,
+        takenOffPlan = takenOffPlan,
         revision = revision,
         createdAt = createdAt,
         updatedAt = updatedAt

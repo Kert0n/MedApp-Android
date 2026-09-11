@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "8d8d324ceaebdde26205992ac8b776a7",
+    "identityHash": "9c551cc8f76b9ee20011a366a0241f43",
     "entities": [
       {
         "tableName": "quantity_units",
@@ -356,7 +356,7 @@
       },
       {
         "tableName": "courses",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `title` TEXT, `note` TEXT, `dose_amount` TEXT, `unit_id` TEXT, `form_id` TEXT, `total_doses` INTEGER, `start` TEXT, `days_mask` INTEGER, `zone` TEXT, `revision` INTEGER NOT NULL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `title` TEXT, `note` TEXT, `dose_amount` TEXT, `unit_id` TEXT, `form_id` TEXT, `total_doses` INTEGER, `taken_off_plan` INTEGER NOT NULL, `start` TEXT, `days_mask` INTEGER, `zone` TEXT, `revision` INTEGER NOT NULL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -393,6 +393,12 @@
             "fieldPath": "totalDoses",
             "columnName": "total_doses",
             "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "takenOffPlan",
+            "columnName": "taken_off_plan",
+            "affinity": "INTEGER",
+            "notNull": true
           },
           {
             "fieldPath": "start",
@@ -1261,7 +1267,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '8d8d324ceaebdde26205992ac8b776a7')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '9c551cc8f76b9ee20011a366a0241f43')"
     ]
   }
 }

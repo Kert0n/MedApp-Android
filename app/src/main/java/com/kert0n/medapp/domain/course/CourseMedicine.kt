@@ -188,6 +188,18 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
     }
 
     /**
+     * Выделения после того, как названные дозы ушли: из каждой пачки — на столько, сколько из неё
+     * взято, и не ниже нуля. Так уходит доза, принятая мимо плана: бронь уменьшается по порядку
+     * расходования, а остатка пачки это не касается.
+     */
+    internal fun spent(spent: Map<Uuid, Doses>): CourseMedicine = withSources(
+        sources.map { source ->
+            val taken = spent[source.packageId] ?: return@map source
+            CourseSource(source.packageId, source.allocatedDoses.minusOrNone(taken))
+        }
+    )
+
+    /**
      * Сколько целых доз остаётся выделено пачке после приёма [taken]: не больше выделенного за
      * вычетом расхода и не больше [availableAfter] (PLAN D5). Нулевое выделение расходом не
      * оживает: приём из невыделенной пачки брони не создаёт.

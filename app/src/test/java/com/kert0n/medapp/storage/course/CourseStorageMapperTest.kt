@@ -24,6 +24,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.kert0n.medapp.fixture.VOCABULARY
 import com.kert0n.medapp.fixture.dose
+import com.kert0n.medapp.domain.value.doses
+import com.kert0n.medapp.fixture.LATER
+import com.kert0n.medapp.fixture.availability
+import com.kert0n.medapp.fixture.tablets
 
 /**
  * Курс, его времена и его источники собираются обратно тем же самым, а черновик и живой план
@@ -170,5 +174,19 @@ class CourseStorageMapperTest {
         assertEquals(storedPlan.formId, storedRecord.formId)
         assertEquals(storedPlan.daysOfWeek, storedRecord.daysOfWeek)
         assertEquals(storedPlan.zone, storedRecord.zone)
+    }
+
+    @Test
+    fun dosesTakenOffPlanSurviveTheRoundTrip() {
+        val corrected = activeCourse(sources = listOf(source(PACK, 5)))
+            .setTakenOffPlan(2.doses, availability(PACK to tablets("20")), LATER)
+        val restored = rowOf(
+            corrected.toStorageEntity(),
+            times = corrected.schedule.times,
+            sources = corrected.medicine.toSourceStorageEntities(corrected.id)
+        ).toPlan(VOCABULARY)
+        assertEquals(2.doses, restored.takenOffPlan)
+        assertEquals(listOf(3.doses), restored.sources.map { it.allocatedDoses })
+        assertEquals(5.doses, restored.remainingDoses(taken = 0.doses))
     }
 }

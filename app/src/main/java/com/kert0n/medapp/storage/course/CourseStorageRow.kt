@@ -66,6 +66,7 @@ class CourseStorageRow(
             totalDoses = Doses(requireNotNull(course.totalDoses) { "у начатого лечения названо число доз" })
         ),
         medicine = medicine(),
+        takenOffPlan = Doses(course.takenOffPlan),
         revision = Revision(course.revision),
         createdAt = course.createdAt,
         updatedAt = course.updatedAt

@@ -59,6 +59,12 @@ interface CourseStorageRepository {
     suspend fun setTotalDoses(course: Course, expected: Revision): Boolean
 
     /**
+     * Пересчитанные выделения и число доз мимо плана — условно по редакции, из которой считали
+     * (PLAN D5, F5). `false` — плана уже нет; план другой редакции — ошибка вызывающего.
+     */
+    suspend fun reallocate(reallocation: CourseReallocation): Boolean
+
+    /**
      * Активация: план и запись эпизода заводятся **одной** транзакцией и с одним назначением.
      * Ни того ни другого в базе поодиночке не бывает (PLAN F5).
      *

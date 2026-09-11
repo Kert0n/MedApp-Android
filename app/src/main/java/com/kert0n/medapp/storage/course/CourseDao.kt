@@ -66,8 +66,8 @@ interface CourseDao {
      * посчитанным из прошлого состава — ноль изменённых строк значит, что писать некуда
      * (PLAN D5, F5).
      *
-     * Меняются только редакция, время правки и источники: доза и расписание действующего курса
-     * неизменны, и пересчёт обеспечения их не касается.
+     * Меняются только редакция, время правки, источники и число доз мимо плана: доза и
+     * расписание действующего курса неизменны, и пересчёт обеспечения их не касается.
      */
     @Transaction
     suspend fun updateAllocations(
@@ -75,7 +75,10 @@ interface CourseDao {
         sources: List<CourseSourceStorageEntity>,
         expected: Revision
     ): Boolean {
-        if (reviseIfRevisionIs(course.id, expected.number, course.revision, course.updatedAt) == 0) {
+        val revised = reviseIfRevisionIs(
+            course.id, expected.number, course.revision, course.takenOffPlan, course.updatedAt
+        )
+        if (revised == 0) {
             // Ноль строк законен ровно в одном случае: плана больше нет, писать некуда. Живой
             // план другой редакции — пересчёт из устаревшего состава, и молча пропустить его
             // нельзя: транзакция вокруг уже записала расход, обеспечение которого он и считал.
@@ -90,10 +93,16 @@ interface CourseDao {
     }
 
     @Query(
-        "UPDATE courses SET revision = :revision, updated_at = :updatedAt " +
-            "WHERE id = :id AND revision = :expected"
+        "UPDATE courses SET revision = :revision, taken_off_plan = :takenOffPlan, " +
+            "updated_at = :updatedAt WHERE id = :id AND revision = :expected"
     )
-    suspend fun reviseIfRevisionIs(id: Uuid, expected: Long, revision: Long, updatedAt: Instant): Int
+    suspend fun reviseIfRevisionIs(
+        id: Uuid,
+        expected: Long,
+        revision: Long,
+        takenOffPlan: Int,
+        updatedAt: Instant
+    ): Int
 
     /**
      * Число доз правится у плана и в снимке записи одной транзакцией: назначение лежит в двух
