@@ -76,18 +76,17 @@ class CourseMedicine(
     }
 
     /**
-     * Убирает пачку. Когда уходит последняя, [forgetFormWhenEmpty] решает, забыть ли форму и
-     * единицу: черновику терять нечего, а у назначенного курса в них уже записаны доза и
-     * расписание (PLAN D5).
+     * Убирает пачку. Форму и единицу не забывает никогда, даже когда уходит последняя: они
+     * заданы первым препаратом и с этого момента описывают само лечение, а не его текущий
+     * состав. В них записана доза — число человек назвал для таблеток, и перечитывать его в
+     * миллилитрах нельзя (PLAN D5).
      */
-    internal fun detach(packageId: Uuid, forgetFormWhenEmpty: Boolean): CourseMedicine {
+    internal fun detach(packageId: Uuid): CourseMedicine {
         requireHolds(packageId)
-        val left = sources.filterNot { it.packageId == packageId }
-        val forget = left.isEmpty() && forgetFormWhenEmpty
         return CourseMedicine(
-            sources = left,
-            formId = if (forget) null else formId,
-            unitId = if (forget) null else unitId
+            sources = sources.filterNot { it.packageId == packageId },
+            formId = formId,
+            unitId = unitId
         )
     }
 

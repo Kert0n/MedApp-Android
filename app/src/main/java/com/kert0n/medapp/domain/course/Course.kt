@@ -65,7 +65,7 @@ class Course(
      * Курс просто становится необеспеченным (PLAN D5).
      */
     fun detach(pkg: Package, at: Instant): Course = changed(
-        medicine = medicine.detach(pkg.id, forgetFormWhenEmpty = false),
+        medicine = medicine.detach(pkg.id),
         revision = revision.next(),
         updatedAt = at
     )

@@ -2,7 +2,6 @@ package com.kert0n.medapp.domain.course
 
 import com.kert0n.medapp.fixture.CAPSULE_FORM
 import com.kert0n.medapp.fixture.LATER
-import com.kert0n.medapp.fixture.MILLILITRES
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.TABLETS
@@ -23,8 +22,9 @@ import org.junit.Test
 /**
  * Форму и единицу курса задаёт первый источник, дальше несовместимое отвергается (PLAN D5).
  *
- * Проверяется и обратное правило: отвязка последнего источника у действующего курса форму не
- * сбрасывает, у черновика сбрасывает — там ещё нечего терять.
+ * Заданы они один раз и навсегда: отвязка последнего источника их не сбрасывает ни у
+ * действующего курса, ни у черновика. Иначе названная человеком доза досталась бы препарату
+ * другой единицы и была бы перечитана молча.
  */
 class CourseSourceFormTest {
 
@@ -91,18 +91,18 @@ class CourseSourceFormTest {
     }
 
     @Test
-    fun detachingTheLastSourceOfADraftForgetsFormAndUnit() {
+    fun detachingTheLastSourceOfADraftKeepsFormAndUnit() {
         val chosen = draft().attach(tabletPack, doses = 5.doses, at = LATER).getOrThrow()
         val emptied = chosen.detach(tabletPack, LATER)
-        assertNull(emptied.formId)
-        assertNull(emptied.unitId)
-        assertNull(emptied.dose)
-        // Число дозы человек уже назвал, и терять его незачем — неизвестна снова только единица.
+        assertEquals(TABLET_FORM, emptied.formId)
+        assertEquals(TABLETS, emptied.unitId)
+        // Доза остаётся дозой в таблетках: и число, и единица, которой его назвали.
         assertEquals(BigDecimal("2"), emptied.doseAmount)
+        assertEquals(dose("2"), emptied.dose)
     }
 
     @Test
-    fun draftForgetsFormOnlyWhenTheStackEmpties() {
+    fun draftKeepsFormWhileOtherSourcesRemain() {
         val second = pack(id = OTHER_PACK, formId = TABLET_FORM, quantity = tablets("12"))
         val two = draft()
             .attach(tabletPack, doses = 5.doses, at = LATER).getOrThrow()
@@ -112,15 +112,28 @@ class CourseSourceFormTest {
         assertEquals(TABLETS, one.unitId)
     }
 
+    /**
+     * Названное для таблеток число не достаётся миллилитрам. Пустой черновик по-прежнему
+     * лечение теми же таблетками; другой препарат — другое лечение и другой черновик.
+     */
     @Test
-    fun forgottenFormLetsTheDraftStartOverWithAnotherForm() {
+    fun emptiedDraftDoesNotLetAnotherFormInheritTheDose() {
         val capsules = pack(id = OTHER_PACK, formId = CAPSULE_FORM, quantity = millilitres("10"))
-        val restarted = draft()
+        val emptied = draft()
             .attach(tabletPack, doses = 5.doses, at = LATER).getOrThrow()
             .detach(tabletPack, LATER)
-            .attach(capsules, doses = 1.doses, at = LATER).getOrThrow()
-        assertEquals(CAPSULE_FORM, restarted.formId)
-        assertEquals(MILLILITRES, restarted.unitId)
+
+        assertEquals(
+            CourseRejected.Reason.FORM_MISMATCH,
+            emptied.attach(capsules, doses = 1.doses, at = LATER).rejection()
+        )
+        val sameFormOtherUnit =
+            pack(id = OTHER_PACK, formId = TABLET_FORM, quantity = millilitres("10"))
+        assertEquals(
+            CourseRejected.Reason.UNIT_MISMATCH,
+            emptied.attach(sameFormOtherUnit, doses = 1.doses, at = LATER).rejection()
+        )
+        assertEquals(dose("2"), emptied.dose)
     }
 
     @Test
