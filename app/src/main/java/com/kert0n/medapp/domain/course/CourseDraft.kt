@@ -8,24 +8,26 @@ import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.doses
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.QuantityUnit
-import com.kert0n.medapp.domain.value.requireNonNegativeDecimal
 import com.kert0n.medapp.domain.value.requireOptionalText
 import com.kert0n.medapp.domain.value.requireText
-import java.math.BigDecimal
 import java.time.Instant
 import kotlin.uuid.Uuid
 
 /**
- * Черновик курса — законное сохраняемое состояние: названия уже достаточно (PLAN D5). Доза здесь —
- * число без единицы: единицу задаёт первая пачка препарата, и величиной доза становится при
- * активации. Броней у черновика нет: выбранные пачки — предварительный выбор.
+ * Черновик курса — законное сохраняемое состояние: названия уже достаточно (PLAN D5). Назначение
+ * собирается по частям из словаря — доза с единицей, форма, календарь, число доз — и пачки для
+ * этого не нужно: человек записывает у врача, а покупает потом. Пачка подключается к тому, что
+ * назначено, и годится ли она, решают уже названные доза и форма. Броней у черновика нет:
+ * выбранные пачки — предварительный выбор.
  */
 class CourseDraft(
     val id: Uuid,
     val title: String,
     val note: String? = null,
-    val doseAmount: BigDecimal? = null,
+    val dose: Dose? = null,
+    val form: DosageForm? = null,
     val schedule: CourseSchedule? = null,
+    val totalDoses: Doses? = null,
     val medicine: CourseMedicine = CourseMedicine(),
     val revision: Revision = Revision.initial,
     val createdAt: Instant,
@@ -35,38 +37,21 @@ class CourseDraft(
     init {
         requireText(title, CourseRecord.TITLE_MAX_LENGTH, "CourseDraft.title")
         requireOptionalText(note, CourseRecord.NOTE_MAX_LENGTH, "CourseDraft.note")
-        doseAmount?.let { amount ->
-            requireNonNegativeDecimal(
-                amount = amount,
-                field = "доза курса",
-                maxScale = Quantity.SCALE,
-                maxIntegerDigits = Quantity.MAX_INTEGER_DIGITS
-            )
-            // Нулевая доза — не лечение, а деление на ноль в обеспечении: `dosesIn` на ней бросает.
-            require(amount.signum() > 0) { "разовая доза курса строго положительна" }
+        require(totalDoses == null || !totalDoses.isNone) { "лечение без единой дозы — не лечение" }
+        // Пачка проходит в препарат только через сверку с дозой и формой, поэтому препарат без
+        // них — состояние, которого не бывает.
+        require(medicine.isEmpty || (dose != null && form != null)) {
+            "пачки подключаются к назначенным дозе и форме"
         }
     }
 
-    /**
-     * Доза как величина — только когда первая пачка принесла единицу. Число человек называет сам,
-     * единицу приносит препарат, и порядок бывает любым: «две штуки чего-то» и «пачка выбрана» —
-     * оба законные состояния черновика.
-     */
-    val dose: Dose?
-        get() {
-            val unit = medicine.unit ?: return null
-            return doseAmount?.let { Dose(Quantity(it, unit)) }
-        }
-
     val sources: List<CourseSource> get() = medicine.sources
 
-    val form: DosageForm? get() = medicine.form
-
-    val unit: QuantityUnit? get() = medicine.unit
+    val unit: QuantityUnit? get() = dose?.unit
 
     val allocatedDosesTotal: Doses get() = medicine.allocatedTotal
 
-    /** Выделение пачки в единицах пачки; `null` — пачка не выбрана или доза ещё не задана. */
+    /** Выделение пачки в единицах пачки; `null` — пачка не выбрана. */
     fun allocatedOf(pkg: Package): Quantity? {
         val allocated = medicine.allocatedTo(pkg.id) ?: return null
         return dose?.times(allocated)
@@ -74,17 +59,30 @@ class CourseDraft(
 
     /**
      * Название и заметка правятся без роста редакции: редакция отмечает изменение будущих пунктов,
-     * а исправленная опечатка их не меняет.
+     * а исправленная опечатка их не меняет. Название препарата — тоже сюда, свободным текстом.
      */
     fun rename(title: String, note: String?, at: Instant): CourseDraft =
         changed(title = title, note = note, updatedAt = at)
 
     /**
      * Доза задаётся только у черновика: у назначенного курса она неизменна, а другое лечение —
-     * это отмена курса и новый черновик (PLAN D5).
+     * это отмена курса и новый черновик (PLAN D5). Единица дозы — единица лечения; уже
+     * подключённые пачки другой единицы под неё не годятся, и такая смена отвергается.
      */
-    fun setDose(amount: BigDecimal, at: Instant): CourseDraft =
-        changed(doseAmount = amount, revision = revision.next(), updatedAt = at)
+    fun setDose(dose: Dose, at: Instant): Result<CourseDraft> {
+        if (!medicine.isEmpty && dose.unit != this.dose?.unit) {
+            return Result.failure(CourseRejected(CourseRejected.Reason.UNIT_MISMATCH))
+        }
+        return Result.success(changed(dose = dose, revision = revision.next(), updatedAt = at))
+    }
+
+    /** Форма лечения — тоже только у черновика, и уже подключённые пачки ей обязаны. */
+    fun setForm(form: DosageForm, at: Instant): Result<CourseDraft> {
+        if (!medicine.isEmpty && form != this.form) {
+            return Result.failure(CourseRejected(CourseRejected.Reason.FORM_MISMATCH))
+        }
+        return Result.success(changed(form = form, revision = revision.next(), updatedAt = at))
+    }
 
     /**
      * Расписание задаётся только у черновика, как и доза; редакция растёт, потому что меняется
@@ -93,14 +91,25 @@ class CourseDraft(
     fun setSchedule(schedule: CourseSchedule, at: Instant): CourseDraft =
         changed(schedule = schedule, revision = revision.next(), updatedAt = at)
 
-    /** Подключает пачку к препарату последней в очереди расходования. */
-    fun attach(pkg: Package, doses: Doses, at: Instant): Result<CourseDraft> =
-        medicine.attach(pkg, doses)
-            .map { changed(medicine = it, revision = revision.next(), updatedAt = at) }
+    /** Сколько всего доз назначено. Число доз правится и после начала — но уже у курса. */
+    fun setTotalDoses(totalDoses: Doses, at: Instant): CourseDraft =
+        changed(totalDoses = totalDoses, revision = revision.next(), updatedAt = at)
 
-    /** Отвязка последней пачки у черновика забывает форму и единицу: терять ещё нечего. */
+    /**
+     * Подключает пачку к препарату последней в очереди расходования. Сверяет её назначение, а не
+     * первая пачка: пока доза и форма не названы, сверять не с чем, и отказ говорит, чего не
+     * хватает.
+     */
+    fun attach(pkg: Package, doses: Doses, at: Instant): Result<CourseDraft> {
+        val dose = dose ?: return rejected(CourseRejected.Reason.DOSE_MISSING)
+        val form = form ?: return rejected(CourseRejected.Reason.FORM_MISSING)
+        return medicine.attach(pkg, doses, dose, form)
+            .map { changed(medicine = it, revision = revision.next(), updatedAt = at) }
+    }
+
+    /** Отвязка пачки назначения не касается: доза и форма заданы словарём, а не пачкой. */
     fun detach(pkg: Package, at: Instant): CourseDraft = changed(
-        medicine = medicine.detach(pkg.id, forgetFormWhenEmpty = true),
+        medicine = medicine.detach(pkg.id),
         revision = revision.next(),
         updatedAt = at
     )
@@ -127,7 +136,7 @@ class CourseDraft(
     }
 
     /**
-     * Активация: нужны расписание, доза и хотя бы одна пачка. Дальше их наличие обеспечивает тип
+     * Активация: нужны расписание, доза, форма и число доз. Дальше их наличие обеспечивает тип
      * [Course], а выделения становятся бронями (PLAN D5, F1).
      *
      * Рождаются **двое**: план, которым пользуются, и запись, которая останется, когда план
@@ -137,8 +146,15 @@ class CourseDraft(
     fun activate(at: Instant): Result<Activation> {
         val schedule = schedule ?: return rejected(CourseRejected.Reason.SCHEDULE_MISSING)
         val dose = dose ?: return rejected(CourseRejected.Reason.DOSE_MISSING)
+        val form = form ?: return rejected(CourseRejected.Reason.FORM_MISSING)
+        val totalDoses = totalDoses ?: return rejected(CourseRejected.Reason.TOTAL_DOSES_MISSING)
         if (medicine.isEmpty) return rejected(CourseRejected.Reason.SOURCES_MISSING)
-        val prescription = Prescription(dose = dose, schedule = schedule)
+        val prescription = Prescription(
+            dose = dose,
+            form = form,
+            schedule = schedule,
+            totalDoses = totalDoses
+        )
         return Result.success(
             Activation(
                 course = Course(
@@ -160,15 +176,17 @@ class CourseDraft(
         )
     }
 
-    private fun rejected(reason: CourseRejected.Reason): Result<Activation> =
+    private fun <T> rejected(reason: CourseRejected.Reason): Result<T> =
         Result.failure(CourseRejected(reason))
 
     /** Изменённый экземпляр; [id] и [createdAt] не меняются. */
     private fun changed(
         title: String = this.title,
         note: String? = this.note,
-        doseAmount: BigDecimal? = this.doseAmount,
+        dose: Dose? = this.dose,
+        form: DosageForm? = this.form,
         schedule: CourseSchedule? = this.schedule,
+        totalDoses: Doses? = this.totalDoses,
         medicine: CourseMedicine = this.medicine,
         revision: Revision = this.revision,
         updatedAt: Instant = this.updatedAt
@@ -176,8 +194,10 @@ class CourseDraft(
         id = id,
         title = title,
         note = note,
-        doseAmount = doseAmount,
+        dose = dose,
+        form = form,
         schedule = schedule,
+        totalDoses = totalDoses,
         medicine = medicine,
         revision = revision,
         createdAt = createdAt,

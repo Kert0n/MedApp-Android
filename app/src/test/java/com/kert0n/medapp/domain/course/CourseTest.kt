@@ -19,6 +19,8 @@ import java.math.BigDecimal
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import com.kert0n.medapp.fixture.prescribedDraft
+import org.junit.Assert.assertTrue
 
 /**
  * Курс начинается заметкой: черновик с одним названием — законное сохранённое состояние, а не
@@ -30,19 +32,18 @@ class CourseTest {
     fun draftWithNothingButATitleIsALegitimateCourse() {
         val draft = course()
         assertNull(draft.note)
-        assertNull(draft.doseAmount)
         assertNull(draft.dose)
+        assertNull(draft.form)
+        assertNull(draft.totalDoses)
     }
 
     @Test
-    fun doseIsAValueOnlyWhenTheUnitIsKnownToo() {
-        // Единицу фиксирует первый источник, дозу задаёт человек, и порядок бывает любым.
-        assertNull(course(doseAmount = BigDecimal("2")).dose)
-        assertNull(course(unit = TABLETS).dose)
-        assertEquals(
-            Dose(Quantity(BigDecimal("2"), TABLETS)),
-            course(doseAmount = BigDecimal("2"), unit = TABLETS).dose
-        )
+    fun doseIsAValueWithItsUnitFromTheVocabularyNotFromAPack() {
+        // Единицу человек выбирает из словаря вместе с числом: пачки для этого не нужно.
+        val dosed = course(dose = dose("2"))
+        assertEquals(Dose(Quantity(BigDecimal("2"), TABLETS)), dosed.dose)
+        assertEquals(TABLETS, dosed.unit)
+        assertTrue(dosed.medicine.isEmpty)
     }
 
     @Test
@@ -74,10 +75,20 @@ class CourseTest {
 
     @Test
     fun settingTheDraftDoseRaisesTheRevision() {
-        val dosed = course().setDose(BigDecimal("2"), at = LATER)
-        assertEquals(BigDecimal("2"), dosed.doseAmount)
+        val dosed = course().setDose(dose("2"), at = LATER).getOrThrow()
+        assertEquals(dose("2"), dosed.dose)
         assertEquals(Revision(1), dosed.revision)
         assertEquals(LATER, dosed.updatedAt)
+    }
+
+    @Test
+    fun settingTheDraftFormAndTotalRaisesTheRevision() {
+        val formed = course().setForm(TABLET_FORM, at = LATER).getOrThrow()
+        assertEquals(TABLET_FORM, formed.form)
+        assertEquals(Revision(1), formed.revision)
+        val counted = formed.setTotalDoses(10.doses, at = LATER)
+        assertEquals(10.doses, counted.totalDoses)
+        assertEquals(Revision(2), counted.revision)
     }
 
     @Test
@@ -93,10 +104,12 @@ class CourseTest {
     fun activationCarriesTheDoseAndScheduleOverUnchanged() {
         // Менять их после активации нечем: переходов `setDose` и `setSchedule` у назначенного
         // курса нет вовсе. Изменившееся лечение — отмена прежнего курса и новый (PLAN D5).
-        val draft = course(doseAmount = BigDecimal("2"), schedule = schedule())
+        val draft = prescribedDraft(schedule = schedule(), totalDoses = 7)
             .attach(pack(form = TABLET_FORM), 1.doses, LATER).getOrThrow()
         val started = draft.activate(LATER).getOrThrow()
         assertEquals(dose("2"), started.course.dose)
+        assertEquals(TABLET_FORM, started.course.form)
+        assertEquals(7.doses, started.course.totalDoses)
         assertEquals(schedule(), started.course.schedule)
         // Запись эпизода несёт то же назначение: расходиться им нечем — менять его нельзя.
         assertEquals(started.course.prescription, started.record.prescription)
@@ -104,7 +117,12 @@ class CourseTest {
 
     @Test(expected = IllegalArgumentException::class)
     fun zeroDoseIsNotTreatment() {
-        course(doseAmount = BigDecimal.ZERO)
+        course(dose = dose("0"))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun zeroTotalDosesIsNotTreatmentEither() {
+        course(totalDoses = 0)
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -116,7 +134,7 @@ class CourseTest {
 
     @Test(expected = IllegalArgumentException::class)
     fun negativeDoseIsRejected() {
-        course(doseAmount = BigDecimal("-1"))
+        course(dose = dose("-1"))
     }
 
     @Test(expected = IllegalArgumentException::class)

@@ -62,10 +62,10 @@ fun course(
     id: Uuid = COURSE,
     title: String = "Парацетамол, пять дней",
     note: String? = null,
-    doseAmount: BigDecimal? = null,
-    unit: QuantityUnit? = null,
+    dose: Dose? = null,
     form: DosageForm? = null,
     schedule: CourseSchedule? = null,
+    totalDoses: Int? = null,
     sources: List<CourseSource> = emptyList(),
     revision: Long = 0,
     createdAt: Instant = EARLIER,
@@ -74,24 +74,42 @@ fun course(
     id = id,
     title = title,
     note = note,
-    doseAmount = doseAmount,
+    dose = dose,
+    form = form,
     schedule = schedule,
-    medicine = CourseMedicine(sources = sources, form = form, unit = unit),
+    totalDoses = totalDoses?.let(::Doses),
+    medicine = CourseMedicine(sources = sources),
     revision = Revision(revision),
     createdAt = createdAt,
     updatedAt = updatedAt
 )
 
-/** Назначение: две таблетки раз в день неделю, если тест не сказал иначе. */
+/** Черновик с назначенными дозой и формой — к нему уже можно подключать пачки. */
+fun prescribedDraft(
+    dose: Dose = dose("2"),
+    form: DosageForm = TABLET_FORM,
+    schedule: CourseSchedule? = null,
+    totalDoses: Int? = null,
+    sources: List<CourseSource> = emptyList()
+) = course(dose = dose, form = form, schedule = schedule, totalDoses = totalDoses, sources = sources)
+
+/** Назначение: две таблетки раз в день, семь доз — неделя, если тест не сказал иначе. */
 fun prescription(
     doseAmount: BigDecimal = BigDecimal("2"),
     unit: QuantityUnit = TABLETS,
-    schedule: CourseSchedule = schedule()
-) = Prescription(dose = Dose(Quantity(doseAmount, unit)), schedule = schedule)
+    form: DosageForm = TABLET_FORM,
+    schedule: CourseSchedule = schedule(),
+    totalDoses: Int = 7
+) = Prescription(
+    dose = Dose(Quantity(doseAmount, unit)),
+    form = form,
+    schedule = schedule,
+    totalDoses = Doses(totalDoses)
+)
 
 /**
- * Действующий план: доза, единица, форма и расписание у него есть по типу, и называть их в каждом
- * тесте незачем.
+ * Действующий план: доза, единица, форма, число доз и расписание у него есть по типу, и называть
+ * их в каждом тесте незачем.
  */
 fun activeCourse(
     id: Uuid = COURSE,
@@ -99,14 +117,15 @@ fun activeCourse(
     unit: QuantityUnit = TABLETS,
     form: DosageForm = TABLET_FORM,
     schedule: CourseSchedule = schedule(),
+    totalDoses: Int = 7,
     sources: List<CourseSource> = emptyList(),
     revision: Long = 1,
     createdAt: Instant = EARLIER,
     updatedAt: Instant = EARLIER
 ) = Course(
     id = id,
-    prescription = prescription(doseAmount, unit, schedule),
-    medicine = CourseMedicine(sources = sources, form = form, unit = unit),
+    prescription = prescription(doseAmount, unit, form, schedule, totalDoses),
+    medicine = CourseMedicine(sources = sources),
     revision = Revision(revision),
     createdAt = createdAt,
     updatedAt = updatedAt
@@ -134,6 +153,5 @@ fun courseRecord(
 /** Источник: пачка и её выделение в целых дозах. */
 fun source(packageId: Uuid, doses: Int) = CourseSource(packageId, Doses(doses))
 
-/** Препарат курса из таблеток: пачки в порядке расходования, каждая со своим выделением. */
-fun medicine(vararg sources: CourseSource) =
-    CourseMedicine(sources = sources.toList(), form = TABLET_FORM, unit = TABLETS)
+/** Препарат курса: пачки в порядке расходования, каждая со своим выделением. */
+fun medicine(vararg sources: CourseSource) = CourseMedicine(sources = sources.toList())

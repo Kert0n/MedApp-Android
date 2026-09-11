@@ -7,14 +7,13 @@ import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.doses
 import com.kert0n.medapp.domain.value.Quantity
-import com.kert0n.medapp.domain.value.QuantityUnit
-import java.util.Objects
 import kotlin.uuid.Uuid
 
 /**
- * Препарат курса: пачки, которые человек, выбрав их источниками, объявил одним лекарством. Форму
- * и единицу задаёт первая пачка; порядок пачек — порядок расходования; каждой выделено целое
- * число доз, потому что доза берётся из одной пачки и между пачками не делится (PLAN D5).
+ * Препарат курса: пачки, которые человек, выбрав их источниками, объявил одним лекарством.
+ * Порядок пачек — порядок расходования; каждой выделено целое число доз, потому что доза берётся
+ * из одной пачки и между пачками не делится (PLAN D5). Форма и единица препарату не принадлежат:
+ * ими лечение задано в назначении, и пачка сверяется с ним, а не с первой пачкой.
  * Взаимозаменяемость приложение не выводит (C2), поэтому вопросы обеспечения задаются препарату
  * целиком. Разовую дозу знает курс и передаёт аргументом, расклад доступного приносит
  * [Availability] — по числу на каждую пачку.
@@ -23,11 +22,7 @@ import kotlin.uuid.Uuid
  * себя чужие сущности ему незачем. Наружу этим не пользуются — публичная сторона у лечения одна,
  * и это курс: он принимает пачку и спрашивает препарат уже её идентификатором.
  */
-class CourseMedicine(
-    sources: List<CourseSource> = emptyList(),
-    val form: DosageForm? = null,
-    val unit: QuantityUnit? = null
-) {
+class CourseMedicine(sources: List<CourseSource> = emptyList()) {
 
     /**
      * Своя копия, а не переданный список: `val` защищает ссылку, а не содержимое, и список,
@@ -39,9 +34,6 @@ class CourseMedicine(
     init {
         require(sources.distinctBy { it.packageId }.size == sources.size) {
             "одна пачка входит в курс один раз"
-        }
-        require(sources.isEmpty() || (form != null && unit != null)) {
-            "форма и единица фиксируются первым источником"
         }
     }
 
@@ -55,42 +47,35 @@ class CourseMedicine(
 
     internal fun holds(packageId: Uuid): Boolean = sources.any { it.packageId == packageId }
 
-    /** Подключает пачку последней в расходе; отказ называет причину, ведущую к действию. */
-    internal fun attach(pkg: Package, doses: Doses): Result<CourseMedicine> {
+    /**
+     * Подключает пачку последней в расходе, если она годится под назначенное: та же форма и та
+     * же единица, что у [dose]. Отказ называет причину, ведущую к действию.
+     */
+    internal fun attach(
+        pkg: Package,
+        doses: Doses,
+        dose: Dose,
+        form: DosageForm
+    ): Result<CourseMedicine> {
         val rejection = when {
             pkg.lifecycle != Package.Lifecycle.ACTIVE ||
                 pkg.access != Package.Access.AVAILABLE -> CourseRejected.Reason.PACKAGE_UNUSABLE
             holds(pkg.id) -> CourseRejected.Reason.ALREADY_ATTACHED
-            // Две пачки без формы несовместимы: это два разных незнания, а не одно и то же.
+            // Пачка без формы не годится ни под какое назначение: сказать, тот ли это препарат,
+            // нечем, и сначала форму надо заполнить.
             pkg.facts.form == null -> CourseRejected.Reason.FORM_UNKNOWN
-            form != null && form != pkg.facts.form -> CourseRejected.Reason.FORM_MISMATCH
-            unit != null && unit != pkg.quantity.unit -> CourseRejected.Reason.UNIT_MISMATCH
+            pkg.facts.form != form -> CourseRejected.Reason.FORM_MISMATCH
+            pkg.quantity.unit != dose.unit -> CourseRejected.Reason.UNIT_MISMATCH
             else -> null
         }
         if (rejection != null) return Result.failure(CourseRejected(rejection))
-        return Result.success(
-            CourseMedicine(
-                sources = sources + CourseSource(pkg.id, doses),
-                form = pkg.facts.form,
-                unit = pkg.quantity.unit
-            )
-        )
+        return Result.success(withSources(sources + CourseSource(pkg.id, doses)))
     }
 
-    /**
-     * Убирает пачку. Когда уходит последняя, [forgetFormWhenEmpty] решает, забыть ли форму и
-     * единицу: черновику терять нечего, а у назначенного курса в них уже записаны доза и
-     * расписание (PLAN D5).
-     */
-    internal fun detach(packageId: Uuid, forgetFormWhenEmpty: Boolean): CourseMedicine {
+    /** Убирает пачку; препарат без пачек — законное состояние, курс просто не обеспечен. */
+    internal fun detach(packageId: Uuid): CourseMedicine {
         requireHolds(packageId)
-        val left = sources.filterNot { it.packageId == packageId }
-        val forget = left.isEmpty() && forgetFormWhenEmpty
-        return CourseMedicine(
-            sources = left,
-            form = if (forget) null else form,
-            unit = if (forget) null else unit
-        )
+        return withSources(sources.filterNot { it.packageId == packageId })
     }
 
     /** Переставляет пачку: место в препарате — очередь в расходе. */
@@ -254,20 +239,14 @@ class CourseMedicine(
         val covers: Doses get() = minOf(allocated, whole)
     }
 
-    private fun withSources(sources: List<CourseSource>): CourseMedicine =
-        CourseMedicine(sources = sources, form = form, unit = unit)
+    private fun withSources(sources: List<CourseSource>): CourseMedicine = CourseMedicine(sources)
 
     override fun equals(other: Any?): Boolean =
-        this === other || (
-            other is CourseMedicine &&
-                sources == other.sources &&
-                form == other.form &&
-                unit == other.unit
-            )
+        this === other || (other is CourseMedicine && sources == other.sources)
 
-    override fun hashCode(): Int = Objects.hash(sources, form, unit)
+    override fun hashCode(): Int = sources.hashCode()
 
-    override fun toString(): String = "CourseMedicine($sources, form=$form, unit=$unit)"
+    override fun toString(): String = "CourseMedicine($sources)"
 
     private fun requireHolds(packageId: Uuid) {
         require(holds(packageId)) { "пачка $packageId не источник этого курса" }

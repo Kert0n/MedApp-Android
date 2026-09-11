@@ -31,12 +31,6 @@ class Course(
     val updatedAt: Instant
 ) {
 
-    init {
-        require(prescription.dose.unit == medicine.unit) {
-            "доза измеряется единицей источников курса"
-        }
-    }
-
     /** Разовая доза: назначение врача, а не подсказка упаковки (PLAN D5, C1). */
     val dose: Dose get() = prescription.dose
 
@@ -44,9 +38,12 @@ class Course(
 
     val sources: List<CourseSource> get() = medicine.sources
 
-    val form: DosageForm? get() = medicine.form
+    /** Форма и единица — назначения, а не первой пачки: пачки приходят и уходят, они остаются. */
+    val form: DosageForm get() = prescription.form
 
-    val unit: QuantityUnit? get() = medicine.unit
+    val unit: QuantityUnit get() = prescription.dose.unit
+
+    val totalDoses: Doses get() = prescription.totalDoses
 
     val allocatedDosesTotal: Doses get() = medicine.allocatedTotal
 
@@ -57,17 +54,17 @@ class Course(
     fun allocatedOf(pkg: Package): Quantity? =
         medicine.allocatedTo(pkg.id)?.let { dose * it }
 
-    /** Пачки действующего курса менять можно: это не изменение дозы или календаря (PLAN D5). */
+    /**
+     * Пачки действующего курса менять можно: это не изменение дозы или календаря (PLAN D5).
+     * Годится ли пачка, решает назначение: та же форма, та же единица.
+     */
     fun attach(pkg: Package, doses: Doses, at: Instant): Result<Course> =
-        medicine.attach(pkg, doses)
+        medicine.attach(pkg, doses, dose, form)
             .map { changed(medicine = it, revision = revision.next(), updatedAt = at) }
 
-    /**
-     * Отвязка последней пачки форму и единицу не забывает: в них записаны доза и прошлые приёмы.
-     * Курс просто становится необеспеченным (PLAN D5).
-     */
+    /** Отвязка последней пачки лечения не отменяет: курс просто становится необеспеченным. */
     fun detach(pkg: Package, at: Instant): Course = changed(
-        medicine = medicine.detach(pkg.id, forgetFormWhenEmpty = false),
+        medicine = medicine.detach(pkg.id),
         revision = revision.next(),
         updatedAt = at
     )

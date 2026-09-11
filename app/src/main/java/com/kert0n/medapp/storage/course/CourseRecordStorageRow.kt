@@ -5,8 +5,10 @@ import androidx.room.Relation
 import com.kert0n.medapp.domain.course.CourseRecord
 import com.kert0n.medapp.domain.course.CourseSchedule
 import com.kert0n.medapp.domain.course.Prescription
+import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.storage.value.storedDose
+import com.kert0n.medapp.storage.value.storedForm
 import com.kert0n.medapp.storage.value.storedUnit
 
 /**
@@ -24,6 +26,8 @@ class CourseRecordStorageRow(
         note = record.note,
         prescription = Prescription(
             dose = storedDose(record.doseAmount, vocabulary.storedUnit(record.unitId)),
+            form = vocabulary.storedForm(record.formId),
+            totalDoses = Doses(record.totalDoses),
             schedule = CourseSchedule(
                 start = record.start,
                 endInclusive = record.endInclusive,

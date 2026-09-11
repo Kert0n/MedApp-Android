@@ -12,6 +12,7 @@ import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.course
 import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.pack
+import com.kert0n.medapp.fixture.prescribedDraft
 import com.kert0n.medapp.fixture.schedule
 import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
@@ -31,7 +32,7 @@ class CourseMedicineTest {
     private val home = pack(id = PACK, form = TABLET_FORM, quantity = tablets("20"))
     private val dacha = pack(id = OTHER_PACK, form = TABLET_FORM, quantity = tablets("12"))
 
-    private fun draftWithDose() = course(doseAmount = BigDecimal("2"))
+    private fun draftWithDose() = prescribedDraft()
 
     @Test
     fun attachedSourceGoesLastInTheStack() {
@@ -49,7 +50,7 @@ class CourseMedicineTest {
     fun changingTheListAfterwardsDoesNotChangeTheMedicine() {
         // Иначе пачка попадала бы в препарат в обход проверки уникальности и без роста редакции.
         val chosen = mutableListOf(source(PACK, 5))
-        val medicine = CourseMedicine(chosen, form = TABLET_FORM, unit = TABLETS)
+        val medicine = CourseMedicine(chosen)
         chosen += source(PACK, 1)
         assertEquals(listOf(PACK), medicine.sources.map { it.packageId })
     }
@@ -100,11 +101,10 @@ class CourseMedicineTest {
     }
 
     @Test
-    fun allocationIsUnknownWhileTheDoseIs() {
-        // Выдумывать количество из незаданной дозы нельзя: «пачка выбрана, доза ещё нет» —
-        // законное состояние черновика.
-        val stack = course().attach(home, doses = 5.doses, at = LATER).getOrThrow()
-        assertNull(stack.allocatedOf(home))
+    fun allocationOfAPackOutsideTheMedicineIsUnknown() {
+        // Выдумывать выделение пачке, которой в препарате нет, нельзя.
+        val stack = draftWithDose().attach(home, doses = 5.doses, at = LATER).getOrThrow()
+        assertNull(stack.allocatedOf(dacha))
         assertEquals(5.doses, stack.allocatedDosesTotal)
     }
 
@@ -126,15 +126,18 @@ class CourseMedicineTest {
     }
 
     @Test
-    fun activationRequiresScheduleDoseAndSource() {
+    fun activationRequiresScheduleDoseFormTotalAndSource() {
         val bare = course()
         assertEquals(CourseRejected.Reason.SCHEDULE_MISSING, bare.activate(LATER).rejection())
         val scheduled = bare.setSchedule(schedule(), LATER)
         assertEquals(CourseRejected.Reason.DOSE_MISSING, scheduled.activate(LATER).rejection())
-        val dosed = scheduled.setDose(BigDecimal("2"), LATER)
-        // Единицы всё ещё нет — её фиксирует первый источник, поэтому доза не собралась.
-        assertEquals(CourseRejected.Reason.DOSE_MISSING, dosed.activate(LATER).rejection())
-        val sourced = dosed.attach(home, doses = 5.doses, at = LATER).getOrThrow()
+        val dosed = scheduled.setDose(dose("2"), LATER).getOrThrow()
+        assertEquals(CourseRejected.Reason.FORM_MISSING, dosed.activate(LATER).rejection())
+        val formed = dosed.setForm(TABLET_FORM, LATER).getOrThrow()
+        assertEquals(CourseRejected.Reason.TOTAL_DOSES_MISSING, formed.activate(LATER).rejection())
+        val counted = formed.setTotalDoses(7.doses, LATER)
+        assertEquals(CourseRejected.Reason.SOURCES_MISSING, counted.activate(LATER).rejection())
+        val sourced = counted.attach(home, doses = 5.doses, at = LATER).getOrThrow()
         // Активация удалась — и повторить её нечем: у плана этого перехода нет.
         assertTrue(sourced.activate(LATER).isSuccess)
     }
@@ -151,8 +154,7 @@ class CourseMedicineTest {
     fun activationDoesNotAgeTheRevision() {
         // Активация не меняет ни расписания, ни источников: материализованным пунктам нечего
         // объявлять устаревшими.
-        val ready = draftWithDose()
-            .setSchedule(schedule(), LATER)
+        val ready = prescribedDraft(schedule = schedule(), totalDoses = 7)
             .attach(home, doses = 5.doses, at = LATER).getOrThrow()
         assertEquals(ready.revision, ready.activate(LATER).getOrThrow().course.revision)
     }
@@ -160,12 +162,7 @@ class CourseMedicineTest {
     @Test
     fun twoSourcesWithTheSamePackageAreNotRepresentable() {
         val duplicated = runCatching {
-            course(
-                doseAmount = BigDecimal("2"),
-                unit = TABLETS,
-                form = TABLET_FORM,
-                sources = listOf(source(PACK, 1), source(PACK, 2))
-            )
+            prescribedDraft(sources = listOf(source(PACK, 1), source(PACK, 2)))
         }
         assertTrue(duplicated.exceptionOrNull() is IllegalArgumentException)
     }

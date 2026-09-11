@@ -17,10 +17,11 @@ import kotlin.uuid.Uuid
  * таблица добавила бы только join. Состояний у строки нет — она живёт, пока лечение идёт, и
  * удаляется при его конце (PLAN D5, F1).
  *
- * Черновик — та же таблица без назначения: `dose_amount` и расписание у него могут отсутствовать.
- * `title` и `note` заполнены **только** у черновика: при активации имя лечения переезжает в
- * запись эпизода, и второго живого места для него не остаётся. Поэтому непустой `title` здесь
- * и означает «лечение ещё не началось».
+ * Черновик — та же таблица без назначения: доза, форма, число доз и расписание у него могут
+ * отсутствовать. `title` и `note` заполнены **только** у черновика: при активации имя лечения
+ * переезжает в запись эпизода, и второго живого места для него не остаётся. Поэтому непустой
+ * `title` здесь и означает «лечение ещё не началось». Единица и форма — колонки назначения:
+ * пачки их не задают (PLAN D5).
  */
 @Entity(tableName = "courses")
 class CourseStorageEntity(
@@ -30,6 +31,7 @@ class CourseStorageEntity(
     @ColumnInfo(name = "dose_amount") val doseAmount: String? = null,
     @ColumnInfo(name = "unit_id") val unitId: Uuid? = null,
     @ColumnInfo(name = "form_id") val formId: Uuid? = null,
+    @ColumnInfo(name = "total_doses") val totalDoses: Int? = null,
     val start: LocalDate? = null,
     @ColumnInfo(name = "end_inclusive") val endInclusive: LocalDate? = null,
     @ColumnInfo(name = "days_mask") val daysOfWeek: Set<DayOfWeek>? = null,
@@ -43,9 +45,10 @@ fun CourseDraft.toStorageEntity(): CourseStorageEntity = CourseStorageEntity(
     id = id,
     title = title,
     note = note,
-    doseAmount = doseAmount?.toPlainString(),
-    unitId = medicine.unit?.id,
-    formId = medicine.form?.id,
+    doseAmount = dose?.quantity?.toStorageAmount(),
+    unitId = dose?.unit?.id,
+    formId = form?.id,
+    totalDoses = totalDoses?.count,
     start = schedule?.start,
     endInclusive = schedule?.endInclusive,
     daysOfWeek = schedule?.daysOfWeek,
@@ -59,8 +62,9 @@ fun CourseDraft.toStorageEntity(): CourseStorageEntity = CourseStorageEntity(
 fun Course.toStorageEntity(): CourseStorageEntity = CourseStorageEntity(
     id = id,
     doseAmount = dose.quantity.toStorageAmount(),
-    unitId = medicine.unit?.id,
-    formId = medicine.form?.id,
+    unitId = unit.id,
+    formId = form.id,
+    totalDoses = totalDoses.count,
     start = schedule.start,
     endInclusive = schedule.endInclusive,
     daysOfWeek = schedule.daysOfWeek,

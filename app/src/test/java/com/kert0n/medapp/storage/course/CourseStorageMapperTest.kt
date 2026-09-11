@@ -23,6 +23,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.kert0n.medapp.fixture.VOCABULARY
+import com.kert0n.medapp.fixture.dose
 
 /**
  * Курс, его времена и его источники собираются обратно тем же самым, а черновик и живой план
@@ -39,15 +40,16 @@ class CourseStorageMapperTest {
 
     @Test
     fun draftKeepsItsNameNoteAndUnfinishedPrescription() {
-        val draft = course(note = "спросить у врача", doseAmount = BigDecimal("2"), unit = TABLETS)
+        val draft = course(note = "спросить у врача", dose = dose("2"), form = TABLET_FORM, totalDoses = 5)
         val row = rowOf(draft.toStorageEntity(), times = emptyList())
 
         assertTrue(row.isDraft)
         val restored = row.toDraft(VOCABULARY)
         assertEquals(draft.title, restored.title)
         assertEquals(draft.note, restored.note)
-        assertEquals(draft.doseAmount, restored.doseAmount)
         assertEquals(draft.dose, restored.dose)
+        assertEquals(draft.form, restored.form)
+        assertEquals(draft.totalDoses, restored.totalDoses)
         assertNull(restored.schedule)
         assertEquals(draft.revision, restored.revision)
     }
@@ -55,8 +57,9 @@ class CourseStorageMapperTest {
     @Test
     fun draftWithoutDoseComesBackWithoutIt() {
         val restored = rowOf(course().toStorageEntity(), times = emptyList()).toDraft(VOCABULARY)
-        assertNull(restored.doseAmount)
         assertNull(restored.dose)
+        assertNull(restored.form)
+        assertNull(restored.totalDoses)
         assertTrue(restored.medicine.isEmpty)
     }
 

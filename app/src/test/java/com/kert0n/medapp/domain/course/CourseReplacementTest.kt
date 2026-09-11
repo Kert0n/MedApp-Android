@@ -53,7 +53,9 @@ class CourseReplacementTest {
         val replacement = course(
             id = newCourseId,
             title = oldRecord.title,
-            doseAmount = BigDecimal("3"),
+            dose = dose("3"),
+            form = TABLET_FORM,
+            totalDoses = 10,
             createdAt = LATER,
             updatedAt = LATER
         )

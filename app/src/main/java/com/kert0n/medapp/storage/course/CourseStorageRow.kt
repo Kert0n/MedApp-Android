@@ -14,7 +14,6 @@ import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.storage.value.storedDose
 import com.kert0n.medapp.storage.value.storedForm
 import com.kert0n.medapp.storage.value.storedUnit
-import java.math.BigDecimal
 
 /**
  * Курс, собранный из своих строк: сам план, его времена и его источники по порядку.
@@ -37,9 +36,15 @@ class CourseStorageRow(
         id = course.id,
         title = requireNotNull(course.title) { "у черновика есть имя: без него это уже эпизод" },
         note = course.note,
-        doseAmount = course.doseAmount?.let(::BigDecimal),
+        dose = course.doseAmount?.let { amount ->
+            storedDose(amount, vocabulary.storedUnit(requireNotNull(course.unitId) {
+                "доза черновика без единицы не восстанавливается"
+            }))
+        },
+        form = course.formId?.let(vocabulary::storedForm),
         schedule = schedule(),
-        medicine = medicine(vocabulary),
+        totalDoses = course.totalDoses?.let(::Doses),
+        medicine = medicine(),
         revision = Revision(course.revision),
         createdAt = course.createdAt,
         updatedAt = course.updatedAt
@@ -54,9 +59,13 @@ class CourseStorageRow(
                     requireNotNull(course.unitId) { "у начатого лечения записана единица дозы" }
                 )
             ),
-            schedule = requireNotNull(schedule()) { "у начатого лечения расписание назначено" }
+            form = vocabulary.storedForm(
+                requireNotNull(course.formId) { "у начатого лечения записана форма" }
+            ),
+            schedule = requireNotNull(schedule()) { "у начатого лечения расписание назначено" },
+            totalDoses = Doses(requireNotNull(course.totalDoses) { "у начатого лечения названо число доз" })
         ),
-        medicine = medicine(vocabulary),
+        medicine = medicine(),
         revision = Revision(course.revision),
         createdAt = course.createdAt,
         updatedAt = course.updatedAt
@@ -77,11 +86,9 @@ class CourseStorageRow(
         )
     }
 
-    private fun medicine(vocabulary: Vocabulary): CourseMedicine = CourseMedicine(
+    private fun medicine(): CourseMedicine = CourseMedicine(
         sources = sources.sortedBy { it.position }.map {
             CourseSource(packageId = it.packageId, allocatedDoses = Doses(it.allocatedDoses))
-        },
-        form = course.formId?.let(vocabulary::storedForm),
-        unit = course.unitId?.let(vocabulary::storedUnit)
+        }
     )
 }
