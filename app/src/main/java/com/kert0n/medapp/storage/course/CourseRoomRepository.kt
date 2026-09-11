@@ -1,8 +1,8 @@
 package com.kert0n.medapp.storage.course
 
+import androidx.room.withTransaction
 import com.kert0n.medapp.domain.course.Course
 import com.kert0n.medapp.domain.course.CourseDraft
-import androidx.room.withTransaction
 import com.kert0n.medapp.domain.course.CourseRecord
 import com.kert0n.medapp.domain.course.Revision
 import com.kert0n.medapp.domain.intake.CourseIntake
@@ -67,8 +67,16 @@ class CourseRoomRepository @Inject constructor(
     override suspend fun findRecord(id: Uuid): CourseRecord? =
         courses.findRecord(id)?.toDomain(vocabulary.snapshot())
 
-    override suspend fun rename(id: Uuid, title: String, note: String?): Boolean =
-        courses.rename(id, title, note) > 0
+    /**
+     * Через переход записи, а не мимо него: что название не пустое и не длиннее предела, знает
+     * `CourseRecord.rename`, и SQL это правило не повторяет. Записывается только то, что переход
+     * и меняет, — законченное лечение обратно не открывается.
+     */
+    override suspend fun rename(id: Uuid, title: String, note: String?): Boolean = database.withTransaction {
+        val record = courses.findRecord(id)?.toDomain(vocabulary.snapshot()) ?: return@withTransaction false
+        val renamed = record.rename(title, note)
+        courses.rename(renamed.id, renamed.title, renamed.note) > 0
+    }
 
     override suspend fun courseHolding(packageId: Uuid): Uuid? = courses.courseHolding(packageId)
 
