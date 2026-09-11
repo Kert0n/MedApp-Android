@@ -31,10 +31,26 @@ class MedKit(
     val isShared: Boolean get() = participantCount > 1
 
     /**
-     * Отдельно от [isShared]. Пока группа операций публикации не завершена целиком, часть пачек
-     * на сервере уже есть, а часть нет: приглашённый увидел бы половину аптечки (PLAN D2).
+     * Отдельно от [isShared]: аптечка, из которой ушли все, кроме меня, остаётся серверной и
+     * приглашения выдаёт. Приглашать в местную некуда — на сервере её нет (PLAN D2).
      */
     val acceptsInvitations: Boolean get() = publication == Publication.PUBLISHED
+
+    /**
+     * Аптечка оказалась на сервере — целиком, вместе с пачками: половины не бывает, поэтому
+     * состояние меняется одним переходом, а не «начали публиковать». Обратной дороги нет (E5).
+     */
+    fun publish(): MedKit {
+        check(publication == Publication.LOCAL) { "аптечка уже на сервере" }
+        return MedKit(
+            id = id,
+            name = name,
+            location = location,
+            publication = Publication.PUBLISHED,
+            participantCount = participantCount,
+            createdAt = createdAt
+        )
+    }
 
     /** Меняет личные сведения, сохраняя тождество и состояние публикации аптечки. */
     fun describe(name: String, location: String?): MedKit = MedKit(
@@ -54,9 +70,13 @@ class MedKit(
 
     override fun toString(): String = "MedKit(id=$id, name=$name, publication=$publication)"
 
+    /**
+     * Где аптечка существует. Состояний два, потому что публикация — одно действие при связи:
+     * либо аптечка на сервере целиком, либо её там нет; обрыв посреди откатывается `DELETE`
+     * (PLAN E5).
+     */
     enum class Publication {
         LOCAL,        // на сервере не существует
-        PUBLISHING,   // группа операций публикации ещё не завершена
         PUBLISHED     // существует на сервере
     }
 

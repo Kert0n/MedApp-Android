@@ -35,10 +35,31 @@ class MedKitTest {
     }
 
     @Test
-    fun publishingKitDoesNotHandOutInvitationsYet() {
-        // Половина пачек уже на сервере, половина ещё нет: приглашённый увидел бы половину.
-        val publishing = kit(publication = MedKit.Publication.PUBLISHING, participants = 1)
-        assertFalse(publishing.acceptsInvitations)
+    fun localKitDoesNotHandOutInvitations() {
+        // На сервере её нет — приглашать некуда.
+        assertFalse(kit(publication = MedKit.Publication.LOCAL).acceptsInvitations)
+    }
+
+    @Test
+    fun publishingIsOneTransitionAndKeepsEverythingElse() {
+        val local = kit(publication = MedKit.Publication.LOCAL)
+        val published = local.publish()
+        assertEquals(MedKit.Publication.PUBLISHED, published.publication)
+        assertTrue(published.acceptsInvitations)
+        assertEquals(local.id, published.id)
+        assertEquals(local.name, published.name)
+        assertEquals(local.participantCount, published.participantCount)
+    }
+
+    @Test(expected = IllegalStateException::class)
+    fun publishedKitIsNotPublishedTwice() {
+        kit(publication = MedKit.Publication.PUBLISHED).publish()
+    }
+
+    @Test
+    fun thereAreExactlyTwoPublicationStates() {
+        // Половины не бывает: либо аптечка на сервере целиком, либо её там нет (PLAN E5).
+        assertEquals(listOf("LOCAL", "PUBLISHED"), MedKit.Publication.entries.map { it.name })
     }
 
     @Test
