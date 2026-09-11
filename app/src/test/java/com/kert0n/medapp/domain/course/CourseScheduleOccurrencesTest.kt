@@ -2,7 +2,6 @@ package com.kert0n.medapp.domain.course
 
 import com.kert0n.medapp.fixture.BERLIN
 import com.kert0n.medapp.fixture.MOSCOW
-import com.kert0n.medapp.fixture.beginning
 import com.kert0n.medapp.fixture.schedule
 import java.time.DayOfWeek
 import java.time.Instant

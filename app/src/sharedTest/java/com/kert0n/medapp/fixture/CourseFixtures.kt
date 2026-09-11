@@ -4,6 +4,7 @@ import com.kert0n.medapp.domain.course.Course
 import com.kert0n.medapp.domain.course.CourseDraft
 import com.kert0n.medapp.domain.course.CourseMedicine
 import com.kert0n.medapp.domain.course.CourseRecord
+import com.kert0n.medapp.domain.course.CourseProgress
 import com.kert0n.medapp.domain.course.CourseSchedule
 import com.kert0n.medapp.domain.course.CourseSource
 import com.kert0n.medapp.domain.course.Prescription
@@ -58,7 +59,11 @@ fun schedule(
 )
 
 /** Начало календаря как момент: с него сценарии и тесты отсчитывают оставшиеся дозы. */
-val CourseSchedule.beginning: Instant get() = start.atStartOfDay(zone).toInstant()
+/** Прогресс по первым пунктам календаря: [taken] принятых, затем [missed] пропущенных подряд. */
+fun Course.progress(taken: Int = 0, missed: Int = 0): CourseProgress {
+    val first = schedule.next(schedule.beginning, taken + missed)
+    return CourseProgress(taken = first.take(taken).toSet(), missed = first.drop(taken).toSet())
+}
 
 /** Черновик: тест называет только то, что проверяет. По умолчанию — одно название. */
 fun course(

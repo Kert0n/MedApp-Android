@@ -51,11 +51,12 @@ class Course(
     val totalDoses: Doses get() = prescription.totalDoses
 
     /**
-     * Сколько доз ещё впереди при [taken] принятых по плану. Сколько принято, знают приёмы —
-     * курс их не хранит и получает число аргументом; принятое мимо плана он знает сам. Больше
+     * Сколько доз ещё впереди при [progress] по плану. Что принято, знают приёмы — курс их не
+     * хранит и получает прогресс аргументом; принятое мимо плана он знает сам. Больше
      * назначенного не бывает: лишнее — ноль.
      */
-    fun remainingDoses(taken: Doses): Doses = totalDoses.minusOrNone(taken + takenOffPlan)
+    fun remainingDoses(progress: CourseProgress): Doses =
+        totalDoses.minusOrNone(progress.takenDoses + takenOffPlan)
 
     /**
      * Дозы, принятые мимо плана: таблетки ушли, а курс об этом не узнал — взяли одиночным
@@ -77,16 +78,18 @@ class Course(
     }
 
     /**
-     * Когда наступят оставшиеся дозы, начиная с [from]: столько ближайших пунктов календаря,
-     * сколько доз осталось. [from] выбирает сценарий — момент самого раннего неотвеченного
-     * пункта либо «сейчас»: неотвеченный утренний приём в полдень никуда не делся.
+     * Когда наступят оставшиеся дозы: столько ближайших **неотвеченных** пунктов календаря с
+     * начала курса, сколько доз осталось. Момента «с какого читать» нет: неотвеченный утренний
+     * приём в полдень никуда не делся, а отвеченные пункты — принятые и пропущенные — календарь
+     * минует по [progress]. Отсюда и конец лечения: пропуск сдвигает его вперёд, поздний ответ по
+     * пропущенному — назад, и лишний материализованный пункт тогда убирает сценарий.
      */
-    fun remainingOccurrences(taken: Doses, from: Instant): List<ScheduledOccurrence> =
-        schedule.next(from, remainingDoses(taken).count)
+    fun remainingOccurrences(progress: CourseProgress): List<ScheduledOccurrence> =
+        schedule.next(schedule.beginning, remainingDoses(progress).count, progress.answered)
 
     /** Ожидаемый конец — последняя из оставшихся доз; `null` — принято всё. */
-    fun expectedEnd(taken: Doses, from: Instant): ScheduledOccurrence? =
-        remainingOccurrences(taken, from).lastOrNull()
+    fun expectedEnd(progress: CourseProgress): ScheduledOccurrence? =
+        remainingOccurrences(progress).lastOrNull()
 
     /**
      * Число доз правится и после начала: пропуски растянули лечение, или врач сократил его.
@@ -139,8 +142,8 @@ class Course(
      * Обеспечение курса: на сколько из оставшихся доз хватит пачек препарата и с какого приёма не
      * хватает (PLAN D5). Потребность — от назначенного числа доз, а не от окна календаря.
      */
-    fun coverage(taken: Doses, from: Instant, availability: Availability): CourseCoverage =
-        medicine.coverage(dose, remainingOccurrences(taken, from), availability)
+    fun coverage(progress: CourseProgress, availability: Availability): CourseCoverage =
+        medicine.coverage(dose, remainingOccurrences(progress), availability)
 
     /**
      * Верхняя граница ползунка пачки в целых дозах: меньшее из того, что пачка даёт, и того, что
