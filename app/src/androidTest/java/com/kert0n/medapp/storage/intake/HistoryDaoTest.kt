@@ -73,7 +73,7 @@ class HistoryDaoTest {
         val stored = requireNotNull(intakes.find(INTAKE)).toDomain(VOCABULARY)
         assertEquals(IntakeStatus.PLANNED, stored.status)
 
-        val taken = plannedIntake().confirm(pack(), dose("2"), LATER)
+        val taken = plannedIntake().confirm(pack().take(dose("2"), LATER).getOrThrow())
         intakes.upsert(taken.toStorageEntity())
         assertEquals(taken.taken, requireNotNull(intakes.find(INTAKE)).toDomain(VOCABULARY).taken)
     }
@@ -147,7 +147,7 @@ class HistoryDaoTest {
     /** Архивирование — не удаление: приёмы, движения и внеплановые факты остаются на месте. */
     @Test
     fun archivingKeepsIntakesAndMovements() = runTest {
-        intakes.upsert(plannedIntake().confirm(pack(), dose("2"), LATER).toStorageEntity())
+        intakes.upsert(plannedIntake().confirm(pack().take(dose("2"), LATER).getOrThrow()).toStorageEntity())
         intakes.upsert(unplannedIntake(id = OTHER_INTAKE).toStorageEntity())
         movements.insert(
             StockMovement.Receipt(movementId, pack(), tablets("20"), medKit(), Instant.EPOCH, LATER)

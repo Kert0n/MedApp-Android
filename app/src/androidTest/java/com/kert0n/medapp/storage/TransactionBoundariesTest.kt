@@ -160,7 +160,7 @@ class TransactionBoundariesTest {
 
         val applied = intakes.record(
             IntakeOutcome(
-                intake = plannedIntake().confirm(paracetamol, dose("2"), LATER),
+                intake = plannedIntake().confirm(paracetamol.take(dose("2"), LATER).getOrThrow()),
                 expected = setOf(IntakeStatus.PLANNED, IntakeStatus.MISSED),
                 sync = IntakeSyncState(INTAKE, IntakeAccounting.LOCAL_APPLIED),
             )
@@ -181,7 +181,7 @@ class TransactionBoundariesTest {
         courses.activate(draft(), planned = listOf(plannedIntake()))
         val outcome = {
             IntakeOutcome(
-                intake = plannedIntake().confirm(paracetamol, dose("2"), LATER),
+                intake = plannedIntake().confirm(paracetamol.take(dose("2"), LATER).getOrThrow()),
                 expected = setOf(IntakeStatus.PLANNED),
                 sync = IntakeSyncState(INTAKE, IntakeAccounting.LOCAL_APPLIED)
             )
@@ -206,7 +206,7 @@ class TransactionBoundariesTest {
             queue.change(published, listOf(clash), at) {
                 intakes.record(
                     IntakeOutcome(
-                        intake = plannedIntake().confirm(paracetamol, dose("2"), LATER),
+                        intake = plannedIntake().confirm(paracetamol.take(dose("2"), LATER).getOrThrow()),
                         expected = setOf(IntakeStatus.PLANNED),
                         sync = IntakeSyncState(INTAKE, IntakeAccounting.PENDING, operationId = operation)
                     )
@@ -292,7 +292,7 @@ class TransactionBoundariesTest {
             queue.change(published, listOf(consume), at) {
                 intakes.record(
                     IntakeOutcome(
-                        intake = plannedIntake().confirm(paracetamol, dose("2"), LATER),
+                        intake = plannedIntake().confirm(paracetamol.take(dose("2"), LATER).getOrThrow()),
                         expected = setOf(IntakeStatus.PLANNED),
                         sync = IntakeSyncState(INTAKE, IntakeAccounting.PENDING, operationId = operation)
                     )
@@ -471,7 +471,7 @@ class TransactionBoundariesTest {
     }
 
     private fun confirmedOutcome() = IntakeOutcome(
-        intake = plannedIntake().confirm(paracetamol, dose("2"), LATER),
+        intake = plannedIntake().confirm(paracetamol.take(dose("2"), LATER).getOrThrow()),
         expected = setOf(IntakeStatus.PLANNED),
         sync = IntakeSyncState(INTAKE, IntakeAccounting.LOCAL_APPLIED)
     )

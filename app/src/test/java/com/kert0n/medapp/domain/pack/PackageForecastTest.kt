@@ -105,7 +105,7 @@ class PackageForecastTest {
     fun anAnsweredIntakeEarlierTodayDoesNot() {
         // А отвеченный — исчезает: его расход уже в остатке либо его не было.
         val noon = today.atTime(12, 0).atZone(MOSCOW).toInstant()
-        val taken = plannedIntake().confirm(pack(), dose("2"), noon)
+        val taken = plannedIntake().confirm(pack().take(dose("2"), noon).getOrThrow())
         val forecast = remainingOn(date = today, now = noon, resolved = listOf(taken))
         assertEquals(tablets("20"), forecast.single().remaining)
     }
@@ -128,7 +128,7 @@ class PackageForecastTest {
     fun answeredIntakesAreNotCountedTwice() {
         // Расход подтверждённого приёма уже в остатке: вычесть его снова значило бы списать
         // вчерашнюю таблетку второй раз.
-        val taken = plannedIntake().confirm(pack(), dose("2"), LATER)
+        val taken = plannedIntake().confirm(pack().take(dose("2"), LATER).getOrThrow())
         val forecast = remainingOn(
             date = today.plusDays(2),
             packages = listOf(stockOf()),

@@ -56,16 +56,17 @@ class CourseIntake(
     val isSupplied: Boolean get() = plannedPackage != null
 
     /**
-     * Подтверждение: фактические количество и пачка могут отличаться от плана, расход равен факту
-     * (PLAN D5). Принимается сама пачка — аптечку и единицу события она приносит с собой.
+     * Подтверждение состоявшимся фактом: фактические количество и пачка могут отличаться от
+     * плана, расход равен факту (PLAN D5). Факт собирает акт [Package.take] — там и проверка, что
+     * из пачки можно взять; здесь проверяется только, что факт измерен единицей этого пункта.
      * Подтверждается неотвеченный или непринятый пункт — отказ и неответ подтверждаются одинаково;
      * повторное подтверждение — второй факт со своим идентификатором, и здесь оно отвергается (E2).
      */
-    fun confirm(pkg: Package, amount: Dose, at: Instant): CourseIntake {
+    fun confirm(taken: TakenDose): CourseIntake {
         check(answer == null || answer is IntakeAnswer.Missed) {
             "подтверждается неотвеченный приём, а не $status"
         }
-        return answered(IntakeAnswer.Taken(TakenDose(pkg, amount, at)))
+        return answered(IntakeAnswer.Taken(taken))
     }
 
     /**

@@ -1,5 +1,7 @@
 package com.kert0n.medapp.domain.pack
 
+import com.kert0n.medapp.domain.intake.IntakeRejected
+import com.kert0n.medapp.domain.intake.TakenDose
 import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
@@ -53,6 +55,22 @@ class Package(
     fun isExpiredOn(date: LocalDate): Boolean = facts.isExpiredOn(date)
 
     fun expiresWithin(date: LocalDate, days: Long): Boolean = facts.expiresWithin(date, days)
+
+    /**
+     * Акт «беру из этой пачки»: она цела, мы её видим, и дозу считают в её единице. Правило стоит
+     * в момент записи и проверяется по пачке, какой её знает устройство сейчас, — другой у него
+     * нет; когда приём случился, называет человек через [at]. Записанный факт этой проверке больше
+     * не подлежит (PLAN D6). Остаток акт не меняет: списывает [consume] по состоянию в базе.
+     */
+    fun take(amount: Dose, at: Instant): Result<TakenDose> {
+        val rejection = when {
+            !suppliesStock -> IntakeRejected.Reason.PACKAGE_UNUSABLE
+            amount.unit != quantity.unit -> IntakeRejected.Reason.UNIT_MISMATCH
+            else -> null
+        }
+        return if (rejection == null) Result.success(TakenDose(this, amount, at))
+        else Result.failure(IntakeRejected(rejection))
+    }
 
     /**
      * Расход — приём, плановый или разовый. В минус не списывает (PLAN D5); пачка,
