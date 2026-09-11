@@ -8,10 +8,12 @@ import com.kert0n.medapp.queue.medkit.MedKitSyncCommand
 import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.network.pack.toDomain
-import com.kert0n.medapp.queue.pack.toPreparedRequest
+import com.kert0n.medapp.queue.pack.prepare
 import com.kert0n.medapp.queue.medkit.toPreparedRequest as toMedKitPreparedRequest
 import com.kert0n.medapp.queue.Delivery
 import com.kert0n.medapp.queue.PackageState
+import com.kert0n.medapp.queue.Preparation
+import com.kert0n.medapp.queue.Take
 import com.kert0n.medapp.queue.QueueStorage
 import com.kert0n.medapp.queue.QueuedCommand
 import com.kert0n.medapp.queue.RefusalReason
@@ -92,7 +94,7 @@ class SyncOperationRoomRepository @Inject constructor(
      * транзакции: версии, подтверждённый остаток и своя бронь — то, что у сервера сейчас (PLAN
      * E2, E3). Второй раз запрос не собирается: `freeze` не трогает строку, где он уже есть.
      */
-    override suspend fun take(id: Uuid, fresh: PackageSnapshotNetworkDTO?, at: Instant): SyncOperation? = database.withTransaction {
+    override suspend fun take(id: Uuid, fresh: PackageSnapshotNetworkDTO?, at: Instant): Take? = database.withTransaction {
         val words = vocabulary.snapshot()
         val stored = queue.find(id)?.toDomain(words) as? StoredSyncOperation.Readable
             ?: return@withTransaction null
@@ -103,14 +105,17 @@ class SyncOperationRoomRepository @Inject constructor(
             val request = when (val command = operation.command) {
                 is PackageSyncCommand -> {
                     val row = packages.find(command.packageId)
-                    val pkg = row?.toDomain(words)
-                    command.toPreparedRequest(
-                        operationId = operation.id,
-                        sync = row?.pack?.syncState() ?: PackageSyncState(command.packageId),
-                        confirmed = pkg?.quantity,
-                        mine = pkg?.claims?.mine?.let { Quantity(it, pkg.quantity.unit) },
-                        at = at
-                    )
+                        ?: return@withTransaction Take.Closed(Delivery.AccessLost).also { settle(id, it.delivery, at) }
+                    val pkg = row.toDomain(words)
+                    when (val prepared = command.prepare(operation.id, pkg, row.pack.syncState(), at)) {
+                        is Preparation.Request -> prepared.request
+                        is Preparation.Refuse -> return@withTransaction closedByPreparation(
+                            id, Delivery.Refused(prepared.reason, PackageState.None), at
+                        )
+                        Preparation.AlreadyApplied -> return@withTransaction closedByPreparation(
+                            id, Delivery.Applied(PackageState.None), at
+                        )
+                    }
                 }
                 is MedKitSyncCommand -> command.toMedKitPreparedRequest(at)
                 else -> command.unknownRoot()
@@ -132,7 +137,13 @@ class SyncOperationRoomRepository @Inject constructor(
         } else {
             queue.markSending(id)
         }
-        (queue.find(id)?.toDomain(words) as? StoredSyncOperation.Readable)?.operation
+        (queue.find(id)?.toDomain(words) as? StoredSyncOperation.Readable)?.operation?.let { Take.Sending(it) }
+    }
+
+    /** Подготовка закрыла операцию сама: истина по пачке уже в базе — она только что легла свежим снимком. */
+    private suspend fun closedByPreparation(id: Uuid, delivery: Delivery, at: Instant): Take {
+        settle(id, delivery, at)
+        return Take.Closed(delivery)
     }
 
     /**

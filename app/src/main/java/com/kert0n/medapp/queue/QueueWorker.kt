@@ -105,7 +105,15 @@ class QueueWorker @Inject constructor(
             } else {
                 null
             }
-            val taken = storage.take(operation.id, fresh, now) ?: continue
+            val taken = when (val take = storage.take(operation.id, fresh, now)) {
+                null -> continue
+                is Take.Closed -> {
+                    packageId?.let(freshPackages::add)
+                    sent++
+                    continue
+                }
+                is Take.Sending -> take.operation
+            }
             packageId?.let(freshPackages::add)
             val request = checkNotNull(taken.prepared) { "взятая в отправку операция несёт запрос" }
             when (val step = deliver(taken, request)) {
@@ -167,12 +175,12 @@ class QueueWorker @Inject constructor(
             is ApiResult.Success -> Step.Settled(done(command, result.value))
             is ApiResult.Failure -> when (val failure = result.failure) {
                 ApiFailure.Conflict, ApiFailure.PreconditionFailed ->
-                    // Версия устарела: сервер отверг запрос до применения. Что делать дальше,
-                    // знает команда; истина в любом случае читается.
+                    // Версия устарела либо объект уже есть: сервер отверг запрос до применения.
+                    // Что делать дальше, знает команда; истина в любом случае читается.
                     Step.Settled(stale(command, request))
-                ApiFailure.PreconditionRequired, is ApiFailure.Invalid ->
-                    Step.Settled(refused(command, RefusalReason.INVALID))
-                ApiFailure.NotFound -> Step.Settled(Delivery.AccessLost)
+                ApiFailure.PreconditionRequired -> Step.Settled(refused(command, RefusalReason.INVALID))
+                is ApiFailure.Invalid -> Step.Settled(refused(command, (command as? PackageSyncCommand)?.onInvalid ?: RefusalReason.INVALID))
+                ApiFailure.NotFound -> Step.Settled(notFound(command))
                 ApiFailure.Unauthorized, ApiFailure.RegistrationRefused -> Step.Unauthorized
                 is ApiFailure.TooManyRequests ->
                     Step.Settled(Delivery.Retry("429"), retryAfter = failure.retryAfter, stop = true)
@@ -213,6 +221,8 @@ class QueueWorker @Inject constructor(
     private suspend fun stale(command: SyncCommand, request: PreparedRequest): Delivery = when (command) {
         is PackageSyncCommand -> snapshotRead(command.packageId) { snapshot ->
             when {
+                // 409 у создания — «уже есть»: пачка с нашим номером видна нам, значит наша.
+                command is PackageSyncCommand.Create -> Delivery.Applied(PackageState.Present(snapshot))
                 command is PackageSyncCommand.Consume && command.provenAppliedBy(snapshot, request) ->
                     Delivery.Applied(PackageState.Present(snapshot))
                 command.onStale == StalePolicy.REPREPARE -> Delivery.Stale(snapshot)
@@ -223,10 +233,28 @@ class QueueWorker @Inject constructor(
         else -> command.unknownRoot()
     }
 
-    /** Отказ по вводу закрывает операцию: повторять нечем и незачем. Что теперь правда, говорит снимок. */
+    /**
+     * Отказ по вводу закрывает операцию: повторять нечем и незачем. Что теперь правда, говорит
+     * снимок — кроме создания: пачки на сервере нет по построению, и читать нечего.
+     */
     private suspend fun refused(command: SyncCommand, reason: RefusalReason): Delivery = when (command) {
+        is PackageSyncCommand.Create -> Delivery.Refused(reason, PackageState.None)
         is PackageSyncCommand -> snapshotRead(command.packageId) { Delivery.Refused(reason, PackageState.Present(it)) }
         else -> Delivery.Refused(reason, PackageState.None)
+    }
+
+    /** 404 значит разное для разных команд (PLAN B4): что именно — говорит команда. */
+    private suspend fun notFound(command: SyncCommand): Delivery = when (command) {
+        is PackageSyncCommand -> when (command.onNotFound) {
+            NotFoundPolicy.ACCESS_LOST -> Delivery.AccessLost
+            NotFoundPolicy.REPREPARE -> snapshotRead(command.packageId) { Delivery.Stale(it) }
+            NotFoundPolicy.APPLIED ->
+                if (command is PackageSyncCommand.ReleaseClaim) snapshotRead(command.packageId) { Delivery.Applied(PackageState.Present(it)) }
+                else Delivery.Applied(PackageState.Gone)
+        }
+        // Аптечки нет или мы не участник: удаление и выход тем самым исполнены (PLAN E3).
+        is MedKitSyncCommand -> Delivery.Applied(PackageState.None)
+        else -> command.unknownRoot()
     }
 
     /** Истина по пачке, прочитанная следом; пачки нет — доступа нет, что бы ни значил ответ до того. */

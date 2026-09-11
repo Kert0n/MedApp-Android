@@ -5,6 +5,8 @@ import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
 import com.kert0n.medapp.queue.Expected
+import com.kert0n.medapp.queue.NotFoundPolicy
+import com.kert0n.medapp.queue.RefusalReason
 import com.kert0n.medapp.queue.PreparedRequest
 import com.kert0n.medapp.queue.StalePolicy
 import java.math.BigDecimal
@@ -43,6 +45,23 @@ sealed interface PackageSyncCommand : SyncCommand {
             is Consume, is SetClaim, is ReleaseClaim -> StalePolicy.REPREPARE
             is Create, is Describe, is CorrectStock, is Move, is Delete -> StalePolicy.REFUSE
         }
+
+    /**
+     * 404: у команд над пачкой и переносом нет пачки или аптечки — доступа нет; у правки брони
+     * нет своей брони — заявить заново по свежему `mine`; у снятия брони и удаления нет того, что
+     * снимают или удаляют, — уже так. Заявление брони 404 не отвечает иначе как пачкой.
+     */
+    val onNotFound: NotFoundPolicy
+        get() = when (this) {
+            is Create, is Describe, is Move, is Consume -> NotFoundPolicy.ACCESS_LOST
+            is CorrectStock -> if (actual.isZero) NotFoundPolicy.APPLIED else NotFoundPolicy.ACCESS_LOST
+            is SetClaim -> NotFoundPolicy.REPREPARE
+            is ReleaseClaim, is Delete -> NotFoundPolicy.APPLIED
+        }
+
+    /** 400: у расхода — больше остатка, единственный отказ по условию, что у него есть; у прочих — ввод. */
+    val onInvalid: RefusalReason
+        get() = if (this is Consume) RefusalReason.INSUFFICIENT else RefusalReason.INVALID
 
     /**
      * Форма успешного ответа по контракту операции (PLAN B4, B5): создание, правка и перенос

@@ -319,6 +319,34 @@ class ContractProbe {
         // Снятие брони и удаление — без тела.
         assertEquals("", success(owner.send(PackageSyncCommand.ReleaseClaim(pack.id).toPreparedRequest(
             Uuid.random(), PackageSyncState(pack.id, snapshot.pack.version, snapshot.claims.version), null, null, Instant.EPOCH
-        ))))
+        ))).body)
+    }
+
+    /**
+     * 409 у `sync` — устаревшая версия, и запрос **не применён** (PLAN B3, E3): остаток тот же, а
+     * тот же номер с той же дельтой и свежей версией сервер принимает. Внеплановый расход — тот же
+     * `sync` без блока брони. На этом стоит переподготовка очереди под тем же `syncId`.
+     */
+    @Test
+    fun staleSyncIsNotAppliedAndTheSameNumberIsAcceptedWithTheFreshVersion() = runBlocking {
+        val pack = newPackage(newKit(), amount = "10").pack
+        val unitObject = QuantityUnit(unit, "проба")
+        val operationId = Uuid.random()
+        val consume = PackageSyncCommand.Consume(pack.id, Dose(Quantity(BigDecimal("2"), unitObject)), operationId)
+        val stale = consume.toPreparedRequest(
+            operationId, PackageSyncState(pack.id, version = ResourceVersion(pack.version.number + 1)), null, null, Instant.EPOCH
+        )
+
+        assertEquals(ApiFailure.Conflict, failure(owner.send(stale)))
+        val untouched = success(owner.packageSnapshot(pack.id))
+        assertEquals("10.000000", untouched.pack.amount)
+        assertEquals(pack.version, untouched.pack.version)
+
+        val fresh = consume.toPreparedRequest(operationId, PackageSyncState(pack.id, version = untouched.pack.version), null, null, Instant.EPOCH)
+        val applied = medAppJson.decodeFromString(PackageSnapshotNetworkDTO.serializer(), success(owner.send(fresh)).body)
+        assertEquals("8.000000", applied.pack.amount)
+        assertNull(applied.claims.mine)
+        // И ещё раз тем же номером — журнал: применено один раз.
+        assertEquals("8.000000", medAppJson.decodeFromString(PackageSnapshotNetworkDTO.serializer(), success(owner.send(fresh)).body).pack.amount)
     }
 }

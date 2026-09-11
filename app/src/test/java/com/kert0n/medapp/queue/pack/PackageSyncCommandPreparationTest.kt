@@ -12,6 +12,12 @@ import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.queue.Expected
+import java.math.BigDecimal
+import com.kert0n.medapp.queue.RefusalReason
+import com.kert0n.medapp.queue.Preparation
+import com.kert0n.medapp.fixture.pack
+import com.kert0n.medapp.fixture.millilitres
+import com.kert0n.medapp.domain.pack.Claims
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -26,15 +32,33 @@ class PackageSyncCommandNetworkMapperTest {
     private fun PackageSyncCommand.prepared(mine: com.kert0n.medapp.domain.value.Quantity? = null) =
         toPreparedRequest(INTAKE, sync, confirmed = tablets("20"), mine = mine, at = EARLIER)
 
+    /** Внеплановый расход — тот же `sync` без блока брони: номер есть, повтор сервер применит один раз. */
     @Test
-    fun consumeOutsideACourseIsAnIntakePostWithTheFrozenVersion() {
+    fun consumeOutsideACourseIsASyncWithoutAReservationBlock() {
         val request = PackageSyncCommand.Consume(PACK, dose("3"), INTAKE).prepared()
-        assertEquals("POST", request.method)
-        assertEquals("/v1/drugs/$PACK/intakes", request.path)
-        assertTrue(request.body!!.contains("\"version\":3"))
+        assertEquals("PUT", request.method)
+        assertEquals("/v1/drugs/$PACK/sync/$INTAKE", request.path)
+        assertTrue(request.body!!.contains("\"drugVersion\":3"))
+        assertFalse(request.body!!.contains("reservation"))
         assertEquals(ResourceVersion(3), request.drugVersion)
         assertEquals(tablets("20"), request.quantityBefore)
         assertEquals(EARLIER, request.preparedAt)
+    }
+
+    /** «Подумали» по свежей пачке: чужая единица — отказ до провода, желаемое уже так — применено. */
+    @Test
+    fun preparationRefusesAForeignUnitAndRecognisesWhatIsAlreadySo() {
+        val syrup = pack(quantity = millilitres("100"))
+        assertEquals(
+            Preparation.Refuse(RefusalReason.UNIT_CHANGED),
+            PackageSyncCommand.Consume(PACK, dose("3"), INTAKE).prepare(INTAKE, syrup, sync, EARLIER)
+        )
+        val claimed = pack(quantity = tablets("20"), claims = Claims(BigDecimal("6"), BigDecimal("6")))
+        assertEquals(Preparation.AlreadyApplied, PackageSyncCommand.SetClaim(PACK, tablets("6")).prepare(INTAKE, claimed, sync, EARLIER))
+        assertTrue(PackageSyncCommand.SetClaim(PACK, tablets("7")).prepare(INTAKE, claimed, sync, EARLIER) is Preparation.Request)
+        val unclaimed = pack(quantity = tablets("20"), claims = Claims(BigDecimal("2"), null))
+        assertEquals(Preparation.AlreadyApplied, PackageSyncCommand.ReleaseClaim(PACK).prepare(INTAKE, unclaimed, sync, EARLIER))
+        assertTrue(PackageSyncCommand.ReleaseClaim(PACK).prepare(INTAKE, claimed, sync, EARLIER) is Preparation.Request)
     }
 
     @Test

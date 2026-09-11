@@ -1,6 +1,12 @@
 package com.kert0n.medapp.queue
 
 import com.kert0n.medapp.domain.value.Vocabulary
+import org.junit.Assert.assertFalse
+import java.math.BigDecimal
+import com.kert0n.medapp.queue.pack.prepare
+import com.kert0n.medapp.fixture.pack
+import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.fixture.EARLIER
 import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.INTAKE
@@ -76,7 +82,17 @@ class QueueWorkerTest {
         val unreadable = mutableListOf<StoredSyncOperation.Unreadable>()
         var frozen = 0
         var known = PackageSyncState(PACK, ResourceVersion(3))
+        var knownPack: Package = pack(quantity = tablets("20"))
         val takenWith = mutableListOf<PackageSnapshotNetworkDTO?>()
+
+        /** Снимок «лёг в базу»: версии, остаток и брони — те, что у сервера. */
+        private fun learn(snapshot: PackageSnapshotNetworkDTO) {
+            known = PackageSyncState(PACK, snapshot.pack.version, snapshot.claims.version)
+            knownPack = pack(
+                quantity = tablets(snapshot.pack.amount),
+                claims = Claims(BigDecimal(snapshot.claims.total), snapshot.claims.mine?.let(::BigDecimal))
+            )
+        }
 
         override suspend fun ready(): List<StoredSyncOperation> =
             operations.values
@@ -84,17 +100,20 @@ class QueueWorkerTest {
                 .sortedBy { it.sequence }
                 .map<SyncOperation, StoredSyncOperation> { StoredSyncOperation.Readable(it) } + unreadable
 
-        override suspend fun take(id: Uuid, fresh: PackageSnapshotNetworkDTO?, at: Instant): SyncOperation? {
+        override suspend fun take(id: Uuid, fresh: PackageSnapshotNetworkDTO?, at: Instant): Take? {
             val operation = operations[id] ?: return null
+            if (operation.status.isClosed) return null
             takenWith += fresh
-            fresh?.let { known = PackageSyncState(PACK, it.pack.version, it.claims.version) }
+            fresh?.let(::learn)
             val prepared = operation.prepared ?: run {
                 frozen++
-                (operation.command as PackageSyncCommand).toPreparedRequest(
-                    operation.id, known, tablets("20"), null, at
-                )
+                when (val prepared = (operation.command as PackageSyncCommand).prepare(operation.id, knownPack, known, at)) {
+                    is Preparation.Request -> prepared.request
+                    is Preparation.Refuse -> return Take.Closed(Delivery.Refused(prepared.reason, PackageState.None)).also { settle(id, it.delivery, at) }
+                    Preparation.AlreadyApplied -> return Take.Closed(Delivery.Applied(PackageState.None)).also { settle(id, it.delivery, at) }
+                }
             }
-            return operation.with(status = SyncOperationStatus.SENDING, prepared = prepared).also { operations[id] = it }
+            return Take.Sending(operation.with(status = SyncOperationStatus.SENDING, prepared = prepared).also { operations[id] = it })
         }
 
         override suspend fun <T> transaction(block: suspend () -> T): T = block()
@@ -110,9 +129,7 @@ class QueueWorkerTest {
                 is Delivery.Stale -> PackageState.Present(outcome.snapshot)
                 is Delivery.Retry, Delivery.AccessLost -> PackageState.None
             }
-            (state as? PackageState.Present)?.let {
-                known = PackageSyncState(PACK, it.snapshot.pack.version, it.snapshot.claims.version)
-            }
+            (state as? PackageState.Present)?.let { learn(it.snapshot) }
             val operation = operations.getValue(id)
             operations[id] = if (outcome is Delivery.Stale) {
                 operation.with(status = SyncOperationStatus.PENDING, dropPrepared = true)
@@ -224,8 +241,11 @@ class QueueWorkerTest {
         val report = worker(storage, transport).drain()
 
         assertEquals(1, report.settled)
-        assertEquals("POST", transport.sent.single().method)
-        assertEquals("/v1/drugs/$PACK/intakes", transport.sent.single().path)
+        // Внеплановый расход — тоже `sync` под своим номером: у него есть номер, и повтор
+        // под ним сервер применит один раз (решение владельца, PLAN B4).
+        assertEquals("PUT", transport.sent.single().method)
+        assertEquals("/v1/drugs/$PACK/sync/$INTAKE", transport.sent.single().path)
+        assertFalse(transport.sent.single().body!!.contains("reservation"))
         assertEquals(Delivery.Applied(PackageState.Present(snapshot)), storage.settled.single().second)
         assertEquals(Expected.SNAPSHOT_OR_GONE, transport.expected.single())
         assertEquals(SyncOperationStatus.APPLIED, storage.operations.getValue(INTAKE).status)
@@ -242,7 +262,7 @@ class QueueWorkerTest {
 
         assertEquals(1, transport.snapshots)
         assertEquals(ResourceVersion(7), transport.sent.single().drugVersion)
-        assertTrue(transport.sent.single().body!!.contains("\"version\":7"))
+        assertTrue(transport.sent.single().body!!.contains("\"drugVersion\":7"))
         assertEquals(snapshotWithVersion(7), storage.takenWith.single())
     }
 
@@ -354,7 +374,12 @@ class QueueWorkerTest {
 
     @Test
     fun invalidInputIsRefusedAndTheTruthRead() = runTest {
-        val storage = Storage(listOf(operation()))
+        val describe = PackageSyncCommand.Describe(
+            PACK,
+            com.kert0n.medapp.domain.pack.PackageSharedFacts("Парацетамол", TABLET_FORM),
+            com.kert0n.medapp.domain.pack.PackageSharedFacts("Парацетамол 500", TABLET_FORM)
+        )
+        val storage = Storage(listOf(operation(describe)))
         val transport = transport { ApiResult.Failure(ApiFailure.Invalid(emptyList())) }
         transport.snapshotAnswer = ApiResult.Success(snapshot)
 
@@ -448,6 +473,89 @@ class QueueWorkerTest {
         assertEquals(0, report.settled)
         assertEquals(Delivery.Retry("пустое тело там, где контракт обещает снимок"), storage.settled.single().second)
         assertEquals(SyncOperationStatus.PENDING, storage.operations.getValue(INTAKE).status)
+    }
+
+    /** 404 у снятия брони — брони уже нет: желаемое наступило, а пачка на месте и доступ не потерян. */
+    @Test
+    fun missingClaimOnReleaseIsAppliedAndDoesNotMarkThePackage() = runTest {
+        val storage = Storage(listOf(operation(PackageSyncCommand.ReleaseClaim(PACK))))
+        val transport = transport { ApiResult.Failure(ApiFailure.NotFound) }
+        transport.snapshotAnswer = ApiResult.Success(snapshot)
+
+        worker(storage, transport).drain()
+
+        assertEquals(Delivery.Applied(PackageState.Present(snapshot)), storage.settled.single().second)
+    }
+
+    /** 409 на заявлении брони — она уже есть: по свежему `mine` та же команда становится правкой. */
+    @Test
+    fun claimAlreadyDeclaredIsRepreparedAsAPatch() = runTest {
+        val storage = Storage(listOf(operation(PackageSyncCommand.SetClaim(PACK, tablets("6")))))
+        val noClaim = medAppJson.decodeFromString(
+            PackageSnapshotNetworkDTO.serializer(), snapshotJson.replace(",\"mine\":\"4.000000\"", "")
+        )
+        var attempts = 0
+        val transport = transport(fresh = noClaim) {
+            attempts++
+            if (attempts == 1) ApiResult.Failure(ApiFailure.Conflict)
+            else ApiResult.Success(QueueAnswer.Claim(com.kert0n.medapp.network.pack.ClaimNetworkDTO(PACK, "6")))
+        }
+        transport.snapshotAnswer = ApiResult.Success(snapshot)
+
+        val report = worker(storage, transport).drain()
+
+        assertEquals(1, report.settled)
+        assertEquals(listOf("POST", "PATCH"), transport.sent.map { it.method })
+        assertEquals(SyncOperationStatus.APPLIED, storage.operations.getValue(INTAKE).status)
+    }
+
+    /** 400 на создании — пачка не заведена, читать нечего и терять доступ не к чему. */
+    @Test
+    fun invalidCreateIsRefusedWithoutTouchingThePackage() = runTest {
+        val create = PackageSyncCommand.Create(PACK, HOME_KIT, tablets("20"), com.kert0n.medapp.domain.pack.PackageSharedFacts("Парацетамол", TABLET_FORM))
+        val storage = Storage(listOf(operation(create)))
+        val transport = Transport { ApiResult.Failure(ApiFailure.Invalid(emptyList())) }
+
+        worker(storage, transport).drain()
+
+        assertEquals(0, transport.snapshots)
+        assertEquals(Delivery.Refused(RefusalReason.INVALID, PackageState.None), storage.settled.single().second)
+    }
+
+    /** Расход больше остатка — отказ по количеству, пачка остаётся какой её знает сервер: удалять её нечем. */
+    @Test
+    fun consumeBeyondTheStockIsRefusedAsInsufficientAndThePackageStays() = runTest {
+        val storage = Storage(listOf(operation()))
+        val transport = transport { ApiResult.Failure(ApiFailure.Invalid(emptyList())) }
+        transport.snapshotAnswer = ApiResult.Success(snapshot)
+
+        worker(storage, transport).drain()
+
+        assertEquals(Delivery.Refused(RefusalReason.INSUFFICIENT, PackageState.Present(snapshot)), storage.settled.single().second)
+    }
+
+    /** Единицу пачки сменили: дозу в прежней единице на провод не везут — единицы там нет. */
+    @Test
+    fun consumeInAUnitThePackageNoLongerUsesIsRefusedBeforeSending() = runTest {
+        val inMillilitres = PackageSyncCommand.Consume(PACK, dose(com.kert0n.medapp.fixture.millilitres("5")), INTAKE)
+        val storage = Storage(listOf(operation(inMillilitres)))
+        val transport = transport { ApiResult.Success(QueueAnswer.Snapshot(snapshot)) }
+
+        val report = worker(storage, transport).drain()
+
+        assertTrue(transport.sent.isEmpty())
+        assertEquals(1, report.settled)
+        assertEquals(Delivery.Refused(RefusalReason.UNIT_CHANGED, PackageState.None), storage.settled.single().second)
+    }
+
+    @Test
+    fun deletingWhatIsAlreadyGoneIsApplied() = runTest {
+        val storage = Storage(listOf(operation(PackageSyncCommand.Delete(PACK))))
+        val transport = transport { ApiResult.Failure(ApiFailure.NotFound) }
+
+        worker(storage, transport).drain()
+
+        assertEquals(Delivery.Applied(PackageState.Gone), storage.settled.single().second)
     }
 
     @Test

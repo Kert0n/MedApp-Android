@@ -26,6 +26,7 @@ import com.kert0n.medapp.queue.PackageState
 import com.kert0n.medapp.queue.RefusalReason
 import com.kert0n.medapp.queue.StoredSyncOperation
 import com.kert0n.medapp.queue.SyncOperationStatus
+import com.kert0n.medapp.queue.Take
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.storage.intake.toStorageEntity as toIntakeStorageEntity
 import com.kert0n.medapp.storage.medkit.toStorageEntity as toMedKitStorageEntity
@@ -55,14 +56,14 @@ class QueueStorageTest {
     private val operation: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000091")
     private val at: Instant = Instant.parse("2026-09-10T12:00:00Z")
 
-    private val snapshot: PackageSnapshotNetworkDTO = medAppJson.decodeFromString(
-        PackageSnapshotNetworkDTO.serializer(),
-        """
+    private val snapshotJson = """
         {"drug":{"id":"$PACK","name":"Парацетамол","quantity":"17.000000","quantityUnitId":"${TABLETS.id}",
          "formTypeId":"${TABLET_FORM.id}","medKitId":"$HOME_KIT","version":4},
          "reservations":{"total":"4.000000","mine":"4.000000","version":2}}
-        """
-    )
+    """
+
+    private val snapshot: PackageSnapshotNetworkDTO =
+        medAppJson.decodeFromString(PackageSnapshotNetworkDTO.serializer(), snapshotJson)
 
     @Before
     fun openDatabase() = runTest {
@@ -84,13 +85,13 @@ class QueueStorageTest {
     fun takingFreezesTheRequestWithThePackagesPreconditionsAndMarksSending() = runTest {
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
 
-        val taken = requireNotNull(storage.take(operation, null, at))
+        val taken = (storage.take(operation, null, at) as Take.Sending).operation
 
         val request = requireNotNull(taken.prepared)
         assertEquals(SyncOperationStatus.SENDING, taken.status)
         assertEquals(ResourceVersion(3), request.drugVersion)
         assertEquals(tablets("20"), request.quantityBefore)
-        assertTrue(request.body!!.contains("\"version\":3"))
+        assertTrue(request.body!!.contains("\"drugVersion\":3"))
         assertEquals(listOf(taken.id), storage.ready().map { it.id })
     }
 
@@ -99,7 +100,7 @@ class QueueStorageTest {
     fun takingWithAFreshSnapshotAppliesItAndFreezesItsPreconditions() = runTest {
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
 
-        val taken = requireNotNull(storage.take(operation, snapshot, at))
+        val taken = (storage.take(operation, snapshot, at) as Take.Sending).operation
 
         val request = requireNotNull(taken.prepared)
         assertEquals(ResourceVersion(4), request.drugVersion)
@@ -112,14 +113,14 @@ class QueueStorageTest {
     @Test
     fun takingAgainDoesNotRebuildTheRequest() = runTest {
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
-        val first = requireNotNull(storage.take(operation, null, at)).prepared
+        val first = (storage.take(operation, null, at) as Take.Sending).operation.prepared
         // Версия пачки ушла вперёд — а замороженный запрос остался с прежней (PLAN E2).
         val moved = pack(quantity = tablets("20"), form = TABLET_FORM)
         database.packages().applyServerSnapshot(
             moved.toStorageEntity(PackageSyncState(PACK, ResourceVersion(9), ResourceVersion(1), at)), at
         )
 
-        val second = requireNotNull(storage.take(operation, null, at.plusSeconds(60))).prepared
+        val second = (storage.take(operation, null, at.plusSeconds(60)) as Take.Sending).operation.prepared
 
         assertEquals(first, second)
         assertEquals(ResourceVersion(3), second!!.drugVersion)
@@ -205,7 +206,7 @@ class QueueStorageTest {
     @Test
     fun staleAppliesTheSnapshotDropsTheRequestAndLeavesTheOperationPending() = runTest {
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
-        val frozen = requireNotNull(storage.take(operation, null, at)).prepared
+        val frozen = (storage.take(operation, null, at) as Take.Sending).operation.prepared
 
         storage.settle(operation, Delivery.Stale(snapshot), at.plusSeconds(1))
 
@@ -215,7 +216,7 @@ class QueueStorageTest {
         assertEquals(0, stored.operation.attempts)
         assertEquals(tablets("17"), requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY).quantity)
         // Заново — уже по свежему состоянию, а не по прежнему запросу.
-        val again = requireNotNull(storage.take(operation, null, at.plusSeconds(2))).prepared
+        val again = (storage.take(operation, null, at.plusSeconds(2)) as Take.Sending).operation.prepared
         assertEquals(ResourceVersion(4), again!!.drugVersion)
         assertEquals(ResourceVersion(3), frozen!!.drugVersion)
     }
@@ -244,5 +245,28 @@ class QueueStorageTest {
         assertEquals(IntakeAccounting.REMOTE_REFUSED, requireNotNull(database.intakes().findEntity(INTAKE)).accounting)
         assertEquals(tablets("17"), requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY).quantity)
         assertTrue(storage.ready().isEmpty())
+    }
+
+    /** Единицу пачки сменили на сервере: расход закрывается отказом при взятии, не тревожа сервер. */
+    @Test
+    fun takingClosesTheOperationWhenThePreparationRefusesIt() = runTest {
+        database.intakes().upsert(
+            unplannedIntake(takenAmount = dose("3")).toIntakeStorageEntity(
+                IntakeSyncState(INTAKE, IntakeAccounting.PENDING, operationId = operation)
+            )
+        )
+        database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
+        val inMillilitres = medAppJson.decodeFromString(
+            PackageSnapshotNetworkDTO.serializer(),
+            snapshotJson.replace(TABLETS.id.toString(), com.kert0n.medapp.fixture.MILLILITRES.id.toString())
+        )
+
+        val take = storage.take(operation, inMillilitres, at)
+
+        assertEquals(Take.Closed(Delivery.Refused(RefusalReason.UNIT_CHANGED, PackageState.None)), take)
+        val stored = requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable
+        assertEquals(SyncOperationStatus.REFUSED, stored.operation.status)
+        assertEquals(IntakeAccounting.REMOTE_REFUSED, requireNotNull(database.intakes().findEntity(INTAKE)).accounting)
+        assertEquals(com.kert0n.medapp.fixture.millilitres("17"), requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY).quantity)
     }
 }
