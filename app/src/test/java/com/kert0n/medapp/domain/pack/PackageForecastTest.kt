@@ -217,12 +217,8 @@ class PackageForecastTest {
     fun forecastBeyondTheWindowIsStillCalculatedByTheCalendar() {
         // Годовой курс: третий месяц лежит далеко за окном материализации, и по строкам приёмов
         // ответ был бы завышен.
-        val year = schedule(
-            start = today,
-            endInclusive = today.plusDays(364),
-            times = listOf(LocalTime.of(9, 0))
-        )
-        val long = activeCourse(schedule = year, sources = listOf(source(PACK, 60)))
+        val year = schedule(start = today, times = listOf(LocalTime.of(9, 0)))
+        val long = activeCourse(schedule = year, totalDoses = 365, sources = listOf(source(PACK, 60)))
         val forecast = remainingOn(
             date = today.plusMonths(3),
             packages = listOf(stockOf(quantity = "200")),

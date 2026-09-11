@@ -17,10 +17,12 @@ import kotlin.uuid.Uuid
  * [CourseRecord] (PLAN D5). Имя лечения живёт там же, а не здесь: так называют лечение, а не
  * расписание.
  *
- * Все вопросы о лечении задаются курсу — обеспечение, предел ползунка, зажим при нехватке,
- * пересчёт после приёма, порядок расхода, — потому что он один владеет и дозой, и препаратом.
- * На входе пачка, на выходе её идентификатор: подставить вместо пачки форму или единицу нечем,
- * а самих пачек курс не хранит.
+ * Курс владеет тем, сколько осталось: назначенное число доз за вычетом принятых. Пропущенная
+ * доза никуда не исчезает — лечение растягивается, а ожидаемый конец сдвигается сам; закончить
+ * раньше человек может, сократив число доз рукой. Все вопросы о лечении задаются курсу —
+ * обеспечение, предел ползунка, зажим при нехватке, пересчёт после приёма, порядок расхода, —
+ * потому что он один владеет и дозой, и препаратом. На входе пачка, на выходе её идентификатор:
+ * подставить вместо пачки форму или единицу нечем, а самих пачек курс не хранит.
  */
 class Course(
     val id: Uuid,
@@ -44,6 +46,35 @@ class Course(
     val unit: QuantityUnit get() = prescription.dose.unit
 
     val totalDoses: Doses get() = prescription.totalDoses
+
+    /**
+     * Сколько доз ещё впереди при [taken] принятых. Сколько принято, знают приёмы — курс их не
+     * хранит и получает число аргументом; больше назначенного не бывает: лишнее — ноль.
+     */
+    fun remainingDoses(taken: Doses): Doses = totalDoses.minusOrNone(taken)
+
+    /**
+     * Когда наступят оставшиеся дозы, начиная с [from]: столько ближайших пунктов календаря,
+     * сколько доз осталось. [from] выбирает сценарий — момент самого раннего неотвеченного
+     * пункта либо «сейчас»: неотвеченный утренний приём в полдень никуда не делся.
+     */
+    fun remainingOccurrences(taken: Doses, from: Instant): List<ScheduledOccurrence> =
+        schedule.next(from, remainingDoses(taken).count)
+
+    /** Ожидаемый конец — последняя из оставшихся доз; `null` — принято всё. */
+    fun expectedEnd(taken: Doses, from: Instant): ScheduledOccurrence? =
+        remainingOccurrences(taken, from).lastOrNull()
+
+    /**
+     * Число доз правится и после начала: пропуски растянули лечение, или врач сократил его.
+     * Редакция растёт — меняется состав будущих пунктов; снимок назначения в записи эпизода
+     * переписывает та же транзакция (PLAN F5).
+     */
+    fun setTotalDoses(totalDoses: Doses, at: Instant): Course = changed(
+        prescription = prescription.withTotalDoses(totalDoses),
+        revision = revision.next(),
+        updatedAt = at
+    )
 
     val allocatedDosesTotal: Doses get() = medicine.allocatedTotal
 
@@ -82,13 +113,11 @@ class Course(
     )
 
     /**
-     * Обеспечение курса: на сколько из оставшихся приёмов хватит пачек препарата и с какого приёма
-     * не хватает (PLAN D5).
+     * Обеспечение курса: на сколько из оставшихся доз хватит пачек препарата и с какого приёма не
+     * хватает (PLAN D5). Потребность — от назначенного числа доз, а не от окна календаря.
      */
-    fun coverage(
-        remaining: List<ScheduledOccurrence>,
-        availability: Availability
-    ): CourseCoverage = medicine.coverage(dose, remaining, availability)
+    fun coverage(taken: Doses, from: Instant, availability: Availability): CourseCoverage =
+        medicine.coverage(dose, remainingOccurrences(taken, from), availability)
 
     /**
      * Верхняя граница ползунка пачки в целых дозах: меньшее из того, что пачка даёт, и того, что
@@ -141,6 +170,7 @@ class Course(
         medicine.spend(dose, doses, availability).mapValues { (_, taken) -> dose * taken }
 
     private fun changed(
+        prescription: Prescription = this.prescription,
         medicine: CourseMedicine = this.medicine,
         revision: Revision = this.revision,
         updatedAt: Instant = this.updatedAt

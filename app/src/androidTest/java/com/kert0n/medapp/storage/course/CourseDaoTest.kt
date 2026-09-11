@@ -24,6 +24,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import com.kert0n.medapp.fixture.VOCABULARY
+import com.kert0n.medapp.domain.value.doses
+import com.kert0n.medapp.fixture.LATER
 
 /**
  * Курс и его источники хранят порядок, а времена не заводятся дважды. Черновик и живой план —
@@ -158,6 +160,35 @@ class CourseDaoTest {
         val restored = requireNotNull(courses.findRecord(COURSE)).toDomain(VOCABULARY)
         assertEquals(record.prescription, restored.prescription)
         assertEquals(plan.schedule.times, restored.prescription.schedule.times)
+    }
+
+    /**
+     * Число доз правится у плана и в снимке записи одной транзакцией: назначение лежит в двух
+     * строках, и разойтись им нельзя (PLAN F5). Запись условна по редакции.
+     */
+    @Test
+    fun totalDosesAreRevisedInThePlanAndInTheRecordTogether() = runTest {
+        val plan = activeCourse()
+        courses.saveCourse(plan.toStorageEntity(), plan.schedule.toTimeStorageEntities(COURSE), emptyList())
+        courses.upsertRecord(courseRecord(prescription = plan.prescription).toStorageEntity())
+        val shortened = plan.setTotalDoses(3.doses, LATER)
+
+        assertTrue(
+            courses.updateTotalDoses(COURSE, 3, expected = plan.revision, revision = shortened.revision, updatedAt = LATER)
+        )
+        assertEquals(3.doses, requireNotNull(courses.findPlan(COURSE)).toPlan(VOCABULARY).totalDoses)
+        assertEquals(shortened.revision, requireNotNull(courses.findPlan(COURSE)).toPlan(VOCABULARY).revision)
+        assertEquals(
+            3.doses,
+            requireNotNull(courses.findRecord(COURSE)).toDomain(VOCABULARY).prescription.totalDoses
+        )
+
+        // Правка из устаревшей редакции не ложится ни в план, ни в запись.
+        assertEquals(
+            false,
+            courses.updateTotalDoses(COURSE, 5, expected = plan.revision, revision = shortened.revision.next(), updatedAt = LATER)
+        )
+        assertEquals(3.doses, requireNotNull(courses.findRecord(COURSE)).toDomain(VOCABULARY).prescription.totalDoses)
     }
 
     /** Источник не переживает удаления пачки молча: `RESTRICT` не даёт остаться без пачки. */

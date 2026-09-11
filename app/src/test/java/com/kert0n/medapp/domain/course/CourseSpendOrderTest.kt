@@ -15,6 +15,7 @@ import java.time.LocalTime
 import kotlin.uuid.Uuid
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import com.kert0n.medapp.fixture.beginning
 
 /** Пачки расходуются сверху вниз и сами не появляются (PLAN D5). */
 class CourseSpendOrderTest {
@@ -90,12 +91,8 @@ class CourseSpendOrderTest {
         // Одно правило, два ответа: сколько доз обеспечено и из чего они возьмутся. Пока это было
         // написано порознь, разойтись они могли молча.
         val course = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 4)))
-        val remaining = course.schedule.occurrences(
-            from = course.schedule.start.atStartOfDay(course.schedule.zone).toInstant(),
-            until = course.schedule.endInclusive.plusDays(1)
-                .atStartOfDay(course.schedule.zone).toInstant()
-        )
-        val covered = course.coverage(remaining, availability).coveredDoses
+        val remaining = course.remainingOccurrences(taken = 0.doses, from = course.schedule.beginning)
+        val covered = course.coverage(0.doses, course.schedule.beginning, availability).coveredDoses
         val supplied = course.spendOrder(remaining.size.doses, availability).count { it != null }
         assertEquals(covered, supplied.doses)
     }

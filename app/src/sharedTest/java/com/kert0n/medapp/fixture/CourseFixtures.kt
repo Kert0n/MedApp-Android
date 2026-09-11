@@ -38,24 +38,26 @@ val MOSCOW: ZoneId = ZoneId.of("Europe/Moscow")
 val BERLIN: ZoneId = ZoneId.of("Europe/Berlin")
 
 /**
- * Расписание с понятными по умолчанию значениями: неделя, все дни, один приём в девять утра.
+ * Расписание с понятными по умолчанию значениями: все дни, один приём в девять утра. Конца у
+ * него нет — сколько доз, говорит назначение (по умолчанию семь: неделя).
  *
  * Начало приведено к понедельнику через [DayOfWeek], чтобы тест не зависел от того, на какой день
  * недели пришлась выбранная дата.
  */
 fun schedule(
     start: LocalDate = LocalDate.of(2027, 3, 1).with(DayOfWeek.MONDAY),
-    endInclusive: LocalDate = start.plusDays(6),
     daysOfWeek: Set<DayOfWeek> = DayOfWeek.entries.toSet(),
     times: List<LocalTime> = listOf(LocalTime.of(9, 0)),
     zone: ZoneId = MOSCOW
 ) = CourseSchedule(
     start = start,
-    endInclusive = endInclusive,
     daysOfWeek = daysOfWeek,
     times = times,
     zone = zone
 )
+
+/** Начало календаря как момент: с него сценарии и тесты отсчитывают оставшиеся дозы. */
+val CourseSchedule.beginning: Instant get() = start.atStartOfDay(zone).toInstant()
 
 /** Черновик: тест называет только то, что проверяет. По умолчанию — одно название. */
 fun course(

@@ -73,13 +73,11 @@ class CourseStorageRow(
 
     private fun schedule(): CourseSchedule? {
         val start = course.start ?: return null
-        val endInclusive = course.endInclusive ?: return null
         val days = course.daysOfWeek ?: return null
         val zone = course.zone ?: return null
         if (times.isEmpty()) return null
         return CourseSchedule(
             start = start,
-            endInclusive = endInclusive,
             daysOfWeek = days,
             times = times.map { it.timeOfDay }.sorted(),
             zone = zone

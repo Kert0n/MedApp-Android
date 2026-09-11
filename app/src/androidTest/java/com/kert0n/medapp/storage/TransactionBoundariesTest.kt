@@ -377,7 +377,7 @@ class TransactionBoundariesTest {
             activation.course.toCourseStorageEntity().let {
                 CourseStorageEntity(
                     id = it.id, doseAmount = it.doseAmount, unitId = it.unitId, formId = it.formId,
-                    start = it.start, endInclusive = it.endInclusive, daysOfWeek = it.daysOfWeek,
+                    totalDoses = it.totalDoses, start = it.start, daysOfWeek = it.daysOfWeek,
                     zone = it.zone, revision = it.revision + 1, createdAt = it.createdAt,
                     updatedAt = LATER
                 )

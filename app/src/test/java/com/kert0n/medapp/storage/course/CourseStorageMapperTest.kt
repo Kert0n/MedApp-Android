@@ -166,7 +166,8 @@ class CourseStorageMapperTest {
         assertEquals(storedPlan.doseAmount, storedRecord.doseAmount)
         assertEquals(storedPlan.unitId, storedRecord.unitId)
         assertEquals(storedPlan.start, storedRecord.start)
-        assertEquals(storedPlan.endInclusive, storedRecord.endInclusive)
+        assertEquals(storedPlan.totalDoses, storedRecord.totalDoses)
+        assertEquals(storedPlan.formId, storedRecord.formId)
         assertEquals(storedPlan.daysOfWeek, storedRecord.daysOfWeek)
         assertEquals(storedPlan.zone, storedRecord.zone)
     }

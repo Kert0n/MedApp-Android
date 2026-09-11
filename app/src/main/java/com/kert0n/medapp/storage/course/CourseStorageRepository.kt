@@ -3,6 +3,7 @@ package com.kert0n.medapp.storage.course
 import com.kert0n.medapp.domain.course.Course
 import com.kert0n.medapp.domain.course.CourseDraft
 import com.kert0n.medapp.domain.course.CourseRecord
+import com.kert0n.medapp.domain.course.Revision
 import com.kert0n.medapp.domain.intake.CourseIntake
 import com.kert0n.medapp.storage.server.QueuedCommand
 import java.time.Instant
@@ -49,6 +50,13 @@ interface CourseStorageRepository {
 
     /** Какому активному курсу отдана пачка; `null` — она свободна (PLAN F1, F2). */
     suspend fun courseHolding(packageId: Uuid): Uuid?
+
+    /**
+     * Число доз, поправленное у плана: ложится в план и в снимок записи эпизода одной
+     * транзакцией, условно по редакции [expected], из которой план правили. `false` — плана
+     * уже нет либо он другой редакции; ни одна из двух строк тогда не тронута.
+     */
+    suspend fun setTotalDoses(course: Course, expected: Revision): Boolean
 
     /**
      * Активация: план и запись эпизода заводятся **одной** транзакцией и с одним назначением.

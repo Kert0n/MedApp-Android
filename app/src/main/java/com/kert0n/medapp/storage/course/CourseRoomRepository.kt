@@ -4,6 +4,7 @@ import com.kert0n.medapp.domain.course.Course
 import com.kert0n.medapp.domain.course.CourseDraft
 import androidx.room.withTransaction
 import com.kert0n.medapp.domain.course.CourseRecord
+import com.kert0n.medapp.domain.course.Revision
 import com.kert0n.medapp.domain.intake.CourseIntake
 import com.kert0n.medapp.domain.intake.IntakeAnswer
 import com.kert0n.medapp.storage.database.MedAppDatabase
@@ -73,6 +74,15 @@ class CourseRoomRepository @Inject constructor(
         courses.rename(id, title, note) > 0
 
     override suspend fun courseHolding(packageId: Uuid): Uuid? = courses.courseHolding(packageId)
+
+    override suspend fun setTotalDoses(course: Course, expected: Revision): Boolean =
+        courses.updateTotalDoses(
+            id = course.id,
+            totalDoses = course.totalDoses.count,
+            expected = expected,
+            revision = course.revision,
+            updatedAt = course.updatedAt
+        )
 
     override suspend fun activate(
         activation: CourseDraft.Activation,

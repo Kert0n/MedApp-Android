@@ -30,7 +30,6 @@ class CourseRecordStorageRow(
             totalDoses = Doses(record.totalDoses),
             schedule = CourseSchedule(
                 start = record.start,
-                endInclusive = record.endInclusive,
                 daysOfWeek = record.daysOfWeek,
                 times = times.map { it.timeOfDay }.sorted(),
                 zone = record.zone

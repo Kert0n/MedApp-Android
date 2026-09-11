@@ -9,6 +9,7 @@ import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.activeCourse
+import com.kert0n.medapp.fixture.beginning
 import com.kert0n.medapp.fixture.course
 import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.pack
@@ -146,14 +147,14 @@ class CourseMedicineTest {
         // Записал у врача, куплю завтра: обеспечение «0 из N», а не отказ активировать.
         val started = prescribedDraft(schedule = schedule(), totalDoses = 7).activate(LATER).getOrThrow()
         assertTrue(started.course.medicine.isEmpty)
-        val remaining = started.course.schedule.occurrences(
-            from = schedule().start.atStartOfDay(schedule().zone).toInstant(),
-            until = schedule().endInclusive.plusDays(1).atStartOfDay(schedule().zone).toInstant()
+        val coverage = started.course.coverage(
+            taken = 0.doses,
+            from = schedule().beginning,
+            availability = com.kert0n.medapp.domain.pack.Availability(emptyMap())
         )
-        val coverage = started.course.coverage(remaining, com.kert0n.medapp.domain.pack.Availability(emptyMap()))
         assertEquals(7.doses, coverage.requiredDoses)
         assertEquals(0.doses, coverage.coveredDoses)
-        assertEquals(remaining.first().at, coverage.firstUncoveredAt)
+        assertEquals(schedule().next(schedule().beginning, 1).single().at, coverage.firstUncoveredAt)
     }
 
     @Test

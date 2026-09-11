@@ -2,6 +2,7 @@ package com.kert0n.medapp.domain.course
 
 import com.kert0n.medapp.fixture.BERLIN
 import com.kert0n.medapp.fixture.MOSCOW
+import com.kert0n.medapp.fixture.beginning
 import com.kert0n.medapp.fixture.schedule
 import java.time.DayOfWeek
 import java.time.Instant
@@ -26,7 +27,6 @@ class CourseScheduleOccurrencesTest {
 
     private fun wholeDay(date: LocalDate, time: LocalTime, zone: java.time.ZoneId) = schedule(
         start = date,
-        endInclusive = date,
         daysOfWeek = setOf(date.dayOfWeek),
         times = listOf(time),
         zone = zone
@@ -60,7 +60,6 @@ class CourseScheduleOccurrencesTest {
         // уникальности одного UTC-времени они не теряются (PLAN F4).
         val night = schedule(
             start = springForward,
-            endInclusive = springForward,
             daysOfWeek = setOf(DayOfWeek.SUNDAY),
             times = listOf(LocalTime.of(2, 15), LocalTime.of(2, 45)),
             zone = BERLIN
@@ -98,36 +97,35 @@ class CourseScheduleOccurrencesTest {
     }
 
     @Test
-    fun lastDayOfTheScheduleIsIncluded() {
-        // Дата конца включительная: «по тридцать первое» значит, что тридцать первое входит.
+    fun windowIsHalfOpenAndTheCalendarHasNoEnd() {
+        // Конца у календаря нет: окно в семь дней даёт семь пунктов, следующее окно — следующие
+        // семь, и стыкуются они без повтора и без дыры.
         val week = schedule()
-        val found = week.occurrences(
-            from = week.start.atStartOfDay(MOSCOW).toInstant(),
-            until = week.endInclusive.plusDays(1).atStartOfDay(MOSCOW).toInstant()
-        )
-        assertEquals(week.endInclusive, found.last().localDate)
+        val until = week.start.plusDays(7).atStartOfDay(MOSCOW).toInstant()
+        val found = week.occurrences(week.beginning, until)
         assertEquals(7, found.size)
+        assertEquals(week.start.plusDays(6), found.last().localDate)
+        val next = week.occurrences(until, until.plusSeconds(86_400 * 7))
+        assertEquals(week.start.plusDays(7), next.first().localDate)
+        assertEquals(7, next.size)
     }
 
     @Test
-    fun nothingIsBuiltOutsideTheScheduleRange() {
+    fun nothingIsBuiltBeforeTheStart() {
         val week = schedule()
-        val after = week.endInclusive.plusDays(1).atStartOfDay(MOSCOW).toInstant()
-        assertTrue(week.occurrences(after, after.plusSeconds(86_400 * 30)).isEmpty())
+        val before = week.start.minusDays(30).atStartOfDay(MOSCOW).toInstant()
+        assertTrue(week.occurrences(before, week.beginning).isEmpty())
     }
 
     @Test
     fun daysOfWeekMaskIsRespected() {
-        val fortnight = schedule(
-            endInclusive = schedule().start.plusDays(13),
-            daysOfWeek = setOf(DayOfWeek.MONDAY, DayOfWeek.THURSDAY)
-        )
-        val found = fortnight.occurrences(
-            from = fortnight.start.atStartOfDay(MOSCOW).toInstant(),
-            until = fortnight.endInclusive.plusDays(1).atStartOfDay(MOSCOW).toInstant()
+        val twiceAWeek = schedule(daysOfWeek = setOf(DayOfWeek.MONDAY, DayOfWeek.THURSDAY))
+        val found = twiceAWeek.occurrences(
+            from = twiceAWeek.beginning,
+            until = twiceAWeek.start.plusDays(14).atStartOfDay(MOSCOW).toInstant()
         )
         assertEquals(4, found.size)
-        assertTrue(found.all { it.localDate.dayOfWeek in fortnight.daysOfWeek })
+        assertTrue(found.all { it.localDate.dayOfWeek in twiceAWeek.daysOfWeek })
     }
 
     @Test(expected = IllegalArgumentException::class)
