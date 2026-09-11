@@ -10,3 +10,9 @@ package com.kert0n.medapp.queue
  * по всем одиннадцати видам.
  */
 interface SyncCommand
+
+/**
+ * Корней команд два, и оба известны каждому диспетчеру. Третий означает, что маркер надели на
+ * новое понятие и забыли про остальных — исчерпывающего `when` у маркера нет (PLAN E2).
+ */
+fun SyncCommand.unknownRoot(): Nothing = error("команда неизвестного корня: ${this::class.simpleName}")

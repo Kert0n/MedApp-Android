@@ -33,7 +33,7 @@ class CourseRejected(val reason: Reason) : IllegalStateException(reason.name) {
         /** Форма лечения не названа: ни активировать, ни сверить с ней пачку. */
         FORM_MISSING,
 
-        /** Активировать нельзя: не названо, сколько всего доз. */
+        /** Активировать нельзя: не названо, сколько всего доз, — или названо ноль. */
         TOTAL_DOSES_MISSING
     }
 }

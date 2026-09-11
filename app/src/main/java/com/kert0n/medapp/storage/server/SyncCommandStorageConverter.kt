@@ -7,6 +7,7 @@ import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.network.medkit.MedKitSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncCommand
 import com.kert0n.medapp.queue.SyncCommand
+import com.kert0n.medapp.queue.unknownRoot
 import com.kert0n.medapp.network.value.VocabularyMiss
 import com.kert0n.medapp.network.value.formOrMiss
 import com.kert0n.medapp.network.value.unitOrMiss
@@ -51,7 +52,7 @@ object SyncCommandStorageConverter {
             is MedKitSyncCommand.Delete -> MEDKIT_DELETE
             is MedKitSyncCommand.Leave -> MEDKIT_LEAVE
         }
-        else -> unknownRoot(command)
+        else -> command.unknownRoot()
     }
 
     /** Какой пачки касается команда; `null` у команд аптечки — порядок по пачке строит запрос. */
@@ -69,7 +70,7 @@ object SyncCommandStorageConverter {
         when (command) {
             is PackageSyncCommand -> packagePayload(command)
             is MedKitSyncCommand -> medKitPayload(command)
-            else -> unknownRoot(command)
+            else -> command.unknownRoot()
         }
     )
 
@@ -175,13 +176,6 @@ object SyncCommandStorageConverter {
             command.transferTo?.let { put("transferTo", JsonPrimitive(it.toString())) }
         }
     }
-
-    /**
-     * Корней команд два, и оба перечислены выше. Третий означает, что маркер надели на новое
-     * понятие и забыли про хранение — исчерпывающего `when` у маркера нет (PLAN E2).
-     */
-    private fun unknownRoot(command: SyncCommand): Nothing =
-        error("команда неизвестного корня: ${command::class.simpleName}")
 
     private const val PACKAGE_CREATE = "PACKAGE_CREATE"
     private const val PACKAGE_DESCRIBE = "PACKAGE_DESCRIBE"

@@ -21,6 +21,7 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 import com.kert0n.medapp.fixture.prescribedDraft
 import org.junit.Assert.assertTrue
+import com.kert0n.medapp.fixture.prescription
 
 /**
  * Курс начинается заметкой: черновик с одним названием — законное сохранённое состояние, а не
@@ -122,7 +123,17 @@ class CourseTest {
 
     @Test(expected = IllegalArgumentException::class)
     fun zeroTotalDosesIsNotTreatmentEither() {
-        course(totalDoses = 0)
+        // Правило живёт на назначении: собрать его с нулём доз нельзя ни одним путём.
+        prescription(totalDoses = 0)
+    }
+
+    @Test
+    fun draftWithZeroTotalDosesIsNotActivated() {
+        val zero = prescribedDraft(schedule = schedule(), totalDoses = 0)
+        assertEquals(
+            CourseRejected.Reason.TOTAL_DOSES_MISSING,
+            (zero.activate(LATER).exceptionOrNull() as CourseRejected).reason
+        )
     }
 
     @Test(expected = IllegalArgumentException::class)

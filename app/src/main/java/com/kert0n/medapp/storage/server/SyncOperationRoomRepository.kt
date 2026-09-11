@@ -15,6 +15,7 @@ import com.kert0n.medapp.queue.StoredSyncOperation
 import com.kert0n.medapp.queue.SyncCommand
 import com.kert0n.medapp.queue.SyncOperation
 import com.kert0n.medapp.queue.SyncOperationStatus
+import com.kert0n.medapp.queue.unknownRoot
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.storage.intake.IntakeDao
 import com.kert0n.medapp.storage.medkit.MedKitDao
@@ -109,7 +110,7 @@ class SyncOperationRoomRepository @Inject constructor(
                     )
                 }
                 is MedKitSyncCommand -> command.toMedKitPreparedRequest(at)
-                else -> error("команда неизвестного корня: ${command::class.simpleName}")
+                else -> command.unknownRoot()
             }
             val columns = request.toStorageColumns()
             queue.freeze(

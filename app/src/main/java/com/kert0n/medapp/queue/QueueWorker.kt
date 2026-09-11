@@ -119,7 +119,7 @@ class QueueWorker @Inject constructor(
             else if (command is PackageSyncCommand.Delete || (command is PackageSyncCommand.CorrectStock && command.actual.isZero)) Delivery.Done(null)
             else snapshotRead(command.packageId, refusal = null)
         is MedKitSyncCommand -> Delivery.Done(null)
-        else -> error("команда неизвестного корня: ${command::class.simpleName}")
+        else -> command.unknownRoot()
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.kert0n.medapp.network.medkit
 
+import com.kert0n.medapp.network.server.MedAppRoutes
 import com.kert0n.medapp.network.server.medAppJson
 import com.kert0n.medapp.queue.PreparedRequest
 import java.time.Instant
@@ -12,19 +13,19 @@ import java.time.Instant
 fun MedKitSyncCommand.toPreparedRequest(at: Instant): PreparedRequest = when (this) {
     is MedKitSyncCommand.Create -> PreparedRequest(
         method = "POST",
-        path = "/v1/med-kits",
+        path = MedAppRoutes.MED_KITS,
         body = medAppJson.encodeToString(MedKitPostNetworkDTO.serializer(), MedKitPostNetworkDTO(medKitId)),
         preparedAt = at
     )
     is MedKitSyncCommand.Delete -> PreparedRequest(
         method = "DELETE",
-        path = "/v1/med-kits/$medKitId",
+        path = MedAppRoutes.medKit(medKitId),
         query = transferTo?.let { mapOf("targetMedKitId" to it.toString()) } ?: emptyMap(),
         preparedAt = at
     )
     is MedKitSyncCommand.Leave -> PreparedRequest(
         method = "DELETE",
-        path = "/v1/med-kit-memberships/$medKitId",
+        path = MedAppRoutes.membership(medKitId),
         preparedAt = at
     )
 }

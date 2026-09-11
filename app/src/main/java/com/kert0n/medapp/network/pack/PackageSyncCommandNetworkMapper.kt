@@ -1,6 +1,7 @@
 package com.kert0n.medapp.network.pack
 
 import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.network.server.MedAppRoutes
 import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.network.server.medAppJson
 import com.kert0n.medapp.network.value.toNetworkAmount
@@ -29,7 +30,7 @@ fun PackageSyncCommand.toPreparedRequest(
     return when (this) {
         is PackageSyncCommand.Create -> prepared(
             method = "POST",
-            path = "/v1/med-kits/$medKitId/drugs",
+            path = MedAppRoutes.packagesOf(medKitId),
             body = medAppJson.encodeToString(
                 PackagePostNetworkDTO.serializer(),
                 PackagePostNetworkDTO(
@@ -48,7 +49,7 @@ fun PackageSyncCommand.toPreparedRequest(
         )
         is PackageSyncCommand.Describe -> prepared(
             method = "PATCH",
-            path = packagePath(packageId),
+            path = MedAppRoutes.pack(packageId),
             body = medAppJson.encodeToString(
                 PackagePatchNetworkDTO.serializer(),
                 after.toPatchNetworkDTO(before, version)
@@ -58,12 +59,12 @@ fun PackageSyncCommand.toPreparedRequest(
         is PackageSyncCommand.CorrectStock ->
             if (actual.isZero) prepared(
                 method = "DELETE",
-                path = packagePath(packageId),
+                path = MedAppRoutes.pack(packageId),
                 query = versionQuery(version),
                 sync = sync, confirmed = confirmed, mine = mine, at = at
             ) else prepared(
                 method = "PATCH",
-                path = packagePath(packageId),
+                path = MedAppRoutes.pack(packageId),
                 body = medAppJson.encodeToString(
                     PackagePatchNetworkDTO.serializer(),
                     PackagePatchNetworkDTO(amount = actual.toNetworkAmount(), version = version)
@@ -72,13 +73,13 @@ fun PackageSyncCommand.toPreparedRequest(
             )
         is PackageSyncCommand.Move -> prepared(
             method = "PUT",
-            path = "/v1/med-kits/$targetMedKitId/drugs/$packageId",
+            path = MedAppRoutes.packageIn(targetMedKitId, packageId),
             query = versionQuery(version),
             sync = sync, confirmed = confirmed, mine = mine, at = at
         )
         is PackageSyncCommand.Delete -> prepared(
             method = "DELETE",
-            path = packagePath(packageId),
+            path = MedAppRoutes.pack(packageId),
             query = versionQuery(version),
             sync = sync, confirmed = confirmed, mine = mine, at = at
         )
@@ -86,7 +87,7 @@ fun PackageSyncCommand.toPreparedRequest(
             val claimAfter = claimAfter
             if (claimAfter == null) prepared(
                 method = "POST",
-                path = "${packagePath(packageId)}/intakes",
+                path = MedAppRoutes.intakes(packageId),
                 body = medAppJson.encodeToString(
                     PackageConsumeNetworkDTO.serializer(),
                     PackageConsumeNetworkDTO(amount = amount.quantity.toNetworkAmount(), version = version)
@@ -94,7 +95,7 @@ fun PackageSyncCommand.toPreparedRequest(
                 sync = sync, confirmed = confirmed, mine = mine, at = at
             ) else prepared(
                 method = "PUT",
-                path = "${packagePath(packageId)}/sync/$operationId",
+                path = MedAppRoutes.sync(packageId, operationId),
                 body = medAppJson.encodeToString(
                     PackageSyncNetworkDTO.serializer(),
                     PackageSyncNetworkDTO(
@@ -113,7 +114,7 @@ fun PackageSyncCommand.toPreparedRequest(
             // Бронь на сервере одна на пару «человек и пачка»: есть своя — правится, нет — заявляется.
             if (mine == null) prepared(
                 method = "POST",
-                path = CLAIMS_PATH,
+                path = MedAppRoutes.CLAIMS,
                 body = medAppJson.encodeToString(
                     ClaimPostNetworkDTO.serializer(),
                     ClaimPostNetworkDTO(packageId, amount.toNetworkAmount(), claimsVersion)
@@ -121,7 +122,7 @@ fun PackageSyncCommand.toPreparedRequest(
                 sync = sync, confirmed = confirmed, mine = mine, at = at
             ) else prepared(
                 method = "PATCH",
-                path = "$CLAIMS_PATH/$packageId",
+                path = MedAppRoutes.claim(packageId),
                 body = medAppJson.encodeToString(
                     ClaimPatchNetworkDTO.serializer(),
                     ClaimPatchNetworkDTO(amount.toNetworkAmount(), claimsVersion)
@@ -130,7 +131,7 @@ fun PackageSyncCommand.toPreparedRequest(
             )
         is PackageSyncCommand.ReleaseClaim -> prepared(
             method = "DELETE",
-            path = "$CLAIMS_PATH/$packageId",
+            path = MedAppRoutes.claim(packageId),
             query = versionQuery(claimsVersion),
             sync = sync, confirmed = confirmed, mine = mine, at = at
         )
@@ -174,6 +175,3 @@ private fun prepared(
 private fun versionQuery(version: ResourceVersion?): Map<String, String> =
     version?.let { mapOf("version" to it.number.toString()) } ?: emptyMap()
 
-private fun packagePath(packageId: Uuid) = "/v1/drugs/$packageId"
-
-private const val CLAIMS_PATH = "/v1/reservations"

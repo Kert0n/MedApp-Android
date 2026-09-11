@@ -37,7 +37,6 @@ class CourseDraft(
     init {
         requireText(title, CourseRecord.TITLE_MAX_LENGTH, "CourseDraft.title")
         requireOptionalText(note, CourseRecord.NOTE_MAX_LENGTH, "CourseDraft.note")
-        require(totalDoses == null || !totalDoses.isNone) { "лечение без единой дозы — не лечение" }
         // Пачка проходит в препарат только через сверку с дозой и формой, поэтому препарат без
         // них — состояние, которого не бывает.
         require(medicine.isEmpty || (dose != null && form != null)) {
@@ -91,7 +90,11 @@ class CourseDraft(
     fun setSchedule(schedule: CourseSchedule, at: Instant): CourseDraft =
         changed(schedule = schedule, revision = revision.next(), updatedAt = at)
 
-    /** Сколько всего доз назначено. Число доз правится и после начала — но уже у курса. */
+    /**
+     * Сколько всего доз назначено. Число доз правится и после начала — но уже у курса. Ноль здесь
+     * не отвергается: правило «лечение без единой дозы — не лечение» живёт на [Prescription], и
+     * такой черновик просто не активируется.
+     */
     fun setTotalDoses(totalDoses: Doses, at: Instant): CourseDraft =
         changed(totalDoses = totalDoses, revision = revision.next(), updatedAt = at)
 
@@ -148,7 +151,8 @@ class CourseDraft(
         val schedule = schedule ?: return rejected(CourseRejected.Reason.SCHEDULE_MISSING)
         val dose = dose ?: return rejected(CourseRejected.Reason.DOSE_MISSING)
         val form = form ?: return rejected(CourseRejected.Reason.FORM_MISSING)
-        val totalDoses = totalDoses ?: return rejected(CourseRejected.Reason.TOTAL_DOSES_MISSING)
+        val totalDoses = totalDoses?.takeUnless { it.isNone }
+            ?: return rejected(CourseRejected.Reason.TOTAL_DOSES_MISSING)
         val prescription = Prescription(
             dose = dose,
             form = form,
