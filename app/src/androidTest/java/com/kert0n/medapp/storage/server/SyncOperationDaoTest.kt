@@ -226,7 +226,7 @@ class SyncOperationDaoTest {
         )
 
         val stale = unreadable(first)
-        assertTrue(stale.reason, stale.reason.contains("версии"))
+        assertTrue(stale.reason.text, stale.reason.text.contains("версии"))
         assertEquals(1, queue.all().size)
     }
 

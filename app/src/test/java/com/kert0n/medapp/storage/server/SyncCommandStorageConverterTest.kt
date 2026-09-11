@@ -17,6 +17,11 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.kert0n.medapp.fixture.VOCABULARY
+import com.kert0n.medapp.domain.value.Vocabulary
+import com.kert0n.medapp.fixture.MILLILITRES
+import com.kert0n.medapp.fixture.TABLETS
+import com.kert0n.medapp.fixture.millilitres
+import com.kert0n.medapp.network.value.VocabularyMiss
 
 /**
  * Круговой тест по **всем одиннадцати** видам команд: исчерпывающего `when` по обоим корням
@@ -153,5 +158,21 @@ class SyncCommandStorageConverterTest {
             assertTrue("$payload: $refusal", refusal is IllegalArgumentException)
             assertTrue("$payload: $refusal", refusal?.message?.contains("PACKAGE_DELETE") == true)
         }
+    }
+
+    /** Единица вне снимка — промах словаря, а не порча payload: он лечится чтением, а не человеком. */
+    @Test
+    fun aUnitMissingFromTheSnapshotIsAVocabularyMissNotAFormatError() {
+        val command = PackageSyncCommand.CorrectStock(PACK, millilitres("10"))
+        val refusal = runCatching {
+            SyncCommandStorageConverter.commandOf(
+                kind = SyncCommandStorageConverter.kindOf(command),
+                payload = SyncCommandStorageConverter.payloadOf(command),
+                payloadVersion = SyncCommandStorageConverter.PAYLOAD_VERSION,
+                vocabulary = Vocabulary(listOf(TABLETS), emptyList())
+            )
+        }.exceptionOrNull()
+        assertTrue("$refusal", refusal is VocabularyMiss)
+        assertEquals(MILLILITRES.id, (refusal as VocabularyMiss).id)
     }
 }

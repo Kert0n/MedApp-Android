@@ -5,6 +5,7 @@ import com.kert0n.medapp.domain.value.QuantityUnit
 import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.network.server.PreparedRequest
 import com.kert0n.medapp.network.server.ResourceVersion
+import com.kert0n.medapp.network.value.unitOrMiss
 import com.kert0n.medapp.storage.value.storedQuantity
 import com.kert0n.medapp.storage.value.toStorageAmount
 import java.time.Instant
@@ -46,7 +47,7 @@ class PreparedRequestStorageColumns(
 
     private fun requireUnit(vocabulary: Vocabulary): QuantityUnit {
         val id = requireNotNull(unitId) { "предусловие по остатку записано вместе со своей единицей" }
-        return requireNotNull(vocabulary.unit(id)) { "единица $id не в словаре" }
+        return vocabulary.unitOrMiss(id)
     }
 }
 

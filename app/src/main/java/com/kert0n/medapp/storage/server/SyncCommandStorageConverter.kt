@@ -7,6 +7,9 @@ import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.network.medkit.MedKitSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncCommand
 import com.kert0n.medapp.network.server.SyncCommand
+import com.kert0n.medapp.network.value.VocabularyMiss
+import com.kert0n.medapp.network.value.formOrMiss
+import com.kert0n.medapp.network.value.unitOrMiss
 import com.kert0n.medapp.storage.value.storedQuantity
 import com.kert0n.medapp.storage.value.toStorageAmount
 import kotlin.uuid.Uuid
@@ -75,8 +78,8 @@ object SyncCommandStorageConverter {
      * версия payload — обычное следствие обновления приложения. Повреждённый payload известного
      * вида — не «команда неизвестна», а ошибка разбора, и она называет себя сама: иначе строка
      * очереди сообщала бы человеку неверную причину (PLAN F4). Единицы и формы payload держит
-     * идентификаторами, а объекты им даёт снимок словаря [vocabulary]; промах по нему — тоже
-     * причина, и называет она единицу.
+     * идентификаторами, а объекты им даёт снимок словаря [vocabulary]; промах по нему —
+     * [VocabularyMiss], и лечится он чтением словаря, а не решением человека.
      */
     fun commandOf(
         kind: String,
@@ -87,7 +90,11 @@ object SyncCommandStorageConverter {
         if (payloadVersion != PAYLOAD_VERSION) return null
         val fields = runCatching { json.parseToJsonElement(payload) as JsonObject }.getOrNull()
             ?: throw IllegalArgumentException("payload команды «$kind» не разбирается")
-        return runCatching { read(kind, fields, vocabulary) }.getOrElse { cause ->
+        return try {
+            read(kind, fields, vocabulary)
+        } catch (missed: VocabularyMiss) {
+            throw missed
+        } catch (cause: RuntimeException) {
             throw IllegalArgumentException("поля команды «$kind» не разбираются: ${cause.message}", cause)
         }
     }
@@ -220,17 +227,12 @@ object SyncCommandStorageConverter {
 
     private fun JsonObject.optionalUuid(name: String): Uuid? = optionalText(name)?.let(Uuid::parse)
 
-    private fun JsonObject.quantity(name: String, vocabulary: Vocabulary): Quantity {
-        val unitId = uuid("${name}UnitId")
-        val unit = requireNotNull(vocabulary.unit(unitId)) { "единица $unitId не в словаре" }
-        return storedQuantity(text(name), unit)
-    }
+    private fun JsonObject.quantity(name: String, vocabulary: Vocabulary): Quantity =
+        storedQuantity(text(name), vocabulary.unitOrMiss(uuid("${name}UnitId")))
 
     private fun JsonObject.facts(vocabulary: Vocabulary): PackageSharedFacts = PackageSharedFacts(
         name = text("name"),
-        form = optionalUuid("formId")?.let { id ->
-            requireNotNull(vocabulary.form(id)) { "форма $id не в словаре" }
-        },
+        form = optionalUuid("formId")?.let(vocabulary::formOrMiss),
         category = optionalText("category"),
         manufacturer = optionalText("manufacturer"),
         country = optionalText("country"),

@@ -4,6 +4,7 @@ import androidx.room.Embedded
 import androidx.room.Relation
 import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.network.server.SyncOperation
+import com.kert0n.medapp.network.value.VocabularyMiss
 
 /**
  * Операция очереди вместе со своими зависимостями.
@@ -25,7 +26,11 @@ class SyncOperationStorageRow(
             payload = operation.payload,
             payloadVersion = operation.payloadVersion,
             vocabulary = vocabulary
-        ) ?: return unreadable("команда «${operation.kind}» версии ${operation.payloadVersion} этой сборке неизвестна")
+        ) ?: return unreadable(
+            StoredSyncOperation.Reason.Format(
+                "команда «${operation.kind}» версии ${operation.payloadVersion} этой сборке неизвестна"
+            )
+        )
         StoredSyncOperation.Readable(
             SyncOperation(
                 id = operation.id,
@@ -42,10 +47,13 @@ class SyncOperationStorageRow(
                 lastTriedAt = operation.lastTriedAt
             )
         )
+    } catch (missed: VocabularyMiss) {
+        unreadable(StoredSyncOperation.Reason.VocabularyStale(missed))
     } catch (cause: IllegalArgumentException) {
         // Сюда же приходит SerializationException: повреждённый JSON — её наследник.
-        unreadable(cause.message ?: "строка очереди не собирается")
+        unreadable(StoredSyncOperation.Reason.Format(cause.message ?: "строка очереди не собирается"))
     }
 
-    private fun unreadable(reason: String) = StoredSyncOperation.Unreadable(operation.id, reason)
+    private fun unreadable(reason: StoredSyncOperation.Reason) =
+        StoredSyncOperation.Unreadable(operation.id, reason)
 }
