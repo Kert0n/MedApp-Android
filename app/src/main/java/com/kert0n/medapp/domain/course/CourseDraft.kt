@@ -4,6 +4,7 @@ import com.kert0n.medapp.domain.pack.Availability
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Doses
+import com.kert0n.medapp.domain.value.doses
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.requireNonNegativeDecimal
 import com.kert0n.medapp.domain.value.requireOptionalText
@@ -119,7 +120,7 @@ class CourseDraft(
      * здесь честнее выдуманного числа.
      */
     fun maxDoses(pkg: Package, required: Doses, availability: Availability): Doses {
-        val dose = dose ?: return Doses.none
+        val dose = dose ?: return 0.doses
         return medicine.maxDoses(pkg.id, dose, required, availability)
     }
 

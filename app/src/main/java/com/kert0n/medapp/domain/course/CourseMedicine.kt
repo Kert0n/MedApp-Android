@@ -4,6 +4,7 @@ import com.kert0n.medapp.domain.pack.Availability
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Doses
+import com.kert0n.medapp.domain.value.doses
 import com.kert0n.medapp.domain.value.Quantity
 import java.util.Objects
 import kotlin.uuid.Uuid
@@ -45,7 +46,7 @@ class CourseMedicine(
     val isEmpty: Boolean get() = sources.isEmpty()
 
     val allocatedTotal: Doses
-        get() = sources.fold(Doses.none) { total, source -> total + source.allocatedDoses }
+        get() = sources.fold(0.doses) { total, source -> total + source.allocatedDoses }
 
     internal fun allocatedTo(packageId: Uuid): Doses? =
         sources.firstOrNull { it.packageId == packageId }?.allocatedDoses
@@ -122,7 +123,7 @@ class CourseMedicine(
     ): CourseCoverage {
         val capacities = capacities(dose, availability)
         val required = Doses(remaining.size)
-        val supplied = capacities.fold(Doses.none) { total, it -> total + it.covers }
+        val supplied = capacities.fold(0.doses) { total, it -> total + it.covers }
         val covered = minOf(required, supplied)
         return CourseCoverage(
             requiredDoses = required,
@@ -148,7 +149,7 @@ class CourseMedicine(
         required: Doses,
         availability: Availability
     ): Doses {
-        val here = allocatedTo(packageId) ?: Doses.none
+        val here = allocatedTo(packageId) ?: 0.doses
         val available = availability.known(packageId) ?: return here
         val stillNeeded = required.minusOrNone(allocatedTotal - here)
         return minOf(available.dosesIn(dose), stillNeeded)
@@ -167,7 +168,7 @@ class CourseMedicine(
     ): CourseMedicine {
         val clamped = capacities(dose, availability)
             .map { CourseSource(it.packageId, it.allows) }
-        var excess = clamped.fold(Doses.none) { total, it -> total + it.allocatedDoses }
+        var excess = clamped.fold(0.doses) { total, it -> total + it.allocatedDoses }
             .minusOrNone(required)
         val trimmed = clamped.toMutableList()
         for (index in trimmed.indices.reversed()) {
@@ -216,8 +217,8 @@ class CourseMedicine(
         require(availableAfter.unitId == dose.unitId) {
             "доступный остаток измеряется единицей дозы: ${availableAfter.unitId} и ${dose.unitId}"
         }
-        val allocated = allocatedTo(packageId) ?: Doses.none
-        if (allocated.isNone) return Doses.none
+        val allocated = allocatedTo(packageId) ?: 0.doses
+        if (allocated.isNone) return 0.doses
         val leftAllocated = (dose * allocated).minusOrZero(taken.quantity)
         val limited =
             if (leftAllocated.amount <= availableAfter.amount) leftAllocated else availableAfter
@@ -258,7 +259,7 @@ class CourseMedicine(
     ) {
         val isUnknown: Boolean get() = whole == null
 
-        val covers: Doses get() = whole?.let { minOf(allocated, it) } ?: Doses.none
+        val covers: Doses get() = whole?.let { minOf(allocated, it) } ?: 0.doses
 
         val allows: Doses get() = whole?.let { minOf(allocated, it) } ?: allocated
     }

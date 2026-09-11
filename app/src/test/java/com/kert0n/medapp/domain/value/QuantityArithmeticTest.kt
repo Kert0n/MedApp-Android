@@ -57,7 +57,7 @@ class QuantityArithmeticTest {
     @Test
     fun timesCountsDoses() {
         assertEquals(tablets("7.5"), tablets("2.5") * doses(3))
-        assertTrue((tablets("2.5") * Doses.none).isZero)
+        assertTrue((tablets("2.5") * 0.doses).isZero)
     }
 
     @Test(expected = IllegalArgumentException::class)

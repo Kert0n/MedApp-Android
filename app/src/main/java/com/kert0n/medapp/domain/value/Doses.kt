@@ -27,14 +27,17 @@ value class Doses(val count: Int) : Comparable<Doses> {
 
     /** Для пределов и разностей, где отрицательное просто не показывается (PLAN D5). */
     fun minusOrNone(other: Doses): Doses =
-        if (count >= other.count) Doses(count - other.count) else none
+        if (count >= other.count) Doses(count - other.count) else 0.doses
 
     override fun compareTo(other: Doses): Int = count.compareTo(other.count)
-
-    companion object {
-        val none: Doses = Doses(0)
-
-        /** Один приём — ровно одна доза. */
-        val one: Doses = Doses(1)
-    }
 }
+
+/**
+ * Число доз пишется числом: `0.doses`, `3.doses`. Именованные константы вроде `none` и `one`
+ * называли числа словами и умели называть только те, которые кто-то заранее перечислил;
+ * запись остаётся одна на любое число, и `1` в ней видно как `1`.
+ */
+val Int.doses: Doses get() = Doses(this)
+
+/** То же самое числом один: грамматика — единственное отличие от [doses]. */
+val Int.dose: Doses get() = Doses(this)
