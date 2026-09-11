@@ -175,7 +175,7 @@ class QueueWorker @Inject constructor(
         when (val resolution = vocabulary.resolve { snapshot.requireKnownIn(it) }) {
             is VocabularyResolver.Resolution.Resolved -> then(snapshot)
             is VocabularyResolver.Resolution.Unresolved ->
-                Step.Deferred("словарь не знает ${resolution.miss.message}", stop = resolution.failure != null)
+                Step.Deferred(resolution.reason, stop = resolution.failure != null)
         }
 
     /**
@@ -239,7 +239,7 @@ class QueueWorker @Inject constructor(
         is ApiResult.Success -> when (val resolution = vocabulary.resolve { read.value.requireKnownIn(it) }) {
             is VocabularyResolver.Resolution.Resolved -> Read.Snapshot(read.value)
             is VocabularyResolver.Resolution.Unresolved ->
-                Read.Failed(Delivery.Retry("словарь не знает ${resolution.miss.message}"), stop = resolution.failure != null)
+                Read.Failed(Delivery.Retry(resolution.reason), stop = resolution.failure != null)
         }
         is ApiResult.Failure -> when (val failure = read.failure) {
             ApiFailure.NotFound -> Read.Failed(Delivery.AccessLost)

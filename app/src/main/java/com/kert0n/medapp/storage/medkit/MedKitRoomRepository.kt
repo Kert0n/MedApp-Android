@@ -44,7 +44,7 @@ class MedKitRoomRepository @Inject constructor(
             medKits.upsert(medKit.toStorageEntity(syncedAt = at))
             val words = vocabulary.snapshot()
             for (snapshot in snapshots) {
-                require(snapshot.pack.medKitId == medKit.id) { "снимок пачки называет другую аптечку" }
+                // Снимок чужой аптечки отвергает маппер — и откатывает переключение вместе с ним.
                 val resolved = snapshot.toDomain(words, medKit, addedAt = at, observedAt = at)
                 packages.applyServerSnapshot(resolved.pack.toStorageEntity(resolved.sync), observedAt = at)
                 resolved.pack.claims?.let { packages.upsertClaims(it.toStorageEntity(snapshot.pack.id)) }

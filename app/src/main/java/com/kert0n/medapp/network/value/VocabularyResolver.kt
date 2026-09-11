@@ -61,6 +61,10 @@ class VocabularyResolver @Inject constructor(
         data class Resolved<T>(val value: T) : Resolution<T>
 
         /** [failure] — почему словарь не дочитался; `null` — дочитался, а записи в нём всё равно нет. */
-        data class Unresolved(val miss: VocabularyMiss, val failure: ApiFailure?) : Resolution<Nothing>
+        data class Unresolved(val miss: VocabularyMiss, val failure: ApiFailure?) : Resolution<Nothing> {
+
+            /** Почему разбор отложен — словами для журнала операции. */
+            val reason: String get() = "словарь не знает ${miss.message}"
+        }
     }
 }
