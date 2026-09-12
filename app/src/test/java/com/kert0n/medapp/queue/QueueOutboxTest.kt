@@ -86,7 +86,6 @@ class QueueOutboxTest {
             id, command, sequence, createdAt, payloadVersion, prepared, groupId, dependsOn,
             status, attempts, lastError, lastTriedAt, answer, notBefore, outcomeUnknown
         )
-        override suspend fun <T> transaction(block: suspend () -> T): T = block()
         override suspend fun enqueue(queued: QueuedCommand, at: Instant): SyncOperation = error("не для этого теста")
     }
 

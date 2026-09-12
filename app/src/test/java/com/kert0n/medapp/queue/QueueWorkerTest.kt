@@ -165,7 +165,6 @@ class QueueWorkerTest {
             operations[id] = operation.with(attempts = operation.attempts + 1, lastTriedAt = at, notBefore = notBefore)
         }
 
-        override suspend fun <T> transaction(block: suspend () -> T): T = block()
 
         override suspend fun enqueue(queued: QueuedCommand, at: Instant): SyncOperation =
             error("работник команд не ставит")

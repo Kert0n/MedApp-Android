@@ -7,8 +7,8 @@ import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.plannedIntake
 import com.kert0n.medapp.domain.intake.IntakeStatus
-import com.kert0n.medapp.network.intake.IntakeAccounting
-import com.kert0n.medapp.network.intake.IntakeSyncState
+import com.kert0n.medapp.queue.intake.IntakeAccounting
+import com.kert0n.medapp.queue.intake.IntakeSyncState
 import kotlin.uuid.Uuid
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows

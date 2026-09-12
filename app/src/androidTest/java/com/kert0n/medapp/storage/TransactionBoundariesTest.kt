@@ -30,8 +30,8 @@ import com.kert0n.medapp.fixture.prescription
 import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.fixture.unplannedIntake
-import com.kert0n.medapp.network.intake.IntakeAccounting
-import com.kert0n.medapp.network.intake.IntakeSyncState
+import com.kert0n.medapp.queue.intake.IntakeAccounting
+import com.kert0n.medapp.queue.intake.IntakeSyncState
 import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.network.server.ResourceVersion
@@ -62,6 +62,7 @@ import com.kert0n.medapp.fixture.VOCABULARY
 import com.kert0n.medapp.queue.QueueService
 import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.fixture.queueStorage
+import com.kert0n.medapp.fixture.transactions
 
 /**
  * Связанные изменения сохраняются атомарно: откат не оставляет ни отдельного расхода, ни
@@ -88,7 +89,7 @@ class TransactionBoundariesTest {
         packages = database.packageRepository()
         courses = database.courseRepository()
         intakes = database.intakeRepository()
-        queue = QueueService(database.queueStorage())
+        queue = QueueService(database.transactions(), database.queueStorage())
         database.medKits().upsert(medKit().toMedKitStorageEntity())
         database.medKits().upsert(medKit(id = SHARED_KIT, name = "Дача").toMedKitStorageEntity())
         packages.add(paracetamol)

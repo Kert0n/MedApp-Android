@@ -79,6 +79,9 @@ fun MedAppDatabase.queueRepository() = com.kert0n.medapp.storage.server.SyncOper
     syncOperations(), vocabulary()
 )
 
+/** «Одна транзакция» — узкий порт поверх той же базы (PLAN F5). */
+fun MedAppDatabase.transactions() = com.kert0n.medapp.storage.database.RoomTransactions(this)
+
 /** Порт очереди для работника — транзакции взятия и применения исхода. */
 fun MedAppDatabase.queueStorage() = com.kert0n.medapp.storage.server.QueueRoomStorage(
     this, syncOperations(), packages(), intakes(), medKits(), vocabulary()

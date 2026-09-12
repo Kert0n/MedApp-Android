@@ -2,8 +2,8 @@ package com.kert0n.medapp.storage.intake
 
 import com.kert0n.medapp.domain.intake.Intake
 import com.kert0n.medapp.domain.intake.IntakeStatus
-import com.kert0n.medapp.network.intake.IntakeAccounting
-import com.kert0n.medapp.network.intake.IntakeSyncState
+import com.kert0n.medapp.queue.intake.IntakeAccounting
+import com.kert0n.medapp.queue.intake.IntakeSyncState
 
 /**
  * Приём вместе с учётом его расхода — то, что записывается в базу как одно (PLAN D6, F5).

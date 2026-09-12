@@ -13,9 +13,10 @@ import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.unplannedIntake
 import com.kert0n.medapp.fixture.packageRepository
 import com.kert0n.medapp.fixture.queueStorage
+import com.kert0n.medapp.fixture.transactions
 import com.kert0n.medapp.fixture.tablets
-import com.kert0n.medapp.network.intake.IntakeAccounting
-import com.kert0n.medapp.network.intake.IntakeSyncState
+import com.kert0n.medapp.queue.intake.IntakeAccounting
+import com.kert0n.medapp.queue.intake.IntakeSyncState
 import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.network.pack.toDomain
 import com.kert0n.medapp.domain.medkit.MedKit
@@ -389,7 +390,7 @@ class QueueRoomStorageTest {
         }
         delay(300) // подписка на таблицу успела встать
 
-        storage.transaction {
+        database.transactions().run {
             storage.enqueue(QueuedCommand(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE)), at)
             delay(300) // транзакция ещё открыта: сигнала быть не должно
             assertFalse(seen.isCompleted)

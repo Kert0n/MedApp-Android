@@ -11,10 +11,10 @@ import com.kert0n.medapp.domain.intake.IntakeStatus
 import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
-import com.kert0n.medapp.network.intake.IntakeAccounting
-import com.kert0n.medapp.network.intake.IntakeSyncState
+import com.kert0n.medapp.queue.intake.IntakeAccounting
+import com.kert0n.medapp.queue.intake.IntakeSyncState
 import com.kert0n.medapp.queue.QueueService
-import com.kert0n.medapp.queue.QueueStorage
+import com.kert0n.medapp.queue.Transactions
 import com.kert0n.medapp.queue.QueuedCommand
 import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import com.kert0n.medapp.storage.course.CourseReallocation
@@ -39,7 +39,7 @@ class IntakeConfirmation @Inject constructor(
     private val intakes: IntakeStorageRepository,
     private val courses: CourseStorageRepository,
     private val packages: PackageStorageRepository,
-    private val transactions: QueueStorage,
+    private val transactions: Transactions,
     private val queue: QueueService,
     private val closing: CourseClosing,
     private val clock: Clock
@@ -51,7 +51,7 @@ class IntakeConfirmation @Inject constructor(
      * ничего. Повтор по уже принятому пункту ничего не меняет и отвечает тем, что записано.
      */
     suspend fun confirm(intakeId: Uuid, packageId: Uuid, amount: Dose, at: Instant): Result<Confirmed> =
-        transactions.transaction { write(intakeId, packageId, amount, at) }
+        transactions.run { write(intakeId, packageId, amount, at) }
 
     private suspend fun write(intakeId: Uuid, packageId: Uuid, amount: Dose, at: Instant): Result<Confirmed> {
         val now = clock.instant()

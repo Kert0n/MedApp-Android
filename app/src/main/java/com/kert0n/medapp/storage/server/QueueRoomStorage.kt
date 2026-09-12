@@ -50,8 +50,6 @@ class QueueRoomStorage @Inject constructor(
     private val vocabulary: VocabularyDao
 ) : QueueStorage {
 
-    override suspend fun <T> transaction(block: suspend () -> T): T = database.withTransaction { block() }
-
     /** Room сообщает об изменении таблицы после коммита — то, что outbox и должен услышать. */
     override fun changes(): Flow<Unit> =
         database.invalidationTracker.createFlow("sync_operations", emitInitialState = false).map { }

@@ -9,7 +9,7 @@ import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.medKit
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.tablets
-import com.kert0n.medapp.network.intake.IntakeAccounting
+import com.kert0n.medapp.queue.intake.IntakeAccounting
 import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.network.server.ResourceVersion

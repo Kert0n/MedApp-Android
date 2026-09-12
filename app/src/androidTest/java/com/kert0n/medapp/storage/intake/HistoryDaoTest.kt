@@ -21,7 +21,7 @@ import com.kert0n.medapp.fixture.plannedIntake
 import com.kert0n.medapp.fixture.rejectedByDatabase
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.fixture.unplannedIntake
-import com.kert0n.medapp.network.intake.IntakeAccounting
+import com.kert0n.medapp.queue.intake.IntakeAccounting
 import com.kert0n.medapp.storage.course.toStorageEntity as toRecordStorageEntity
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.storage.pack.toDetailsStorageEntity
