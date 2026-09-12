@@ -246,26 +246,21 @@ node scripts/add-icon.mjs medical_services --as tab_med_kits
 ./gradlew :app:lintDebug :app:assembleDebug
 ```
 
-Границы и раскладка проверяются грепом — пустыми должны быть все, кроме последней:
+**Границы держит тест, а не внимание.** `LayerBoundariesTest` читает дерево исходников и
+проверяет, что зависимости идут внутрь, к домену, а каталоги называют понятия. Нарушение он
+называет файлом и ребром — `feature/bootstrap/AppStart.kt: feature → network`, — поэтому искать
+его не приходится. Список разрешённого у каждого корня лежит в самом тесте: это договор, и
+расширять его нужно осознанно, а не «чтобы собралось».
+
+Грепом остаётся то, чего тест не видит, — повтор правила внутри слоя:
 
 ```bash
-# домен не импортирует чужого
-grep -rn '^import' app/src/main/java/com/kert0n/medapp/domain/ \
-  | grep -viE 'java\.|kotlin\.|com\.kert0n\.medapp\.domain'
-
-# каталог называет понятие, а не вид файла
-find app/src/main/java/com/kert0n/medapp/{domain,network,queue,storage,presentation} -type d \
-  | grep -E '/(model|calc|sync|mapper|dto|remote|local|entity|dao|repository)$'
-
-# сеть не знает очереди
-grep -rn 'com.kert0n.medapp.queue' app/src/main/java/com/kert0n/medapp/network
-
 # правило не размазано: одинаковый текст require дважды
 grep -rh '"[^"]\{15,\}"' --include='*.kt' app/src/main \
   | grep -o '"[^"]\{15,\}"' | sort | uniq -c | awk '$1>1'
 ```
 
-Последняя пустой не бывает, и у неё два законных источника. Повтор **через границу слоёв**
+Пустым этот греп не бывает, и у него два законных источника. Повтор **через границу слоёв**
 законен — сетевая форма проверяет свой вход сама, и домен ей не указ; сейчас таких два: длина
 текста и «расход нулевого количества». Механика Room тоже повторяется по своему устройству:
 один и тот же `SELECT` у `Flow`- и `suspend`-варианта одного вопроса, имя колонки в `@ColumnInfo`
