@@ -25,12 +25,10 @@ fi
 # Дописываемая строка не должна прилипнуть к последней строке файла.
 [ -n "$(tail -c1 "$props")" ] && echo >> "$props"
 
-# Выдаётся ли пропуск по этим данным: 200 — учётка есть, и она наша.
-accepted() {
-    local code
-    code=$(printf 'user = "%s:%s"\n' "$1" "$2" |
-        curl -sS -o /dev/null -w '%{http_code}' -X POST "$base/v1/auth/token" --config -)
-    [ "$code" = 200 ]
+# Что говорит выдача пропуска по этим данным; печатается код ответа.
+token_code() {
+    printf 'user = "%s:%s"\n' "$1" "$2" |
+        curl -sS -o /dev/null -w '%{http_code}' -X POST "$base/v1/auth/token" --config -
 }
 
 # Просим сервер запомнить придуманные данные; печатается код ответа.
@@ -51,10 +49,21 @@ for user in A B; do
         echo "Пробный пользователь $user придуман и записан в $props."
     fi
 
-    if accepted "$login" "$password"; then
-        echo "Пробный пользователь $user на месте."
-        continue
-    fi
+    # 200 — учётка есть и она наша; 401 — сервер её не знает, заводим теми же данными; всё
+    # остальное (429, 5xx, обрыв) о существовании учётки не говорит, и гадать по нему нельзя.
+    issued=$(token_code "$login" "$password")
+    case "$issued" in
+        200)
+            echo "Пробный пользователь $user на месте."
+            continue
+            ;;
+        401) ;;
+        *)
+            echo "Выдача пропуска пользователю $user ответила HTTP $issued — состояние учётки неизвестно." >&2
+            echo "Повторите позже; регистрировать поверх неизвестного состояния скрипт не будет." >&2
+            exit 1
+            ;;
+    esac
 
     code=$(register "$login" "$password")
     case "$code" in

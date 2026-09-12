@@ -59,6 +59,20 @@ class SecretMaskingLoggerTest {
         assertTrue(log.contains("00000000-0000-4000-8000-000000000071"))
     }
 
+    /** Кавычка внутри секрета не обрывает маску: иначе хвост пароля уехал бы в лог. */
+    @Test
+    fun anEscapedQuoteInsideTheSecretDoesNotEndTheMask() = runTest {
+        val body = """{"login":"00000000-0000-4000-8000-000000000071","password":"be\"fore-and\\after"}"""
+
+        client(body).post("/v1/auth/register") {
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+
+        assertFalse(log.contains("fore-and"))
+        assertFalse(log.contains("after"))
+    }
+
     @Test
     fun accessTokenIsMaskedInBodyAndHeader() = runTest {
         client("""{"accessToken":"jwt.issued.now"}""").post("/v1/auth/token")

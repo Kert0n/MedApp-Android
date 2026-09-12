@@ -156,7 +156,8 @@ class QueueWorkerTest {
             (state as? PackageState.Present)?.let { learn(it.snapshot) }
             val operation = operations.getValue(id)
             operations[id] = if (outcome is Delivery.Stale) {
-                operation.with(status = SyncOperationStatus.PENDING, dropPrepared = true, dropAnswer = true, notBefore = outcome.notBefore, dropNotBefore = outcome.notBefore == null)
+                // Счёт попыток принадлежит запросу: сброшен запрос — сброшен и он.
+                operation.with(status = SyncOperationStatus.PENDING, attempts = 0, dropPrepared = true, dropAnswer = true, notBefore = outcome.notBefore, dropNotBefore = outcome.notBefore == null)
             } else {
                 operation.with(
                     status = when (outcome) {
@@ -364,6 +365,35 @@ class QueueWorkerTest {
         worker(storage, transport).drain()
 
         assertEquals(Delivery.Applied(PackageState.Gone), storage.settled.single().second)
+    }
+
+    /**
+     * Счёт попыток принадлежит запросу, а не операции: после переподготовки уходит **другой**
+     * запрос, и 404 на нём — не наш расход, дошедший до нуля, а исчезнувшая пачка. Иначе прошлый
+     * неизвестный исход подписывал бы применение тому, чего не было.
+     */
+    @Test
+    fun aRepreparedConsumptionDoesNotInheritTheAttemptsOfTheOldRequest() = runTest {
+        val everything = PackageSyncCommand.Consume(PACK, dose("20"), INTAKE)
+        val frozen = everything.toPreparedRequest(
+            INTAKE, PackageSyncState(PACK, ResourceVersion(3)), tablets("20"), null, EARLIER
+        )
+        val storage = Storage(
+            listOf(operation(everything, status = SyncOperationStatus.SENDING, attempts = 1, prepared = frozen))
+        )
+        var attempts = 0
+        val transport = transport(fresh = snapshotWithVersion(7)) {
+            attempts++
+            // Первая отправка — тот же замороженный запрос: версия устарела. Вторая — уже другой.
+            if (attempts == 1) ApiResult.Failure(ApiFailure.PreconditionFailed) else ApiResult.Failure(ApiFailure.NotFound)
+        }
+        transport.snapshotAnswer = ApiResult.Success(snapshotWithVersion(7))
+
+        worker(storage, transport).drain()
+
+        assertEquals(2, transport.sent.size)
+        assertEquals(Delivery.Stale(snapshotWithVersion(7)), storage.settled[0].second)
+        assertEquals(Delivery.AccessLost, storage.settled[1].second)
     }
 
     /** 404 на первой же отправке — пачки нет не по нашей причине: доступ утрачен. */

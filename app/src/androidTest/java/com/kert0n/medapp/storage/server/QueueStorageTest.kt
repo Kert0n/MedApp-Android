@@ -208,12 +208,16 @@ class QueueStorageTest {
     fun staleAppliesTheSnapshotDropsTheRequestAndLeavesTheOperationPending() = runTest {
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
         val frozen = (storage.take(operation, null, at) as Take.Sending).operation.prepared
+        // Исход неизвестен — попытка засчитана; она принадлежит этому запросу, а не операции.
+        storage.settle(operation, Delivery.Retry("ответ потерян"), at)
+        storage.take(operation, null, at.plusSeconds(1))
 
         storage.settle(operation, Delivery.Stale(snapshot), at.plusSeconds(1))
 
         val stored = requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable
         assertEquals(SyncOperationStatus.PENDING, stored.operation.status)
         assertNull(stored.operation.prepared)
+        // Запрос сброшен — сброшен и счёт его попыток: следующий уходит впервые.
         assertEquals(0, stored.operation.attempts)
         assertEquals(tablets("17"), requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY).quantity)
         // Заново — уже по свежему состоянию, а не по прежнему запросу.
