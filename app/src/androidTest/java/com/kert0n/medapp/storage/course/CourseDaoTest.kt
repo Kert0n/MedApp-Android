@@ -76,6 +76,28 @@ class CourseDaoTest {
         assertEquals(plan.sources, restored.sources)
     }
 
+    /**
+     * Пачку выбросили: курс теряет её как источник, но сам остаётся — лечение назначено человеку,
+     * а не коробке (PLAN D5, D3).
+     *
+     * Красная проверка: держать источник ключом `RESTRICT` — выбросить пачку, подключённую к
+     * курсу, станет нельзя вовсе, и случай краснеет.
+     */
+    @Test
+    fun aDeletedPackageTakesItsSourceButNotTheCourse() = runTest {
+        val plan = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 4)))
+        courses.saveCourse(
+            plan.toStorageEntity(),
+            plan.schedule.toTimeStorageEntities(COURSE),
+            plan.medicine.toSourceStorageEntities(COURSE)
+        )
+
+        assertEquals(1, database.packages().delete(PACK))
+
+        val left = requireNotNull(courses.findPlan(COURSE)).toPlan(VOCABULARY)
+        assertEquals(listOf(OTHER_PACK), left.sources.map { it.pkg.id })
+    }
+
     /** Уникальность позиции ловит сбой перетаскивания: два источника на одном месте невозможны. */
     @Test
     fun twoSourcesCannotShareOnePosition() = runTest {
@@ -217,9 +239,9 @@ class CourseDaoTest {
         assertEquals(corrected.revision, restored.revision)
     }
 
-    /** Источник не переживает удаления пачки молча: `RESTRICT` не даёт остаться без пачки. */
+    /** Источник без пачки не остаётся: он о ней и есть, поэтому уходит вместе с ней. */
     @Test
-    fun packageWithASourceCannotBeDeleted() = runTest {
+    fun aSourceDoesNotOutliveItsPackage() = runTest {
         val plan = activeCourse(sources = listOf(source(PACK, 5)))
         courses.saveCourse(
             plan.toStorageEntity(),
@@ -227,7 +249,8 @@ class CourseDaoTest {
             plan.medicine.toSourceStorageEntities(COURSE)
         )
 
-        val refusal = rejectedByDatabase { database.packages().delete(PACK) }
-        assertTrue("$refusal", refusal is SQLiteConstraintException)
+        database.packages().delete(PACK)
+
+        assertTrue(requireNotNull(courses.findPlan(COURSE)).sources.isEmpty())
     }
 }

@@ -168,8 +168,12 @@ interface PackageDao {
     )
     suspend fun allocationsOf(packageIds: List<Uuid>): List<PackageAllocationRow>
 
+    /**
+     * Удаление уносит части пачки каскадом — сведения, брони, историю остатка и связи с курсами
+     * (PLAN F2). Ноль строк значит «пачки и так нет».
+     */
     @Query("DELETE FROM packages WHERE id = :id")
-    suspend fun delete(id: Uuid)
+    suspend fun delete(id: Uuid): Int
 }
 
 /**

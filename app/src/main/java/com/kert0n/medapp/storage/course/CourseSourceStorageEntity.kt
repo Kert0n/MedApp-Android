@@ -29,7 +29,7 @@ import kotlin.uuid.Uuid
             entity = PackageStorageEntity::class,
             parentColumns = ["id"],
             childColumns = ["package_id"],
-            onDelete = ForeignKey.RESTRICT
+            onDelete = ForeignKey.CASCADE
         )
     ],
     indices = [

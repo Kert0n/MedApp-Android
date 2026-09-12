@@ -121,15 +121,26 @@ class ActivePackageAssignmentDaoTest {
         assertEquals(secondCourse, courses.courseHolding(PACK))
     }
 
-    /** Занятую пачку не удалить молча, и занятый план не исчезнуть в обход транзакции. */
+    /** Занятый план не исчезает в обход транзакции: назначение держит его ключом. */
     @Test
-    fun neitherPackageNorPlanDisappearsWhileTheAssignmentStands() = runTest {
+    fun aHeldPlanDoesNotDisappearBehindTheTransaction() = runTest {
         courses.assignPackage(ActivePackageAssignmentStorageEntity(PACK, COURSE))
 
-        val packageRefusal = rejectedByDatabase { database.packages().delete(PACK) }
-        assertTrue("$packageRefusal", packageRefusal is SQLiteConstraintException)
+        val refusal = rejectedByDatabase { courses.deletePlan(COURSE) }
 
-        val planRefusal = rejectedByDatabase { courses.deletePlan(COURSE) }
-        assertTrue("$planRefusal", planRefusal is SQLiteConstraintException)
+        assertTrue("$refusal", refusal is SQLiteConstraintException)
+    }
+
+    /**
+     * Удалённая пачка освобождает себя сама: назначение — это «пачка занята курсом», и без пачки
+     * его не существует (PLAN D3, D5).
+     */
+    @Test
+    fun aDeletedPackageReleasesItself() = runTest {
+        courses.assignPackage(ActivePackageAssignmentStorageEntity(PACK, COURSE))
+
+        database.packages().delete(PACK)
+
+        assertEquals(null, courses.courseHolding(PACK))
     }
 }

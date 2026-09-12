@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 3,
-    "identityHash": "f6a288d23e80b3981346e604f02466f5",
+    "identityHash": "e04c860dcb628bfe9aae66487f72c638",
     "entities": [
       {
         "tableName": "quantity_units",
@@ -285,7 +285,7 @@
       },
       {
         "tableName": "package_details",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`package_id` TEXT NOT NULL, `added_at` INTEGER NOT NULL, `expires_on` TEXT, `default_intake_amount` TEXT, `default_intake_unit_id` TEXT, `note` TEXT, `price` TEXT, `currency` TEXT, `purchased_on` TEXT, `opened_on` TEXT, `template_id` TEXT, PRIMARY KEY(`package_id`), FOREIGN KEY(`package_id`) REFERENCES `packages`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`package_id` TEXT NOT NULL, `added_at` INTEGER NOT NULL, `expires_on` TEXT, `default_intake_amount` TEXT, `default_intake_unit_id` TEXT, `note` TEXT, `price` TEXT, `currency` TEXT, `purchased_on` TEXT, `opened_on` TEXT, `template_id` TEXT, PRIMARY KEY(`package_id`), FOREIGN KEY(`package_id`) REFERENCES `packages`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "packageId",
@@ -354,7 +354,7 @@
         "foreignKeys": [
           {
             "table": "packages",
-            "onDelete": "RESTRICT",
+            "onDelete": "CASCADE",
             "onUpdate": "NO ACTION",
             "columns": [
               "package_id"
@@ -367,7 +367,7 @@
       },
       {
         "tableName": "claims",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`package_id` TEXT NOT NULL, `total` TEXT NOT NULL, `mine` TEXT, PRIMARY KEY(`package_id`), FOREIGN KEY(`package_id`) REFERENCES `packages`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`package_id` TEXT NOT NULL, `total` TEXT NOT NULL, `mine` TEXT, PRIMARY KEY(`package_id`), FOREIGN KEY(`package_id`) REFERENCES `packages`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "packageId",
@@ -396,7 +396,7 @@
         "foreignKeys": [
           {
             "table": "packages",
-            "onDelete": "RESTRICT",
+            "onDelete": "CASCADE",
             "onUpdate": "NO ACTION",
             "columns": [
               "package_id"
@@ -608,7 +608,7 @@
       },
       {
         "tableName": "course_sources",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`course_id` TEXT NOT NULL, `package_id` TEXT NOT NULL, `position` INTEGER NOT NULL, `allocated_doses` INTEGER NOT NULL, PRIMARY KEY(`course_id`, `package_id`), FOREIGN KEY(`course_id`) REFERENCES `courses`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`package_id`) REFERENCES `packages`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`course_id` TEXT NOT NULL, `package_id` TEXT NOT NULL, `position` INTEGER NOT NULL, `allocated_doses` INTEGER NOT NULL, PRIMARY KEY(`course_id`, `package_id`), FOREIGN KEY(`course_id`) REFERENCES `courses`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`package_id`) REFERENCES `packages`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "courseId",
@@ -677,7 +677,7 @@
           },
           {
             "table": "packages",
-            "onDelete": "RESTRICT",
+            "onDelete": "CASCADE",
             "onUpdate": "NO ACTION",
             "columns": [
               "package_id"
@@ -690,7 +690,7 @@
       },
       {
         "tableName": "active_package_assignments",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`package_id` TEXT NOT NULL, `course_id` TEXT NOT NULL, PRIMARY KEY(`package_id`), FOREIGN KEY(`package_id`) REFERENCES `packages`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`course_id`) REFERENCES `courses`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`package_id` TEXT NOT NULL, `course_id` TEXT NOT NULL, PRIMARY KEY(`package_id`), FOREIGN KEY(`package_id`) REFERENCES `packages`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`course_id`) REFERENCES `courses`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
         "fields": [
           {
             "fieldPath": "packageId",
@@ -725,7 +725,7 @@
         "foreignKeys": [
           {
             "table": "packages",
-            "onDelete": "RESTRICT",
+            "onDelete": "CASCADE",
             "onUpdate": "NO ACTION",
             "columns": [
               "package_id"
@@ -915,7 +915,7 @@
       },
       {
         "tableName": "stock_adjustments",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `package_id` TEXT NOT NULL, `kind` TEXT NOT NULL, `unit_id` TEXT NOT NULL, `observed_at` INTEGER NOT NULL, `occurred_at` INTEGER, `amount` TEXT, `before_amount` TEXT, `after_amount` TEXT, `delta` TEXT, `reason` TEXT, `note` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`package_id`) REFERENCES `packages`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `package_id` TEXT NOT NULL, `kind` TEXT NOT NULL, `unit_id` TEXT NOT NULL, `observed_at` INTEGER NOT NULL, `occurred_at` INTEGER, `amount` TEXT, `before_amount` TEXT, `after_amount` TEXT, `delta` TEXT, `reason` TEXT, `note` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`package_id`) REFERENCES `packages`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "id",
@@ -1004,7 +1004,7 @@
         "foreignKeys": [
           {
             "table": "packages",
-            "onDelete": "RESTRICT",
+            "onDelete": "CASCADE",
             "onUpdate": "NO ACTION",
             "columns": [
               "package_id"
@@ -1322,7 +1322,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'f6a288d23e80b3981346e604f02466f5')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'e04c860dcb628bfe9aae66487f72c638')"
     ]
   }
 }
