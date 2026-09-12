@@ -45,6 +45,7 @@ fun PackageProjection.toPresentationDTO(syncedAt: Instant? = null): PackagePrese
         availableToMe = availability.availableToMe.toPresentationDTO(),
         freeForAnyone = availability.freeForAnyone.toPresentationDTO(),
         hasUnconfirmedChanges = hasUnconfirmedChanges,
+        pending = pending,
         syncedAt = syncedAt
     )
 

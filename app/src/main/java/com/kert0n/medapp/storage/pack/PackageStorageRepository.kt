@@ -3,6 +3,7 @@ package com.kert0n.medapp.storage.pack
 import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageEnding
+import com.kert0n.medapp.domain.pack.PackagePending
 import com.kert0n.medapp.domain.pack.PackageProjection
 import com.kert0n.medapp.domain.pack.PackageFacts
 import com.kert0n.medapp.network.pack.PackageSnapshot
@@ -61,6 +62,13 @@ interface PackageStorageRepository {
      * `false` — пачки и так нет.
      */
     suspend fun end(ending: PackageEnding, at: Instant): Boolean
+
+    /**
+     * Что доставка делает с коробкой сейчас (PLAN E1). Помеченную на удаление сценарии не берут:
+     * решение человек уже принял, и полке осталось согласиться — принять из такой коробки нельзя,
+     * и источником курса её не назначают. `NOTHING` — и у пачки, которой уже нет.
+     */
+    suspend fun pendingOf(packageId: Uuid): PackagePending
 
     /**
      * Живые пачки аптечки — сущности для сценария, который разбирает её по коробкам в своей

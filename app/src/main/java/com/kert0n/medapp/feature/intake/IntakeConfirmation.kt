@@ -3,6 +3,7 @@ package com.kert0n.medapp.feature.intake
 import com.kert0n.medapp.domain.course.CourseCompletion
 import com.kert0n.medapp.domain.course.CourseProgress
 import com.kert0n.medapp.domain.pack.PackageAfter
+import com.kert0n.medapp.domain.pack.PackagePending
 import com.kert0n.medapp.domain.pack.PackageAvailability
 import com.kert0n.medapp.feature.course.CourseClosing
 import com.kert0n.medapp.domain.intake.CourseIntake
@@ -64,6 +65,11 @@ class IntakeConfirmation @Inject constructor(
         if (!record.isOpen) return rejected(IntakeRejected.Reason.EPISODE_CLOSED)
         val course = checkNotNull(courses.findPlan(intake.courseId)) { "у идущего эпизода есть план" }
         val pkg = packages.find(packageId) ?: return rejected(IntakeRejected.Reason.PACKAGE_UNUSABLE)
+        // Помеченная на удаление коробка показана неактивной, но экран мог отстать: решение
+        // человек уже принял, и принимать из неё нечего (PLAN E1).
+        if (packages.pendingOf(packageId) == PackagePending.REMOVAL) {
+            return rejected(IntakeRejected.Reason.PACKAGE_UNUSABLE)
+        }
         if (amount.unit != intake.unit) return rejected(IntakeRejected.Reason.UNIT_MISMATCH)
         // Пункт курса принимают из пачки курса; из любой другой это внеплановый факт, и пункт им
         // не закрывается (PLAN D5). Отказ — до `take`: не записано ничего.

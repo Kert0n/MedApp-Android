@@ -4,6 +4,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kert0n.medapp.domain.course.CourseDraft
 import com.kert0n.medapp.domain.course.Revision
 import com.kert0n.medapp.domain.medkit.MedKit
+import com.kert0n.medapp.domain.pack.PackagePending
 import com.kert0n.medapp.domain.stock.StockMovement
 import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.HOME_KIT
@@ -124,6 +125,10 @@ class PackageRemovalTest {
         val projection = requireNotNull(database.packageRepository().observe(PACK).first())
         assertEquals(tablets("0"), projection.availability.effective)
         assertTrue(projection.hasUnconfirmedChanges)
+        // Коробка показана — и показана помеченной: человеку видно, что решение принято, а полка
+        // ещё не согласилась (PLAN E1).
+        assertEquals(PackagePending.REMOVAL, projection.pending)
+        assertEquals(PackagePending.REMOVAL, database.packageRepository().pendingOf(PACK))
     }
 
     @Test

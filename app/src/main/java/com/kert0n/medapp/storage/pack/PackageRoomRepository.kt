@@ -7,6 +7,7 @@ import com.kert0n.medapp.domain.pack.PackageAfter
 import com.kert0n.medapp.domain.pack.PackageAvailability
 import com.kert0n.medapp.domain.pack.PackageEnding
 import com.kert0n.medapp.domain.pack.PackageFacts
+import com.kert0n.medapp.domain.pack.PackagePending
 import com.kert0n.medapp.domain.pack.PackageProjection
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.Vocabulary
@@ -73,6 +74,12 @@ class PackageRoomRepository @Inject constructor(
 
     private suspend fun finish(ending: PackageEnding, at: Instant) =
         packages.end(ending, courses, movements, vocabulary.snapshot(), at)
+
+    override suspend fun pendingOf(packageId: Uuid): PackagePending = database.withTransaction {
+        val words = vocabulary.snapshot()
+        val pkg = packages.find(packageId)?.toDomain(words) ?: return@withTransaction PackagePending.NOTHING
+        PackageQueueState(pkg, commandsOf(queue.unclosedOfPackages(listOf(packageId)), words)).pending
+    }
 
     override suspend fun contentsOf(medKitId: Uuid): List<Package> = database.withTransaction {
         val words = vocabulary.snapshot()
@@ -179,17 +186,20 @@ class PackageRoomRepository @Inject constructor(
         unclosed: List<SyncOperationStorageRow>,
         words: Vocabulary
     ): PackageProjection {
-        val commands = unclosed.mapNotNull {
-            (it.toDomain(words) as? StoredSyncOperation.Readable)?.operation?.command as? PackageSyncCommand
-        }
-        val state = PackageQueueState(pkg, commands)
+        val state = PackageQueueState(pkg, commandsOf(unclosed, words))
         val availability = PackageAvailability(
             pkg = pkg,
             effective = state.amount,
             myAllocation = allocation?.allocated(words, pkg.quantity.unit) ?: Quantity.zero(pkg.quantity.unit)
         )
-        return pkg.projection(availability, state.hasUnconfirmedChanges)
+        return pkg.projection(availability, state.hasUnconfirmedChanges, state.pending)
     }
+
+    /** Команды пачки из строк очереди; нечитаемую после обновления приложения пропускаем (PLAN F4). */
+    private fun commandsOf(rows: List<SyncOperationStorageRow>, words: Vocabulary): List<PackageSyncCommand> =
+        rows.mapNotNull {
+            (it.toDomain(words) as? StoredSyncOperation.Readable)?.operation?.command as? PackageSyncCommand
+        }
 
     /**
      * Незакрытые операции всего списка — одним чтением на порцию: спрашивать очередь про каждую

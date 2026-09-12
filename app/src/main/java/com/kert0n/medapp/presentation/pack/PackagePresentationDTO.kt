@@ -1,6 +1,7 @@
 package com.kert0n.medapp.presentation.pack
 
 import com.kert0n.medapp.domain.pack.ExpiryDate
+import com.kert0n.medapp.domain.pack.PackagePending
 import com.kert0n.medapp.presentation.value.FormPresentationDTO
 import com.kert0n.medapp.presentation.value.MoneyPresentationDTO
 import com.kert0n.medapp.presentation.value.QuantityPresentationDTO
@@ -47,5 +48,6 @@ data class PackagePresentationDTO(
     val availableToMe: QuantityPresentationDTO,
     val freeForAnyone: QuantityPresentationDTO,
     val hasUnconfirmedChanges: Boolean,
+    val pending: PackagePending,
     val syncedAt: Instant?
 )

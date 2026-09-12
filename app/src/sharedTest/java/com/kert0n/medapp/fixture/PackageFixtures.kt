@@ -8,6 +8,7 @@ import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageAfter
 import com.kert0n.medapp.domain.pack.PackageEnding
 import com.kert0n.medapp.domain.pack.PackageFacts
+import com.kert0n.medapp.domain.pack.PackagePending
 import com.kert0n.medapp.domain.pack.PackageProjection
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
 import com.kert0n.medapp.domain.value.DosageForm
@@ -74,8 +75,11 @@ fun pack(
 )
 
 /** Проекция пачки без очереди и выделений: оценка равна подтверждённому остатку. */
-fun Package.projected(hasUnconfirmedChanges: Boolean = false): PackageProjection =
-    projection(PackageAvailability(this, effective = quantity), hasUnconfirmedChanges)
+fun Package.projected(
+    hasUnconfirmedChanges: Boolean = false,
+    pending: PackagePending = PackagePending.NOTHING
+): PackageProjection =
+    projection(PackageAvailability(this, effective = quantity), hasUnconfirmedChanges, pending)
 
 /**
  * Оставшаяся после перехода коробка. Тест, который её ждёт, говорит об этом прямо, а не молча

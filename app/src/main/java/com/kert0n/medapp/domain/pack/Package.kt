@@ -51,7 +51,11 @@ class Package(
      * Как пачку видит экран: состояние вместе с доступностью, посчитанной тем, кто читал очередь и
      * выделения (PLAN D4, E1). Величина — наружу уходит она, а не сущность.
      */
-    fun projection(availability: PackageAvailability, hasUnconfirmedChanges: Boolean): PackageProjection =
+    fun projection(
+        availability: PackageAvailability,
+        hasUnconfirmedChanges: Boolean,
+        pending: PackagePending = PackagePending.NOTHING
+    ): PackageProjection =
         PackageProjection(
             id = id,
             medKit = medKit,
@@ -61,7 +65,8 @@ class Package(
             templateId = templateId,
             claims = claims,
             availability = availability,
-            hasUnconfirmedChanges = hasUnconfirmedChanges
+            hasUnconfirmedChanges = hasUnconfirmedChanges,
+            pending = pending
         )
 
     /**

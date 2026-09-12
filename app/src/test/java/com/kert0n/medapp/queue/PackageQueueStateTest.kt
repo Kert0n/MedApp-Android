@@ -9,6 +9,9 @@ import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.millilitres
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.dose
+import com.kert0n.medapp.domain.pack.PackagePending
+import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.tablets
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -126,6 +129,33 @@ class PackageQueueStateTest {
         )
         assertEquals(tablets("20"), state.amount)
         assertFalse(state.hasUnconfirmedChanges)
+    }
+
+    /**
+     * Что доставка делает с коробкой — вопрос о ней, а не о числе: правка описания числа не
+     * трогает, но коробку помечает, а удаление делает её неактивной (PLAN E1).
+     */
+    @Test
+    fun deliveryTellsWhatIsHappeningToTheBoxAndNotToTheNumber() {
+        val quiet = PackageQueueState(pack(quantity = tablets("20")))
+        assertEquals(PackagePending.NOTHING, quiet.pending)
+
+        val described = PackageQueueState(
+            pack(quantity = tablets("20")),
+            listOf(PackageSyncCommand.Describe(PACK, paracetamol, paracetamol.copy(country = "Чехия")))
+        )
+        assertEquals(PackagePending.CHANGES, described.pending)
+        assertFalse("правка описания числа не трогает", described.hasUnconfirmedChanges)
+
+        val removed = PackageQueueState(pack(quantity = tablets("20")), listOf(PackageSyncCommand.Delete(PACK)))
+        assertEquals(PackagePending.REMOVAL, removed.pending)
+
+        // Пересчёт в ноль на проводе становится удалением, и коробка помечена так же (B6).
+        val toZero = PackageQueueState(
+            pack(quantity = tablets("20")),
+            listOf(PackageSyncCommand.CorrectStock(PACK, Quantity.zero(TABLETS)))
+        )
+        assertEquals(PackagePending.REMOVAL, toZero.pending)
     }
 
     @Test

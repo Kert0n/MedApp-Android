@@ -13,6 +13,8 @@ import kotlin.uuid.Uuid
  *
  * [availability] — оценка с незакрытыми командами очереди поверх, [hasUnconfirmedChanges] —
  * вложено ли в неё незакрытое изменение остатка (PLAN E1); [quantity] — подтверждённое.
+ * [pending] — что доставка делает с самой коробкой: вопрос не о числе, и экран показывает его
+ * отдельно.
  */
 data class PackageProjection(
     val id: Uuid,
@@ -23,7 +25,8 @@ data class PackageProjection(
     val templateId: Uuid?,
     val claims: Claims?,
     val availability: PackageAvailability,
-    val hasUnconfirmedChanges: Boolean
+    val hasUnconfirmedChanges: Boolean,
+    val pending: PackagePending = PackagePending.NOTHING
 ) {
     init {
         require(availability.packageId == id) { "доступность принадлежит своей пачке" }
