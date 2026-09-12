@@ -85,7 +85,7 @@ class PackageFormViewModelTest {
         val receipt = movements.recorded.single() as StockMovement.Receipt
         assertEquals(written.id, receipt.pkg.id)
         assertEquals(tablets("20"), receipt.amount)
-        assertEquals(written.medKit, receipt.medKit)
+        assertEquals(now, receipt.occurredAt)
     }
 
     /** Две одинаково названные пачки — две пачки: покупка другой коробки не пополняет старую. */

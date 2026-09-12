@@ -47,9 +47,10 @@ class PackageAdjusting @Inject constructor(
     )
 
     /**
-     * Перенос меняет место, а не остаток: в истории у него два конца, и разойтись они не могут
-     * (PLAN D7). Аптечка назначения читается в той же транзакции, что и сам перенос: удалённая
-     * между выбором и подтверждением — это «переносить некуда», а не пачка в несуществующем месте.
+     * Перенос меняет место, а не остаток, и следа в истории не оставляет: истрачено ничего не
+     * было, а где коробка лежит, знает сама пачка (PLAN D7). Аптечка назначения читается в той же
+     * транзакции, что и сам перенос: удалённая между выбором и подтверждением — это «переносить
+     * некуда», а не пачка в несуществующем месте.
      *
      * Перенос между местными аптечками — целиком дело устройства (PLAN E6); перенос в общую
      * требует связи и появится вместе с публикацией.
@@ -58,12 +59,7 @@ class PackageAdjusting @Inject constructor(
         transactions.run {
             val target = medKits.find(targetId) ?: return@run false
             packages.adjust(
-                PackageAdjustment.Transfer(
-                    packageId,
-                    target.ref,
-                    movementId = Uuid.random(),
-                    note = note
-                ),
+                PackageAdjustment.Transfer(packageId, target.ref, note = note),
                 at = clock.instant()
             )
         }

@@ -49,7 +49,6 @@ class PackageCreation @Inject constructor(
                     id = Uuid.random(),
                     pkg = pkg.ref,
                     amount = amount,
-                    medKit = medKit.ref,
                     occurredAt = now,
                     observedAt = now
                 )

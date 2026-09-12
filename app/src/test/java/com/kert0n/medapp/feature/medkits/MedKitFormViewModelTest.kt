@@ -43,6 +43,8 @@ class MedKitFormViewModelTest {
         override suspend fun find(id: Uuid): MedKit? = stored
         override fun observeSyncedAt(id: Uuid): Flow<Instant?> = emptyFlow()
         override suspend fun save(medKit: MedKit, syncedAt: Instant?) { saved += medKit }
+        override suspend fun delete(id: Uuid): Boolean = false
+
         override suspend fun describe(id: Uuid, name: String, location: String?): Boolean {
             described += Triple(id, name, location)
             return true

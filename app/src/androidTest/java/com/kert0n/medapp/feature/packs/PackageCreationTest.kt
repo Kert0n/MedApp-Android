@@ -70,7 +70,6 @@ class PackageCreationTest {
         assertEquals(now, written?.addedAt)
         val receipt = database.movementRepository().ofPackage(id).single() as StockMovement.Receipt
         assertEquals(tablets("20"), receipt.amount)
-        assertEquals(HOME_KIT, receipt.medKit.id)
         assertEquals(now, receipt.occurredAt)
     }
 

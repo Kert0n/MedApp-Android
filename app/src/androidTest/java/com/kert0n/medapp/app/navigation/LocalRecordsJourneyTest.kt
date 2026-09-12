@@ -2,6 +2,8 @@ package com.kert0n.medapp.app.navigation
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -48,10 +50,19 @@ class LocalRecordsJourneyTest {
         compose.onNodeWithText("Домашняя").assertIsDisplayed()
     }
 
-    /** Заводит упаковку через экраны 4 и 7: четырёх полей достаточно. */
+    private fun openMedKit() = compose.onNodeWithText("Домашняя").performClick()
+
+    /**
+     * Заводит упаковку через экран 7. Первую зовёт пустой экран, следующие — кнопка внизу:
+     * подпись у них одна, и различать их тесту незачем.
+     */
     private fun createPackage(name: String = "Парацетамол", amount: String = "20") {
-        compose.onNodeWithText("Домашняя").performClick()
-        compose.onNodeWithText("Завести упаковку").performClick()
+        val invitation = compose.onAllNodesWithText("Завести упаковку")
+        if (invitation.fetchSemanticsNodes().isNotEmpty()) {
+            invitation.onFirst().performClick()
+        } else {
+            compose.onNodeWithContentDescription("Завести упаковку").performClick()
+        }
         compose.onNodeWithText("Название").performTextInput(name)
         compose.onNodeWithText("Количество").performTextInput(amount)
         compose.onNodeWithText("Единица").performClick()
@@ -71,6 +82,7 @@ class LocalRecordsJourneyTest {
         start()
 
         createMedKit()
+        openMedKit()
         createPackage()
 
         compose.onNodeWithText("Парацетамол").assertIsDisplayed()
@@ -89,9 +101,9 @@ class LocalRecordsJourneyTest {
     fun twoPackagesOfTheSameNameStayTwo() {
         start()
         createMedKit()
+        openMedKit()
 
         createPackage(amount = "20")
-        back()
         createPackage(amount = "10")
 
         compose.onNodeWithText("20 шт").assertIsDisplayed()
@@ -103,8 +115,8 @@ class LocalRecordsJourneyTest {
     fun searchFromTheMedKitListLooksEverywhere() {
         start()
         createMedKit()
+        openMedKit()
         createPackage()
-        back()
         back()
 
         compose.onNodeWithText("Найти лекарство во всех аптечках").performClick()
@@ -123,6 +135,7 @@ class LocalRecordsJourneyTest {
     fun everyScreenOfLocalRecordsIsReachableAndLeadsBack() {
         start()
         createMedKit()
+        openMedKit()
         createPackage()
 
         compose.onNodeWithText("Парацетамол").performClick()

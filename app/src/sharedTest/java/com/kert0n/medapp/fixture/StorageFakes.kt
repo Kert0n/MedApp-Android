@@ -2,6 +2,7 @@ package com.kert0n.medapp.fixture
 
 import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.medkit.MedKitProjection
+import com.kert0n.medapp.domain.medkit.MedKitRef
 import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageFacts
@@ -76,13 +77,37 @@ class FakePackages(vararg packs: Package) : PackageStorageRepository {
         val stored = stored[adjustment.packageId] ?: return false
         val applied = adjustment.applyTo(stored, at)
         this.stored[applied.pack.id] = applied.pack
-        movements += applied.movement
+        // След есть не у всякого перехода: перенос остаток не меняет и записи не оставляет (D7).
+        applied.movement?.let { movements += it }
         changes.value++
         return true
     }
 
     /** След, оставленный переходами: пересчёт и утилизация без него — потерянное лекарство. */
     val movements = mutableListOf<StockMovement>()
+
+    override suspend fun delete(packageId: Uuid): Boolean {
+        val removed = stored.remove(packageId) != null
+        if (removed) {
+            // Движения — части пачки: их уносит та же операция, что и её саму (PLAN D3).
+            movements.removeAll { it.pkg.id == packageId }
+            changes.value++
+        }
+        return removed
+    }
+
+    override suspend fun moveContents(from: Uuid, to: Uuid): Int {
+        val moved = stored.values.filter { it.medKit.id == from }
+        moved.forEach { stored[it.id] = it.inMedKit(to) }
+        if (moved.isNotEmpty()) changes.value++
+        return moved.size
+    }
+
+    override suspend fun deleteContentsOf(medKitId: Uuid): Int {
+        val gone = stored.values.filter { it.medKit.id == medKitId }.map { it.id }
+        gone.forEach { delete(it) }
+        return gone.size
+    }
 
     override suspend fun applySnapshot(snapshot: PackageSnapshot, observedAt: Instant): SnapshotApplied =
         SnapshotApplied(pack = false, claims = false)
@@ -96,6 +121,22 @@ class FakePackages(vararg packs: Package) : PackageStorageRepository {
             (query.medKitId == null || pkg.medKit.id == query.medKitId) &&
             (query.searchText.isEmpty() || pkg.name.lowercase().contains(query.searchText))
     }
+
+    /**
+     * Пачка в другом месте: переезд содержимого — правка строки, а не переход пачки, поэтому
+     * архивная переезжает вместе с живой (PLAN E6).
+     */
+    private fun Package.inMedKit(medKitId: Uuid): Package = Package(
+        id = id,
+        medKit = MedKitRef(medKitId, medKit.publication),
+        facts = facts,
+        quantity = quantity,
+        addedAt = addedAt,
+        templateId = templateId,
+        claims = claims,
+        lifecycle = lifecycle,
+        access = access
+    )
 
     private fun change(packageId: Uuid, transition: (Package) -> Package): Boolean {
         val stored = stored[packageId] ?: return false
@@ -139,7 +180,13 @@ class FakeMedKits(vararg kits: MedKit) : MedKitStorageRepository {
         return true
     }
 
-    /** Аптечку удаляют сценарием, поэтому подделка умеет и это. */
+    override suspend fun delete(id: Uuid): Boolean {
+        val removed = stored.remove(id) != null
+        if (removed) changes.value++
+        return removed
+    }
+
+    /** «Аптечку удалили, пока экран был открыт» — то же самое, что и удаление сценарием. */
     fun forget(id: Uuid) {
         stored.remove(id)
         changes.value++

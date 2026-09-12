@@ -81,19 +81,18 @@ class PackageAdjustingTest {
     }
 
     /**
-     * Перенос между местными аптечками — одна транзакция: место пачки и запись с двумя концами
-     * (PLAN E6, D7).
+     * Перенос между местными аптечками — одна транзакция: читается аптечка назначения и
+     * переставляется место (PLAN E6). Истории он не касается: истрачено ничего не было (D7).
      */
     @Test
-    fun aLocalTransferMovesThePackageAndItsHistoryTogether() = runTest {
+    fun aLocalTransferMovesThePackageAndSpendsNothing() = runTest {
         stored()
 
         assertTrue(adjusting.moveTo(PACK, SHARED_KIT))
 
         assertEquals(SHARED_KIT, database.packageRepository().find(PACK)?.medKit?.id)
-        val movement = database.movementRepository().ofPackage(PACK).single() as StockMovement.Transfer
-        assertEquals(HOME_KIT, movement.source.id)
-        assertEquals(SHARED_KIT, movement.target.id)
+        assertEquals(tablets("20"), database.packageRepository().find(PACK)?.quantity)
+        assertTrue(database.movementRepository().ofPackage(PACK).isEmpty())
     }
 
     /** Аптечки назначения нет — переносить некуда, и не записано ничего. */

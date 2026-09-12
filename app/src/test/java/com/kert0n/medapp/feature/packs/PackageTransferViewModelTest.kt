@@ -1,7 +1,6 @@
 package com.kert0n.medapp.feature.packs
 
 import com.kert0n.medapp.domain.medkit.MedKit
-import com.kert0n.medapp.domain.stock.StockMovement
 import com.kert0n.medapp.fixture.DirectTransactions
 import com.kert0n.medapp.fixture.FakeMedKits
 import com.kert0n.medapp.fixture.FakePackages
@@ -67,13 +66,14 @@ class PackageTransferViewModelTest {
     }
 
     /**
-     * Перенос переставляет место, а не остаток, и оставляет в истории оба конца (PLAN D7).
+     * Перенос переставляет место и только его: остаток не трогается, а истории расхода он не
+     * касается вовсе — истрачено ничего не было (PLAN D7).
      *
-     * Красная проверка: записать перенос без движения — лекарство переедет молча, и в отчёте
-     * аптечки останется расход без причины.
+     * Красная проверка: списать при переносе хоть сколько-нибудь — остаток изменится, и случай
+     * краснеет.
      */
     @Test
-    fun aTransferMovesThePackageAndSaysWhereFrom() = runTest {
+    fun aTransferMovesThePackageAndSpendsNothing() = runTest {
         val transfer = viewModel(kits(medKit(id = SHARED_KIT, name = "Дача")))
         transfer.choose(SHARED_KIT)
 
@@ -84,10 +84,7 @@ class PackageTransferViewModelTest {
         val written = packages.packages.single()
         assertEquals(SHARED_KIT, written.medKit.id)
         assertEquals(tablets("20"), written.quantity)
-        val movement = packages.movements.single() as StockMovement.Transfer
-        assertEquals(HOME_KIT, movement.source.id)
-        assertEquals(SHARED_KIT, movement.target.id)
-        assertEquals(tablets("20"), movement.amount)
+        assertTrue("перенос ничего не тратит", packages.movements.isEmpty())
     }
 
     /** Общая аптечка не предлагается, но и не пропадает без слова: об этом говорит экран. */
