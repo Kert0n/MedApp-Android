@@ -71,10 +71,15 @@ class IntakeStorageRow(
     private fun answeredMoment(): Instant =
         requireNotNull(intake.answeredAt) { "у отвеченного приёма есть момент ответа" }
 
+    /**
+     * Пачка у состоявшегося приёма может быть уже удалена: факт остаётся, ссылка пустеет
+     * (`SET NULL` в схеме, PLAN D6, F1). Само количество и момент при этом на месте — они
+     * записаны в строке приёма, а не вычитываются из пачки.
+     */
     private fun takenDose(unit: QuantityUnit, vocabulary: Vocabulary): TakenDose? {
         val amount = intake.takenAmount ?: return null
         return TakenDose(
-            pkg = requireNotNull(taken) { "у принятой дозы есть своя пачка" }.toRef(vocabulary),
+            pkg = taken?.toRef(vocabulary),
             amount = storedDose(amount, unit),
             at = answeredMoment()
         )

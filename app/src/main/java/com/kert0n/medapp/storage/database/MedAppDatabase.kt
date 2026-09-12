@@ -92,8 +92,9 @@ abstract class MedAppDatabase : RoomDatabase() {
 
         /**
          * Движение стало записью о пачке: аптечек в нём нет и переносов как вида нет (PLAN D7).
-         * Убрать колонку, на которой висит внешний ключ, SQLite не умеет, поэтому таблица
-         * пересоздаётся и переливается.
+         * Приём стал переживать удаление пачки: ключи на неё — `SET NULL` (PLAN D6). Ни убрать
+         * колонку с внешним ключом, ни поменять его поведение SQLite не умеет, поэтому обе
+         * таблицы пересоздаются и переливаются.
          *
          * Строки переносов не переносятся: они говорили только о местах, а место у пачки одно и
          * известно ей самой.
@@ -128,6 +129,46 @@ abstract class MedAppDatabase : RoomDatabase() {
                 connection.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_stock_adjustments_package_id_observed_at` " +
                         "ON `stock_adjustments` (`package_id`, `observed_at`)"
+                )
+
+                // Приём переживает удаление пачки: ссылка пустеет, факт остаётся (PLAN D6).
+                connection.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `intakes_new` (
+                        `id` TEXT NOT NULL, `unit_id` TEXT NOT NULL, `status` TEXT NOT NULL,
+                        `course_id` TEXT, `course_revision` INTEGER, `scheduled_on` TEXT,
+                        `scheduled_time` INTEGER, `scheduled_at` INTEGER, `planned_amount` TEXT,
+                        `planned_package_id` TEXT, `answered_at` INTEGER, `taken_package_id` TEXT,
+                        `taken_amount` TEXT, `accounting` TEXT NOT NULL, `operation_id` TEXT,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`course_id`) REFERENCES `course_records`(`id`)
+                            ON UPDATE NO ACTION ON DELETE RESTRICT ,
+                        FOREIGN KEY(`planned_package_id`) REFERENCES `packages`(`id`)
+                            ON UPDATE NO ACTION ON DELETE SET NULL ,
+                        FOREIGN KEY(`taken_package_id`) REFERENCES `packages`(`id`)
+                            ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                    """.trimIndent()
+                )
+                connection.execSQL("INSERT INTO `intakes_new` SELECT * FROM `intakes`")
+                connection.execSQL("DROP TABLE `intakes`")
+                connection.execSQL("ALTER TABLE `intakes_new` RENAME TO `intakes`")
+                connection.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS " +
+                        "`index_intakes_course_id_scheduled_on_scheduled_time` " +
+                        "ON `intakes` (`course_id`, `scheduled_on`, `scheduled_time`)"
+                )
+                connection.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_intakes_planned_package_id` " +
+                        "ON `intakes` (`planned_package_id`)"
+                )
+                connection.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_intakes_taken_package_id` " +
+                        "ON `intakes` (`taken_package_id`)"
+                )
+                connection.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_intakes_operation_id` " +
+                        "ON `intakes` (`operation_id`)"
                 )
             }
         }

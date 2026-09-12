@@ -137,7 +137,7 @@ class IntakeTest {
         // У внепланового факта по типу нет полей курса и расписания; единственный статус — TAKEN.
         val fact = unplannedIntake()
         assertEquals(IntakeStatus.TAKEN, fact.status)
-        assertEquals(PACK, fact.taken.pkg.id)
+        assertEquals(PACK, fact.taken.pkg?.id)
         assertEquals(dose("1"), fact.taken.amount)
     }
 
@@ -182,7 +182,7 @@ class IntakeTest {
         val taken = pack(quantity = tablets("10")).take(dose("2"), LATER).getOrThrow()
         assertEquals(dose("2"), taken.amount)
         assertEquals(LATER, taken.at)
-        assertEquals(PACK, taken.pkg.id)
+        assertEquals(PACK, taken.pkg?.id)
     }
 
     @Test
@@ -191,7 +191,7 @@ class IntakeTest {
         // пачки — ссылка, и её смена историю не переписывает и не делает нечитаемой.
         val recorded = TakenDose(pack(quantity = millilitres("100")).ref, dose("2"), LATER)
         assertEquals(TABLETS, recorded.amount.unit)
-        assertEquals(MILLILITRES, recorded.pkg.unit)
+        assertEquals(MILLILITRES, recorded.pkg?.unit)
     }
 
     @Test
@@ -199,5 +199,21 @@ class IntakeTest {
         // Проверка переехала на саму дозу: собрать её из нуля нельзя, и до подтверждения дело
         // уже не доходит.
         assertThrows(IllegalArgumentException::class.java) { dose("0") }
+    }
+
+    /**
+     * Пачку удалили, а приём был: факт называет количество и время без неё. История лечения
+     * держится на записи эпизода и на самом приёме, а не на картонной коробке (PLAN D6).
+     *
+     * Красная проверка: потребовать пачку у факта — прошлое станет нечитаемым ровно тогда, когда
+     * человек выбросил аптечку.
+     */
+    @Test
+    fun aFactOutlivesThePackageItCameFrom() {
+        val forgotten = TakenDose(pkg = null, amount = dose("2"), at = LATER)
+
+        assertEquals(dose("2"), forgotten.amount)
+        assertEquals(LATER, forgotten.at)
+        assertNull(forgotten.pkg)
     }
 }

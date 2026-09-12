@@ -73,8 +73,10 @@ class IntakeRoomRepository @Inject constructor(
         // Пачку читаем до ответа: списывать не из чего — значит и факта не записываем, иначе
         // приём разошёлся бы с остатком.
         val source = if (outcome.spendsLocally) {
-            val taken = requireNotNull(outcome.taken) { "локальный расход называет свою пачку" }
-            packages.find(taken.pkg.id) ?: return@withTransaction false
+            // Записываемый приём называет пачку всегда: пустой она бывает только у прочитанного
+            // прошлого, у которого пачку успели удалить (PLAN D6).
+            val taken = requireNotNull(outcome.taken?.pkg) { "локальный расход называет свою пачку" }
+            packages.find(taken.id) ?: return@withTransaction false
         } else {
             null
         }

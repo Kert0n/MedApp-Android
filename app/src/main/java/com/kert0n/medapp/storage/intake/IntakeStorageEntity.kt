@@ -46,13 +46,13 @@ import kotlin.uuid.Uuid
             entity = PackageStorageEntity::class,
             parentColumns = ["id"],
             childColumns = ["planned_package_id"],
-            onDelete = ForeignKey.RESTRICT
+            onDelete = ForeignKey.SET_NULL
         ),
         ForeignKey(
             entity = PackageStorageEntity::class,
             parentColumns = ["id"],
             childColumns = ["taken_package_id"],
-            onDelete = ForeignKey.RESTRICT
+            onDelete = ForeignKey.SET_NULL
         )
     ],
     indices = [
