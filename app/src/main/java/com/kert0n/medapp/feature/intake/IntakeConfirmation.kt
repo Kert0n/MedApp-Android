@@ -1,7 +1,9 @@
 package com.kert0n.medapp.feature.intake
 
+import com.kert0n.medapp.domain.course.CourseCompletion
 import com.kert0n.medapp.domain.course.CourseProgress
-import com.kert0n.medapp.domain.course.CourseRecord
+import com.kert0n.medapp.domain.pack.PackageAvailability
+import com.kert0n.medapp.feature.course.CourseClosing
 import com.kert0n.medapp.domain.intake.CourseIntake
 import com.kert0n.medapp.domain.intake.IntakeRejected
 import com.kert0n.medapp.domain.intake.IntakeStatus
@@ -28,8 +30,9 @@ import kotlin.uuid.Uuid
  * Целое действие «принял» по пункту курса: факт, остаток, прогресс, обеспечение пачки, конец
  * эпизода и доставка согласуются одной транзакцией и по тому, что лежит в базе, а не по тому, что
  * экран прочитал раньше (PLAN D5, D6, F5). Своя аптечка списывает локально, общая ставит расход
- * командой — и отправку после коммита просит служба очереди, а человек её не ждёт: подтверждение
- * записано, и от сети оно не зависит (PLAN E4).
+ * командой — её заберёт outbox после коммита, а человек её не ждёт: подтверждение записано, и от
+ * сети оно не зависит (PLAN E4). Домен считает от факта — подтверждённого остатка и чужих
+ * броней; незакрытые команды очереди — доставка, и о ней он не думает (PLAN D4).
  */
 class IntakeConfirmation @Inject constructor(
     private val intakes: IntakeStorageRepository,
@@ -37,6 +40,7 @@ class IntakeConfirmation @Inject constructor(
     private val packages: PackageStorageRepository,
     private val transactions: QueueStorage,
     private val queue: QueueService,
+    private val closing: CourseClosing,
     private val clock: Clock
 ) {
 
@@ -67,12 +71,13 @@ class IntakeConfirmation @Inject constructor(
             taken = others.filter { it.status == IntakeStatus.TAKEN }.mapTo(HashSet()) { it.slot } + confirmed.slot,
             missed = others.filter { it.status == IntakeStatus.MISSED }.mapTo(HashSet()) { it.slot }
         )
-        val finished = course.remainingDoses(progress).isNone
+        val completion = CourseCompletion(course, progress)
+        val finished = completion.reached
 
         // Выделение пачки после приёма и бронь, которая уезжает вместе с расходом (PLAN D5, E2).
         val allocated = course.sources.firstOrNull { it.pkg == pkg.ref }?.allocatedDoses
         val reallocation = if (allocated == null || finished) null else {
-            val availableAfter = checkNotNull(packages.availability(pkg.id)).availableToMe.minusOrZero(amount.quantity)
+            val availableAfter = PackageAvailability(pkg, effective = pkg.quantity).availableToMe.minusOrZero(amount.quantity)
             val doses = course.dosesAfterIntake(pkg.ref, amount, availableAfter)
             if (doses == allocated) null else CourseReallocation(course.allocate(pkg.ref, doses, now), course.revision)
         }
@@ -95,15 +100,8 @@ class IntakeConfirmation @Inject constructor(
         check(recorded) { "пункт и пачка прочитаны этой же транзакцией" }
 
         if (finished) {
-            val cancelled = intakes.ofCourse(course.id).filterIsInstance<CourseIntake>()
-                .filter { it.status == IntakeStatus.PLANNED }
-                .map { it.cancel(now) }
-            courses.close(record.close(CourseRecord.Outcome.COMPLETED, now), cancelled)
-            for (source in course.sources) {
-                if (source.pkg == pkg.ref) continue
-                val released = QueuedCommand(Uuid.random(), PackageSyncCommand.ReleaseClaim(source.pkg.id))
-                queue.change(source.pkg.medKit, listOf(released), now) { true }
-            }
+            // Снятие брони с этой пачки уже уехало зависимым от расхода — второй раз не ставится.
+            closing.close(course, completion.close(record, intakes.ofCourse(course.id).filterIsInstance<CourseIntake>(), now), now, except = pkg.ref)
         } else {
             intakes.prunePlanned(course.id, course.remainingOccurrences(progress).toSet())
         }

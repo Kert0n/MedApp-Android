@@ -30,9 +30,6 @@ interface PackageStorageRepository {
      */
     fun observeAvailability(id: Uuid): Flow<PackageAvailability?>
 
-    /** То же одним чтением — для сценария, который считает по ней внутри своей транзакции. */
-    suspend fun availability(id: Uuid): PackageAvailability?
-
     /** Список экрана: `today` приходит аргументом, потому что база системных часов не читает. */
     fun list(query: PackageQuery, today: LocalDate): Flow<List<Package>>
 

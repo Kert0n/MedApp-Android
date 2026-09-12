@@ -8,6 +8,7 @@ import com.kert0n.medapp.domain.intake.IntakeRejected
 import com.kert0n.medapp.domain.intake.IntakeStatus
 import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.value.Doses
+import com.kert0n.medapp.feature.course.CourseClosing
 import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.FIRST_PLANNED_AT
 import com.kert0n.medapp.fixture.INTAKE
@@ -79,7 +80,8 @@ class IntakeConfirmationTest {
         packages = database.packageRepository()
         val queue = database.queueStorage()
         val clock = Clock.fixed(now, ZoneOffset.UTC)
-        confirmation = IntakeConfirmation(intakes, courses, packages, queue, QueueService(queue), clock)
+        val service = QueueService(queue)
+        confirmation = IntakeConfirmation(intakes, courses, packages, queue, service, CourseClosing(courses, service), clock)
         packages.add(pack(quantity = tablets("20")))
     }
 
@@ -133,6 +135,23 @@ class IntakeConfirmationTest {
         val consume = commands().single() as PackageSyncCommand.Consume
         assertEquals(INTAKE, consume.intakeId)
         assertEquals(0, BigDecimal("8").compareTo(requireNotNull(consume.claimAfter).amount))
+    }
+
+    /**
+     * Домен считает от факта: подтверждённый остаток минус чужие брони минус принятое. Незакрытый
+     * расход в очереди — доставка, и на выделение после приёма он не влияет (PLAN D4).
+     */
+    @Test
+    fun anUnclosedConsumeInTheQueueDoesNotChangeTheAllocationAfterTheIntake() = runTest {
+        publishHomeKit()
+        activate(totalDoses = 7)
+        // Уже уехавший расход на 15 таблеток: по свёртке очереди в пачке было бы 5.
+        database.syncOperations().enqueue(third, PackageSyncCommand.Consume(PACK, dose("15"), third), now)
+
+        confirmation.confirm(INTAKE, PACK, dose("2"), FIRST_PLANNED_AT).getOrThrow()
+
+        // От подтверждённых 20: выделено было 5 доз (10 таблеток), ушло 2 таблетки — осталось 4 дозы.
+        assertEquals(Doses(4), requireNotNull(courses.findPlan(COURSE)).sources.single().allocatedDoses)
     }
 
     @Test
