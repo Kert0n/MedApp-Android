@@ -24,6 +24,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -63,6 +64,7 @@ fun PackageFormScreen(
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
     packageId: Uuid? = null,
+    onChangeAmount: (Uuid) -> Unit = {},
     viewModel: PackageFormViewModel = hiltViewModel()
 ) {
     LaunchedEffect(medKitId, packageId) { viewModel.open(medKitId, packageId) }
@@ -103,11 +105,14 @@ fun PackageFormScreen(
                     value = state.medKits.firstOrNull { it.id == form.medKitId }?.name
                         ?: stringResource(R.string.pack_med_kit_unknown)
                 )
+                // Количество отсюда видно, а меняется оно там, где остаётся след, — на экране 9.
                 Stored(
                     label = stringResource(R.string.pack_amount),
                     value = state.stored?.let {
                         stringResource(R.string.pack_left, it.quantity.amount, it.quantity.unit.name)
-                    } ?: stringResource(R.string.state_loading)
+                    } ?: stringResource(R.string.state_loading),
+                    action = stringResource(R.string.pack_change_amount),
+                    onAction = { packageId?.let(onChangeAmount) }
                 )
             } else {
                 PickerField(
@@ -263,16 +268,31 @@ fun PackageFormScreen(
     }
 }
 
-/** Сведение, которое форма показывает, но не правит: его меняют другим действием и с другим следом. */
+/**
+ * Сведение, которое форма показывает, но не правит: его меняют другим действием и с другим
+ * следом. Куда идти за этим действием, сказано тут же — иначе человек ищет его по экранам.
+ */
 @Composable
-private fun Stored(label: String, value: String) {
+private fun Stored(
+    label: String,
+    value: String,
+    action: String? = null,
+    onAction: (() -> Unit)? = null
+) {
     Column(Modifier.fillMaxWidth()) {
         Text(
             label,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Text(value, style = MaterialTheme.typography.bodyLarge)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(value, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            if (action != null && onAction != null) {
+                TextButton(onClick = onAction, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) {
+                    Text(action)
+                }
+            }
+        }
     }
 }
 

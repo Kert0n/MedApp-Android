@@ -50,6 +50,7 @@
     <string name="pack_name">Название</string>
     <string name="pack_amount">Количество</string>
     <string name="pack_unit">Единица</string>
+    <string name="pack_change_amount">Изменить</string>
     <string name="pack_optional">Необязательное</string>
     <string name="pack_form">Форма выпуска</string>
     <string name="pack_category">Категория</string>
@@ -89,6 +90,28 @@
     <string name="action_pick_date">Выбрать дату</string>
     <string name="action_clear_date">Очистить дату</string>
     <string name="action_choose">Выбрать</string>
+
+    <!-- Пересчёт и утилизация -->
+    <string name="amount_title">Изменить количество</string>
+    <string name="amount_now">Сейчас записано: %1$s %2$s</string>
+    <string name="amount_tab_recount">Пересчитал</string>
+    <string name="amount_tab_disposal">Выбросил</string>
+    <string name="amount_recounted">Сколько теперь</string>
+    <string name="amount_disposed">Сколько выбросили</string>
+    <string name="amount_recount_explained">Запишется новое количество целиком, а не разница.</string>
+    <string name="amount_disposal_explained">Запишется убыль: сколько ушло и почему.</string>
+    <string name="amount_reason">Почему</string>
+    <string name="amount_reason_expired">Просрочено</string>
+    <string name="amount_reason_damaged">Испортилось</string>
+    <string name="amount_reason_other">Другое</string>
+    <string name="amount_note">Пояснение (необязательно)</string>
+    <string name="amount_record">Записать</string>
+    <string name="amount_nothing_to_dispose">Выбросить нисколько нельзя.</string>
+    <string name="amount_note_too_long">Пояснение длиннее %1$d символов.</string>
+    <string name="amount_zero_title">Упаковка уйдёт в архив</string>
+    <string name="amount_zero_explained">В ней не останется ничего. История сохранится: видно будет, сколько было и куда делось.</string>
+    <string name="amount_zero_confirm">Записать и в архив</string>
+    <string name="pack_action_recount">Пересчитать или выбросить</string>
 
     <!-- Отказы формы упаковки -->
     <string name="pack_med_kit_missing">Выберите аптечку: упаковка лежит в каком-то одном месте.</string>

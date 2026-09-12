@@ -50,4 +50,8 @@ sealed interface Route {
     /** Всё известное об одной упаковке (экран 6). */
     @Serializable
     data class PackageCard(val packageId: Uuid) : Route
+
+    /** Пересчёт и утилизация (экран 9): количество меняется здесь и только здесь. */
+    @Serializable
+    data class PackageAmount(val packageId: Uuid) : Route
 }

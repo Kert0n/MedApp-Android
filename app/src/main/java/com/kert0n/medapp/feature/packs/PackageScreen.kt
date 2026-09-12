@@ -58,6 +58,7 @@ fun PackageScreen(
     packageId: Uuid,
     onBack: () -> Unit,
     onEdit: (Uuid) -> Unit,
+    onChangeAmount: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: PackageViewModel = hiltViewModel()
 ) {
@@ -98,7 +99,7 @@ fun PackageScreen(
                 WhatItIs(pkg)
                 DatesAndPrice(pkg, state.today)
                 WhereItLies(state.medKit?.name, pkg)
-                Actions(onEdit = { onEdit(pkg.medKitId) })
+                Actions(onEdit = { onEdit(pkg.medKitId) }, onChangeAmount = onChangeAmount)
             }
         }
     }
@@ -198,18 +199,21 @@ private fun WhereItLies(medKitName: String?, pkg: PackagePresentationDTO) {
  * пересчёт и утилизация, место — перенос, и у каждого из них свой след в истории (PLAN D7).
  */
 @Composable
-private fun Actions(onEdit: () -> Unit) {
+private fun Actions(onEdit: () -> Unit, onChangeAmount: () -> Unit) {
     Section(stringResource(R.string.pack_actions)) {
-        TextButton(
-            onClick = onEdit,
-            modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp)
-        ) {
-            Icon(painterResource(R.drawable.ic_edit), contentDescription = null)
-            Text(
-                stringResource(R.string.pack_action_edit),
-                modifier = Modifier.padding(start = 8.dp).weight(1f)
-            )
-        }
+        Action(R.drawable.ic_calculate, R.string.pack_action_recount, onChangeAmount)
+        Action(R.drawable.ic_edit, R.string.pack_action_edit, onEdit)
+    }
+}
+
+@Composable
+private fun Action(icon: Int, text: Int, onClick: () -> Unit) {
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp)
+    ) {
+        Icon(painterResource(icon), contentDescription = null)
+        Text(stringResource(text), modifier = Modifier.padding(start = 8.dp).weight(1f))
     }
 }
 

@@ -28,6 +28,7 @@ import kotlin.uuid.Uuid
 import androidx.navigation.toRoute
 import com.kert0n.medapp.feature.medkits.MedKitFormScreen
 import com.kert0n.medapp.feature.packs.MedKitContentsScreen
+import com.kert0n.medapp.feature.packs.PackageAmountScreen
 import com.kert0n.medapp.feature.packs.PackageFormScreen
 import com.kert0n.medapp.feature.packs.PackageScreen
 import com.kert0n.medapp.feature.medkits.MedKitListScreen
@@ -106,7 +107,8 @@ private fun MedAppNavHost(navController: NavHostController, modifier: Modifier =
             PackageFormScreen(
                 medKitId = route.medKitId,
                 onDone = { navController.popBackStack() },
-                packageId = route.packageId
+                packageId = route.packageId,
+                onChangeAmount = { navController.navigate(Route.PackageAmount(it)) }
             )
         }
         composable<Route.PackageCard>(typeMap = RouteTypes) { entry ->
@@ -116,8 +118,13 @@ private fun MedAppNavHost(navController: NavHostController, modifier: Modifier =
                 onBack = { navController.popBackStack() },
                 onEdit = { medKitId ->
                     navController.navigate(Route.PackageForm(medKitId, route.packageId))
-                }
+                },
+                onChangeAmount = { navController.navigate(Route.PackageAmount(route.packageId)) }
             )
+        }
+        composable<Route.PackageAmount>(typeMap = RouteTypes) { entry ->
+            val route = entry.toRoute<Route.PackageAmount>()
+            PackageAmountScreen(route.packageId, onDone = { navController.popBackStack() })
         }
     }
 }

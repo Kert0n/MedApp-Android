@@ -24,6 +24,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 import kotlin.uuid.Uuid
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -43,6 +44,8 @@ class PackageScreenTest {
 
     private var edited: Uuid? = null
 
+    private var changingAmount = false
+
     private fun show(pkg: Package) {
         val viewModel = PackageViewModel(
             packages = FakePackages(pkg),
@@ -51,7 +54,13 @@ class PackageScreenTest {
         )
         compose.setContent {
             MedAppTheme {
-                PackageScreen(pkg.id, onBack = {}, onEdit = { edited = it }, viewModel = viewModel)
+                PackageScreen(
+                    packageId = pkg.id,
+                    onBack = {},
+                    onEdit = { edited = it },
+                    onChangeAmount = { changingAmount = true },
+                    viewModel = viewModel
+                )
             }
         }
     }
@@ -138,5 +147,15 @@ class PackageScreenTest {
         compose.onNodeWithText("Править описание").performScrollTo().performClick()
 
         assertEquals(HOME_KIT, edited)
+    }
+
+    /** Количество меняют там, где остаётся след: карточка ведёт на пересчёт (PLAN D7). */
+    @Test
+    fun theCardLeadsToRecounting() {
+        show(pack())
+
+        compose.onNodeWithText("Пересчитать или выбросить").performScrollTo().performClick()
+
+        assertTrue(changingAmount)
     }
 }
