@@ -38,7 +38,7 @@ class PackageSnapshotNetworkMapperTest {
 
     @Test
     fun serverStateBecomesAPackageWithItsSyncState() {
-        val found = snapshot().toDomain(VOCABULARY, medKit(), addedAt = EARLIER, observedAt = LATER)
+        val found = snapshot().toDomain(VOCABULARY, medKit().ref, addedAt = EARLIER, observedAt = LATER)
         assertEquals(PACK, found.pack.id)
         assertEquals(tablets("20"), found.pack.quantity)
         assertEquals(TABLET_FORM, found.pack.facts.form)
@@ -55,7 +55,7 @@ class PackageSnapshotNetworkMapperTest {
     fun aUnitOutsideTheSnapshotIsAMissThatNamesItself() {
         val stale = Vocabulary(listOf(TABLETS), listOf(TABLET_FORM))
         val miss = assertThrows(VocabularyMiss::class.java) {
-            snapshot(unitId = MILLILITRES.id).toDomain(stale, medKit(), EARLIER, LATER)
+            snapshot(unitId = MILLILITRES.id).toDomain(stale, medKit().ref, EARLIER, LATER)
         }
         assertEquals(MILLILITRES.id, miss.id)
         assertEquals(VocabularyMiss.Kind.UNIT, miss.kind)

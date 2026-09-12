@@ -1,6 +1,6 @@
 package com.kert0n.medapp.domain.course
 
-import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.pack.PackageRef
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.Quantity
 import java.time.Instant
@@ -53,7 +53,7 @@ class CourseCoverage(
      * [leftover] — остаток меньше дозы, не переливающийся в следующую пачку.
      */
     data class Source(
-        val pkg: Package,
+        val pkg: PackageRef,
         val allocatedDoses: Doses,
         val coveredDoses: Doses,
         val leftover: Quantity

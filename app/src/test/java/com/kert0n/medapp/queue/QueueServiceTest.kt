@@ -53,7 +53,7 @@ class QueueServiceTest {
     fun changeAndItsCommandGoInOneTransaction() = runTest {
         val storage = Storage()
         var changed = false
-        val applied = QueueService(storage, Sending()).change(published, listOf(consume), EARLIER) {
+        val applied = QueueService(storage, Sending()).change(published.ref, listOf(consume), EARLIER) {
             changed = true
             true
         }
@@ -68,7 +68,7 @@ class QueueServiceTest {
     fun aQueuedCommandIsSentRightAfterTheChange() = runTest {
         val sending = Sending()
 
-        QueueService(Storage(), sending).change(published, listOf(consume), EARLIER) { true }
+        QueueService(Storage(), sending).change(published.ref, listOf(consume), EARLIER) { true }
 
         assertEquals(1, sending.asked)
     }
@@ -78,7 +78,7 @@ class QueueServiceTest {
         val storage = Storage()
         val sending = Sending()
 
-        assertTrue(QueueService(storage, sending).change(medKit(publication = MedKit.Publication.LOCAL), listOf(consume), EARLIER) { true })
+        assertTrue(QueueService(storage, sending).change(medKit(publication = MedKit.Publication.LOCAL).ref, listOf(consume), EARLIER) { true })
 
         assertTrue(storage.enqueued.isEmpty())
         assertEquals("местной аптечке отправлять нечего", 0, sending.asked)
@@ -89,7 +89,7 @@ class QueueServiceTest {
         val storage = Storage()
         val sending = Sending()
 
-        assertFalse(QueueService(storage, sending).change(published, listOf(consume), EARLIER) { false })
+        assertFalse(QueueService(storage, sending).change(published.ref, listOf(consume), EARLIER) { false })
 
         assertTrue(storage.enqueued.isEmpty())
         assertEquals("записывать было некуда — и везти нечего", 0, sending.asked)
@@ -100,7 +100,7 @@ class QueueServiceTest {
     fun aChangeWithoutCommandsAsksForNothing() = runTest {
         val sending = Sending()
 
-        assertTrue(QueueService(Storage(), sending).change(published, emptyList(), EARLIER) { true })
+        assertTrue(QueueService(Storage(), sending).change(published.ref, emptyList(), EARLIER) { true })
 
         assertEquals(0, sending.asked)
     }

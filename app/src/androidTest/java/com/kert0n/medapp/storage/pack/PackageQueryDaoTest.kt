@@ -59,7 +59,7 @@ class PackageQueryDaoTest {
         category = "Витамины", expiresOn = expiry("2027-02-01")
     )
     private val syrup = pack(
-        id = id(4), medKit = medKit(id = SHARED_KIT, name = "Дача"), name = "Сироп", quantity = millilitres("200")
+        id = id(4), medKit = medKit(id = SHARED_KIT, name = "Дача").ref, name = "Сироп", quantity = millilitres("200")
     )
 
     private val all = listOf(paracetamol, ibuprofen, expired, syrup)

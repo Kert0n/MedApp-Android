@@ -12,7 +12,6 @@ import com.kert0n.medapp.network.intake.IntakeAccounting
 import com.kert0n.medapp.network.intake.IntakeSyncState
 import com.kert0n.medapp.queue.QueueService
 import com.kert0n.medapp.queue.QueueStorage
-import com.kert0n.medapp.queue.QueueWorker
 import com.kert0n.medapp.queue.QueuedCommand
 import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import com.kert0n.medapp.storage.course.CourseReallocation
@@ -71,16 +70,16 @@ class IntakeConfirmation @Inject constructor(
         val finished = course.remainingDoses(progress).isNone
 
         // Выделение пачки после приёма и бронь, которая уезжает вместе с расходом (PLAN D5, E2).
-        val allocated = course.sources.firstOrNull { it.pkg == pkg }?.allocatedDoses
+        val allocated = course.sources.firstOrNull { it.pkg == pkg.ref }?.allocatedDoses
         val reallocation = if (allocated == null || finished) null else {
             val availableAfter = checkNotNull(packages.availability(pkg.id)).availableToMe.minusOrZero(amount.quantity)
-            val doses = course.dosesAfterIntake(pkg, amount, availableAfter)
-            if (doses == allocated) null else CourseReallocation(course.allocate(pkg, doses, now), course.revision)
+            val doses = course.dosesAfterIntake(pkg.ref, amount, availableAfter)
+            if (doses == allocated) null else CourseReallocation(course.allocate(pkg.ref, doses, now), course.revision)
         }
         val claimAfter = when {
             allocated == null -> null
             finished -> Quantity.zero(amount.unit)
-            else -> (reallocation?.course ?: course).allocatedOf(pkg)
+            else -> (reallocation?.course ?: course).allocatedOf(pkg.ref)
         }
 
         val consume = QueuedCommand(Uuid.random(), PackageSyncCommand.Consume(pkg.id, amount, intake.id, claimAfter))
@@ -101,7 +100,7 @@ class IntakeConfirmation @Inject constructor(
                 .map { it.cancel(now) }
             courses.close(record.close(CourseRecord.Outcome.COMPLETED, now), cancelled)
             for (source in course.sources) {
-                if (source.pkg == pkg) continue
+                if (source.pkg == pkg.ref) continue
                 val released = QueuedCommand(Uuid.random(), PackageSyncCommand.ReleaseClaim(source.pkg.id))
                 queue.change(source.pkg.medKit, listOf(released), now) { true }
             }

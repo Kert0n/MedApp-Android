@@ -1,7 +1,7 @@
 package com.kert0n.medapp.domain.course
 
 import com.kert0n.medapp.domain.intake.TakenDose
-import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.pack.PackageRef
 import com.kert0n.medapp.domain.value.doses
 import com.kert0n.medapp.fixture.LATER
 import com.kert0n.medapp.fixture.OTHER_PACK
@@ -92,7 +92,7 @@ class CourseTakenOffPlanTest {
         assertTrue(constructors.isNotEmpty())
         assertTrue(
             constructors.all { ctor ->
-                ctor.parameterTypes.any { it == Package::class.java || it == Uuid::class.java }
+                ctor.parameterTypes.any { it == PackageRef::class.java || it == Uuid::class.java }
             }
         )
     }

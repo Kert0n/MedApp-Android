@@ -45,7 +45,7 @@ class MedKitRoomRepository @Inject constructor(
             val words = vocabulary.snapshot()
             for (snapshot in snapshots) {
                 // Снимок чужой аптечки отвергает маппер — и откатывает переключение вместе с ним.
-                val resolved = snapshot.toDomain(words, medKit, addedAt = at, observedAt = at)
+                val resolved = snapshot.toDomain(words, medKit.ref, addedAt = at, observedAt = at)
                 packages.applyServerSnapshot(resolved.pack.toStorageEntity(resolved.sync), observedAt = at)
                 resolved.pack.claims?.let { packages.upsertClaims(it.toStorageEntity(snapshot.pack.id)) }
             }

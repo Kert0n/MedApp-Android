@@ -1,7 +1,7 @@
 package com.kert0n.medapp.domain.course
 
 import com.kert0n.medapp.domain.pack.Availability
-import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.pack.PackageRef
 import com.kert0n.medapp.domain.value.DosageForm
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Doses
@@ -17,8 +17,9 @@ import com.kert0n.medapp.domain.value.Quantity
  * целиком. Разовую дозу знает курс и передаёт аргументом, расклад доступного приносит
  * [Availability] — по числу на каждую пачку.
  *
- * Состав держит сами пачки: курс, прочитанный из базы, читает и их, и подставить вместо пачки
- * форму или единицу нечем. Публичная сторона у лечения одна, и это курс.
+ * Состав держит ссылки на пачки: курс, прочитанный из базы, читает и их, подставить вместо
+ * пачки форму или единицу нечем, а списать из пачки через курс — тоже. Публичная сторона у
+ * лечения одна, и это курс.
  */
 class CourseMedicine(sources: List<CourseSource> = emptyList()) {
 
@@ -40,30 +41,29 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
     val allocatedTotal: Doses
         get() = sources.fold(0.doses) { total, source -> total + source.allocatedDoses }
 
-    internal fun allocatedTo(pkg: Package): Doses? =
+    internal fun allocatedTo(pkg: PackageRef): Doses? =
         sources.firstOrNull { it.pkg == pkg }?.allocatedDoses
 
-    internal fun holds(pkg: Package): Boolean = sources.any { it.pkg == pkg }
+    internal fun holds(pkg: PackageRef): Boolean = sources.any { it.pkg == pkg }
 
     /**
      * Подключает пачку последней в расходе, если она годится под назначенное: та же форма и та
      * же единица, что у [dose]. Отказ называет причину, ведущую к действию.
      */
     internal fun attach(
-        pkg: Package,
+        pkg: PackageRef,
         doses: Doses,
         dose: Dose,
         form: DosageForm
     ): Result<CourseMedicine> {
         val rejection = when {
-            pkg.lifecycle != Package.Lifecycle.ACTIVE ||
-                pkg.access != Package.Access.AVAILABLE -> CourseRejected.Reason.PACKAGE_UNUSABLE
+            !pkg.suppliesStock -> CourseRejected.Reason.PACKAGE_UNUSABLE
             holds(pkg) -> CourseRejected.Reason.ALREADY_ATTACHED
             // Пачка без формы не годится ни под какое назначение: сказать, тот ли это препарат,
             // нечем, и сначала форму надо заполнить.
-            pkg.facts.form == null -> CourseRejected.Reason.FORM_UNKNOWN
-            pkg.facts.form != form -> CourseRejected.Reason.FORM_MISMATCH
-            pkg.quantity.unit != dose.unit -> CourseRejected.Reason.UNIT_MISMATCH
+            pkg.form == null -> CourseRejected.Reason.FORM_UNKNOWN
+            pkg.form != form -> CourseRejected.Reason.FORM_MISMATCH
+            pkg.unit != dose.unit -> CourseRejected.Reason.UNIT_MISMATCH
             else -> null
         }
         if (rejection != null) return Result.failure(CourseRejected(rejection))
@@ -71,7 +71,7 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
     }
 
     /** Убирает пачку; препарат без пачек — законное состояние, курс просто не обеспечен. */
-    internal fun detach(pkg: Package): CourseMedicine {
+    internal fun detach(pkg: PackageRef): CourseMedicine {
         requireHolds(pkg)
         return withSources(sources.filterNot { it.pkg == pkg })
     }
@@ -88,7 +88,7 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
     }
 
     /** Задаёт выделение пачки в целых дозах; верхнюю границу называет [maxDoses]. */
-    internal fun allocate(pkg: Package, doses: Doses): CourseMedicine {
+    internal fun allocate(pkg: PackageRef, doses: Doses): CourseMedicine {
         requireHolds(pkg)
         return withSources(sources.map { if (it.pkg == pkg) CourseSource(pkg, doses) else it })
     }
@@ -125,7 +125,7 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
      * выделю, если подключу».
      */
     internal fun maxDoses(
-        pkg: Package,
+        pkg: PackageRef,
         dose: Dose,
         required: Doses,
         availability: Availability
@@ -170,9 +170,9 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
         dose: Dose,
         doses: Doses,
         availability: Availability
-    ): Map<Package, Doses> {
+    ): Map<PackageRef, Doses> {
         var left = doses
-        val spent = LinkedHashMap<Package, Doses>()
+        val spent = LinkedHashMap<PackageRef, Doses>()
         for (capacity in capacities(dose, availability)) {
             if (left.isNone) break
             val taken = minOf(capacity.covers, left)
@@ -188,7 +188,7 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
      * взято, и не ниже нуля. Так уходит доза, принятая мимо плана: бронь уменьшается по порядку
      * расходования, а остатка пачки это не касается.
      */
-    internal fun spent(spent: Map<Package, Doses>): CourseMedicine = withSources(
+    internal fun spent(spent: Map<PackageRef, Doses>): CourseMedicine = withSources(
         sources.map { source ->
             val taken = spent[source.pkg] ?: return@map source
             CourseSource(source.pkg, source.allocatedDoses.minusOrNone(taken))
@@ -201,7 +201,7 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
      * оживает: приём из невыделенной пачки брони не создаёт.
      */
     internal fun dosesAfterIntake(
-        pkg: Package,
+        pkg: PackageRef,
         dose: Dose,
         taken: Dose,
         availableAfter: Quantity
@@ -239,7 +239,7 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
      * ([covers]) — не больше выделенного.
      */
     private data class SourceCapacity(
-        val pkg: Package,
+        val pkg: PackageRef,
         val allocated: Doses,
         val whole: Doses,
         val leftover: Quantity
@@ -256,7 +256,7 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
 
     override fun toString(): String = "CourseMedicine($sources)"
 
-    private fun requireHolds(pkg: Package) {
+    private fun requireHolds(pkg: PackageRef) {
         require(holds(pkg)) { "пачка ${pkg.id} не источник этого курса" }
     }
 }

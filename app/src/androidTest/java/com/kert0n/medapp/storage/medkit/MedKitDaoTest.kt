@@ -83,7 +83,7 @@ class MedKitDaoTest {
     /** Пачка не живёт без аптечки: аптечку с пачками база удалить не даёт (PLAN F2). */
     @Test
     fun aMedKitWithPackagesCannotBeDeleted() = runTest {
-        val pkg = pack(medKit = medKit(id = HOME_KIT))
+        val pkg = pack(medKit = medKit(id = HOME_KIT).ref)
         database.packages().save(pkg.toStorageEntity(PackageSyncState(pkg.id)), pkg.toDetailsStorageEntity())
 
         val refusal = rejectedByDatabase { medKits.delete(HOME_KIT) }

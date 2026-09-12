@@ -169,7 +169,7 @@ class SyncOperationRoomRepository @Inject constructor(
     private suspend fun apply(snapshot: PackageSnapshotNetworkDTO, words: Vocabulary, at: Instant) {
         val medKit = requireNotNull(medKits.find(snapshot.pack.medKitId)) {
             "снимок пачки называет аптечку, которой нет: ${snapshot.pack.medKitId}"
-        }.toDomain()
+        }.toRef()
         val resolved = snapshot.toDomain(words, medKit, addedAt = at, observedAt = at)
         // Запоздалый снимок свежий не перекрывает — ни состояние, ни брони.
         if (packages.applyServerSnapshot(resolved.pack.toStorageEntity(resolved.sync), observedAt = at)) {

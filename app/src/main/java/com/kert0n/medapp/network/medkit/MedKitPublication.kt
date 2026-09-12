@@ -31,7 +31,7 @@ import kotlin.uuid.Uuid
 class MedKitPublication @Inject constructor(private val api: MedAppApi) {
 
     suspend fun publish(medKit: MedKit, packages: List<Package>): Outcome {
-        require(packages.all { it.medKit == medKit }) { "публикуются пачки этой аптечки" }
+        require(packages.all { it.medKit.id == medKit.id }) { "публикуются пачки этой аптечки" }
         val published = medKit.publish()
         val onServer: Map<Uuid, PackageSnapshotNetworkDTO> = when (val created = api.createMedKit(MedKitPostNetworkDTO(medKit.id))) {
             is ApiResult.Success -> emptyMap()

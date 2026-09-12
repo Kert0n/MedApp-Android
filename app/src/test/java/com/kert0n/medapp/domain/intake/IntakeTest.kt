@@ -48,7 +48,7 @@ class IntakeTest {
     fun answerDoesNotRewriteThePlan() {
         // Пункт порождён редакцией расписания, и ответ не переписывает ни назначенное время,
         // ни плановую дозу, ни плановую пачку.
-        val fromDacha = pack(id = OTHER_PACK, medKit = medKit(id = SHARED_KIT, name = "Дача"))
+        val fromDacha = pack(id = OTHER_PACK, medKit = medKit(id = SHARED_KIT, name = "Дача").ref)
         val taken = plannedIntake().confirm(fromDacha.take(dose("1"), LATER).getOrThrow())
         assertEquals(FIRST_PLANNED_AT, taken.plannedAt)
         assertEquals(FIRST_SCHEDULED_ON, taken.slot.localDate)
@@ -182,16 +182,16 @@ class IntakeTest {
         val taken = pack(quantity = tablets("10")).take(dose("2"), LATER).getOrThrow()
         assertEquals(dose("2"), taken.amount)
         assertEquals(LATER, taken.at)
-        assertEquals(tablets("10"), taken.pkg.quantity)
+        assertEquals(PACK, taken.pkg.id)
     }
 
     @Test
     fun aRecordedFactOutlivesTheUnitOfItsPack() {
         // Факт — обстоятельства события: сколько и в чём считали тогда. Сегодняшняя единица
         // пачки — ссылка, и её смена историю не переписывает и не делает нечитаемой.
-        val recorded = TakenDose(pack(quantity = millilitres("100")), dose("2"), LATER)
+        val recorded = TakenDose(pack(quantity = millilitres("100")).ref, dose("2"), LATER)
         assertEquals(TABLETS, recorded.amount.unit)
-        assertEquals(MILLILITRES, recorded.pkg.quantity.unit)
+        assertEquals(MILLILITRES, recorded.pkg.unit)
     }
 
     @Test

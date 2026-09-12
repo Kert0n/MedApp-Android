@@ -30,6 +30,9 @@ class MedKit(
 
     val isShared: Boolean get() = participantCount > 1
 
+    /** Как аптечку видит чужой агрегат: тождество и публикация, без переходов. */
+    val ref: MedKitRef get() = MedKitRef(id, publication)
+
     /**
      * Отдельно от [isShared]: аптечка, из которой ушли все, кроме меня, остаётся серверной и
      * приглашения выдаёт. Приглашать в местную некуда — на сервере её нет (PLAN D2).

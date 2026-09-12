@@ -1,8 +1,11 @@
 package com.kert0n.medapp.fixture
 
 import com.kert0n.medapp.domain.intake.Intake
-import com.kert0n.medapp.domain.medkit.MedKit
+import com.kert0n.medapp.domain.medkit.MedKitRef
 import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.pack.PackageRef
+import com.kert0n.medapp.storage.medkit.MedKitStorageEntity
+import com.kert0n.medapp.storage.pack.PackageRefStorageRow
 import com.kert0n.medapp.domain.stock.StockMovement
 import com.kert0n.medapp.network.intake.IntakeSyncState
 import com.kert0n.medapp.network.pack.PackageSyncState
@@ -26,8 +29,25 @@ fun Package.toStorageRow(sync: PackageSyncState = PackageSyncState(id)): Package
         pack = toStorageEntity(sync),
         details = toDetailsStorageEntity(),
         claims = claims?.toClaimsStorageEntity(id),
-        medKit = medKit.toMedKitStorageEntity()
+        medKit = medKit.row()
     )
+
+/** Строка аптечки по ссылке: имя и место у ссылки не спрашивают, их даёт фикстура. */
+fun MedKitRef.row(): MedKitStorageEntity = medKit(id = id, publication = publication).toMedKitStorageEntity()
+
+/** Строка ссылки: серверная часть пачки с тем, что ссылка о ней знает; остаток — фикстурный. */
+fun PackageRef.toStorageRow(): PackageRefStorageRow = PackageRefStorageRow(
+    pack = pack(
+        id = id,
+        medKit = medKit,
+        name = name,
+        quantity = com.kert0n.medapp.domain.value.Quantity(java.math.BigDecimal("20"), unit),
+        form = form,
+        lifecycle = lifecycle,
+        access = access
+    ).toStorageEntity(PackageSyncState(id)),
+    medKit = medKit.row()
+)
 
 fun Intake.toStorageRow(sync: IntakeSyncState = IntakeSyncState(id)): IntakeStorageRow =
     IntakeStorageRow(
@@ -37,7 +57,6 @@ fun Intake.toStorageRow(sync: IntakeSyncState = IntakeSyncState(id)): IntakeStor
     )
 
 fun StockMovement.toStorageRow(): StockMovementStorageRow {
-    fun MedKit.row() = toMedKitStorageEntity()
     return StockMovementStorageRow(
         movement = toMovementStorageEntity(),
         pack = pkg.toStorageRow(),

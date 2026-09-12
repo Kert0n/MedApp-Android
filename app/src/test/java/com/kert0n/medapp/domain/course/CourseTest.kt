@@ -106,7 +106,7 @@ class CourseTest {
         // Менять их после активации нечем: переходов `setDose` и `setSchedule` у назначенного
         // курса нет вовсе. Изменившееся лечение — отмена прежнего курса и новый (PLAN D5).
         val draft = prescribedDraft(schedule = schedule(), totalDoses = 7)
-            .attach(pack(form = TABLET_FORM), 1.doses, LATER).getOrThrow()
+            .attach(pack(form = TABLET_FORM).ref, 1.doses, LATER).getOrThrow()
         val started = draft.activate(LATER).getOrThrow()
         assertEquals(dose("2"), started.course.dose)
         assertEquals(TABLET_FORM, started.course.form)

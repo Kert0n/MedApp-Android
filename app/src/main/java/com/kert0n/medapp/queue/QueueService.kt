@@ -1,6 +1,7 @@
 package com.kert0n.medapp.queue
 
 import com.kert0n.medapp.domain.medkit.MedKit
+import com.kert0n.medapp.domain.medkit.MedKitRef
 import java.time.Instant
 import javax.inject.Inject
 
@@ -26,7 +27,7 @@ class QueueService @Inject constructor(
      * зависит; ставить это в обязанность каждому сценарию — значит однажды забыть.
      */
     suspend fun change(
-        medKit: MedKit,
+        medKit: MedKitRef,
         commands: List<QueuedCommand>,
         at: Instant,
         change: suspend () -> Boolean

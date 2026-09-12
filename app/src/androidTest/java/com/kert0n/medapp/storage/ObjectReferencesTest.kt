@@ -2,6 +2,7 @@ package com.kert0n.medapp.storage
 
 import androidx.room.Room
 import androidx.test.platform.app.InstrumentationRegistry
+import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.stock.StockMovement
 import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.HOME_KIT
@@ -68,13 +69,13 @@ class ObjectReferencesTest {
     }
 
     @Test
-    fun packageCarriesItsMedKit() = runTest {
-        val onTheDacha = pack(medKit = medKit(id = SHARED_KIT, name = "Дача"))
+    fun packageCarriesItsMedKitAsARef() = runTest {
+        val onTheDacha = pack(medKit = medKit(id = SHARED_KIT, name = "Дача").ref)
         database.packages().save(onTheDacha.toPackageStorageEntity(), onTheDacha.toDetailsStorageEntity())
 
         val restored = requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY)
         assertEquals(SHARED_KIT, restored.medKit.id)
-        assertEquals("Дача", restored.medKit.name)
+        assertEquals(MedKit.Publication.LOCAL, restored.medKit.publication)
     }
 
     @Test
@@ -91,7 +92,9 @@ class ObjectReferencesTest {
 
         val restored = requireNotNull(database.courses().findPlan(COURSE)).toPlan(VOCABULARY)
         assertEquals(listOf(PACK, OTHER_PACK), restored.sources.map { it.pkg.id })
-        assertEquals(tablets("12"), restored.sources.last().pkg.quantity)
+        // Ссылка несёт то, что курсу нужно знать о пачке, — и не несёт остатка.
+        assertEquals(TABLETS, restored.sources.last().pkg.unit)
+        assertTrue(restored.sources.last().pkg.suppliesStock)
         assertEquals(HOME_KIT, restored.sources.first().pkg.medKit.id)
     }
 
@@ -102,10 +105,10 @@ class ObjectReferencesTest {
         for (i in 0 until 100) {
             val movement = StockMovement.Recount(
                 id = Uuid.parse("00000000-0000-4000-8000-%012x".format(0x1000 + i)),
-                pkg = paracetamol,
+                pkg = paracetamol.ref,
                 before = tablets("20"),
                 after = tablets("19"),
-                medKit = medKit(),
+                medKit = medKit().ref,
                 occurredAt = Instant.EPOCH.plusSeconds(i.toLong()),
                 observedAt = LATER.plusSeconds(i.toLong())
             )

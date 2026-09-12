@@ -26,7 +26,7 @@ class CourseAfterIntakeTest {
     /** Пачке [PACK] выделено [allocated] доз, принято [taken], в ней осталось [left]. */
     private fun after(allocated: Int, taken: Dose, left: Quantity, dose: Dose = twoTablets) =
         activeCourse(doseAmount = dose.quantity.amount, sources = listOf(source(PACK, allocated)))
-            .dosesAfterIntake(pack(), taken, left)
+            .dosesAfterIntake(pack().ref, taken, left)
 
     @Test
     fun fullDoseSpendsExactlyOneAllocatedDose() {
@@ -59,7 +59,7 @@ class CourseAfterIntakeTest {
         val elsewhere = activeCourse(sources = listOf(source(OTHER_PACK, 5)))
         assertEquals(
             0.doses,
-            elsewhere.dosesAfterIntake(pack(), dose("2"), tablets("18"))
+            elsewhere.dosesAfterIntake(pack().ref, dose("2"), tablets("18"))
         )
     }
 
