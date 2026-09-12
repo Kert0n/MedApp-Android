@@ -124,7 +124,7 @@ class PackageRoomRepository @Inject constructor(
     private suspend fun projectionOf(id: Uuid): PackageProjection? = database.withTransaction {
         val words = vocabulary.snapshot()
         val pkg = packages.find(id)?.toDomain(words) ?: return@withTransaction null
-        projectionOf(pkg, packages.allocationsOf(listOf(id)).firstOrNull(), queue.unclosedOfPackage(id), words)
+        projectionOf(pkg, packages.allocationsOf(listOf(id)).firstOrNull(), queue.unclosedOfPackages(listOf(id)), words)
     }
 
     /**

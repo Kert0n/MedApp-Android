@@ -68,20 +68,13 @@ interface SyncOperationDao {
     @Query("SELECT * FROM sync_operations WHERE package_id = :packageId ORDER BY sequence")
     suspend fun ofPackage(packageId: Uuid): List<SyncOperationStorageRow>
 
-    /** Незакрытые операции пачки. Чтение, а не поток: оценка количества складывается не из них одних. */
-    @Transaction
-    @Query(
-        "SELECT * FROM sync_operations WHERE package_id = :packageId " +
-            "AND status NOT IN ('APPLIED', 'REFUSED', 'ACCESS_LOST') " +
-            "ORDER BY sequence"
-    )
-    suspend fun unclosedOfPackage(packageId: Uuid): List<SyncOperationStorageRow>
-
     /**
-     * Незакрытые операции сразу по списку пачек — один вопрос вместо запроса на строку: список
-     * из двухсот пачек спрашивал очередь двести раз, а знание то же. Порядок общий по `sequence`,
-     * и внутри каждой пачки он тот же, что у [unclosedOfPackage]; раскладывает по пачкам
-     * вызывающий. Длину списка он же ограничивает пределом переменных SQLite.
+     * Незакрытые операции названных пачек, по возрастанию номера. Один вопрос на всю выборку:
+     * список из двухсот пачек спрашивал очередь двести раз, а знание то же. Раскладывает по
+     * пачкам вызывающий, он же держит длину списка в пределе переменных SQLite.
+     *
+     * Пачка одна — список из одной: определение «незакрытой» одно, и второго запроса под него
+     * заводить незачем. Чтение, а не поток: оценка количества складывается не из них одних.
      */
     @Transaction
     @Query(
