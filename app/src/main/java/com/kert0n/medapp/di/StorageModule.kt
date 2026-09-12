@@ -15,6 +15,7 @@ import com.kert0n.medapp.storage.stock.StockMovementRoomRepository
 import com.kert0n.medapp.storage.stock.StockMovementStorageRepository
 import com.kert0n.medapp.network.value.VocabularyStore
 import com.kert0n.medapp.queue.QueueStorage
+import com.kert0n.medapp.queue.medkit.PublicationStorage
 import com.kert0n.medapp.queue.Transactions
 import com.kert0n.medapp.storage.database.RoomTransactions
 import com.kert0n.medapp.storage.value.VocabularyRoomRepository
@@ -74,6 +75,11 @@ abstract class StorageModule {
     @Binds
     @Singleton
     abstract fun queueStorage(implementation: QueueRoomStorage): QueueStorage
+
+    /** Публикация читает аптечку и пишет переключение через свой порт (PLAN E5). */
+    @Binds
+    @Singleton
+    abstract fun publicationStorage(implementation: MedKitRoomRepository): PublicationStorage
 
     /** Резолвер словаря живёт в сети и получает снимок через свой интерфейс. */
     @Binds

@@ -30,6 +30,13 @@ class MedKit(
 
     val isShared: Boolean get() = participantCount > 1
 
+    /**
+     * Кому отвечает всё, что в ней лежит: опубликованная аптечка стоит у сервера, и изменения её
+     * пачек едут командами; местная существует только у нас, и изменения её пачек записаны, как
+     * только записаны (PLAN E1). Одно место для этого вопроса на всех, кто его задаёт.
+     */
+    val answersToServer: Boolean get() = publication == Publication.PUBLISHED
+
     /** Как аптечку видит чужой агрегат: тождество и публикация, без переходов. */
     val ref: MedKitRef get() = MedKitRef(id, publication)
 

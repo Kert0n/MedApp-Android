@@ -8,7 +8,6 @@ import com.kert0n.medapp.domain.intake.CourseIntake
 import com.kert0n.medapp.domain.intake.IntakeProjection
 import com.kert0n.medapp.domain.intake.IntakeRejected
 import com.kert0n.medapp.domain.intake.IntakeStatus
-import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.queue.intake.IntakeAccounting
@@ -81,7 +80,7 @@ class IntakeConfirmation @Inject constructor(
         // Выделение пачки после приёма и бронь, которая уезжает вместе с расходом (PLAN D5, E2).
         // Местную коробку расход опустошает здесь же, и кончившаяся коробка источником не бывает:
         // курс теряет её тем же решением, что записывает приём (D3). У общей истина — сервер.
-        val spendsLocally = pkg.medKit.publication == MedKit.Publication.LOCAL
+        val spendsLocally = !pkg.medKit.answersToServer
         val emptied = spendsLocally && pkg.consume(amount) == null
         val allocated = course.sources.firstOrNull { it.pkg == pkg.ref }?.allocatedDoses
         val reallocation = when {

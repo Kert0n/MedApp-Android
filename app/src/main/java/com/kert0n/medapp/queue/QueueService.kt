@@ -1,6 +1,5 @@
 package com.kert0n.medapp.queue
 
-import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.medkit.MedKitRef
 import java.time.Instant
 import javax.inject.Inject
@@ -31,7 +30,7 @@ class QueueService @Inject constructor(
         change: suspend () -> Boolean
     ): Boolean = transactions.run {
         val applied = change()
-        if (applied && medKit.publication == MedKit.Publication.PUBLISHED) {
+        if (applied && medKit.answersToServer) {
             for (command in commands) storage.enqueue(command, at)
         }
         applied

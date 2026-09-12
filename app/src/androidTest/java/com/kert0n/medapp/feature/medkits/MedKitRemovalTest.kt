@@ -1,8 +1,8 @@
 package com.kert0n.medapp.feature.medkits
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.kert0n.medapp.domain.course.CourseDraft
 import com.kert0n.medapp.domain.medkit.MedKit
-import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.stock.StockMovement
 import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.HOME_KIT
@@ -11,18 +11,24 @@ import com.kert0n.medapp.fixture.LATER
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.SHARED_KIT
+import com.kert0n.medapp.fixture.Scenarios
+import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.VOCABULARY
+import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.courseRecord
+import com.kert0n.medapp.fixture.courseRepository
 import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.inMemoryDatabase
 import com.kert0n.medapp.fixture.medKit
-import com.kert0n.medapp.fixture.medKitRepository
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.packageRepository
 import com.kert0n.medapp.fixture.plannedIntake
+import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
-import com.kert0n.medapp.fixture.transactions
-import com.kert0n.medapp.storage.course.toStorageEntity as toRecordStorageEntity
+import com.kert0n.medapp.queue.SyncCommand
+import com.kert0n.medapp.queue.StoredSyncOperation
+import com.kert0n.medapp.queue.medkit.MedKitSyncCommand
+import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.storage.intake.toStorageEntity as toIntakeStorageEntity
 import com.kert0n.medapp.storage.medkit.toStorageEntity as toMedKitStorageEntity
@@ -39,9 +45,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Человек выбрасывает аптечку (ТЗ 4.1.1.2.3). Проверяется на настоящей базе: то, ради чего всё
- * это затевалось, — что схема действительно даёт убрать аптечку, а история лечения это переживает
- * (PLAN E6, D6).
+ * Человек убирает полку (ТЗ 4.1.1.2.3) — по коробкам, через домен, одной транзакцией. На
+ * настоящей базе: то, ради чего всё это затевалось, — схема даёт убрать аптечку, а история
+ * лечения это переживает (PLAN E6, D3, D6). Шесть случаев — по границе публикации источника и
+ * цели: серверу об общей полке говорит одна команда аптечки, о местной коробке на общей полке —
+ * её публикация, а общее содержимое на местную полку не снимается без публикации цели.
  */
 @RunWith(AndroidJUnit4::class)
 class MedKitRemovalTest {
@@ -54,18 +62,16 @@ class MedKitRemovalTest {
     @Before
     fun setUp() = runTest {
         database = inMemoryDatabase()
-        removal = MedKitRemoval(
-            medKits = database.medKitRepository(),
-            packages = database.packageRepository(),
-            transactions = database.transactions()
-        )
-        database.packageRepository().add(pack(id = PACK, quantity = tablets("20")))
+        removal = Scenarios(database, LATER).medKitRemoval
+        database.packageRepository().add(pack(id = PACK, quantity = tablets("20"), form = TABLET_FORM))
         database.packageRepository().add(pack(id = OTHER_PACK, quantity = tablets("1")))
         database.stockMovements().insert(
             StockMovement.Receipt(movementId, pack(id = PACK).ref, tablets("20"), Instant.EPOCH, LATER)
                 .toMovementStorageEntity()
         )
-        database.courses().upsertRecord(courseRecord().toRecordStorageEntity())
+        // Курс держит PACK источником: разбор полки решает и его судьбу.
+        val plan = activeCourse(sources = listOf(source(PACK, 5)))
+        database.courseRepository().activate(CourseDraft.Activation(plan, courseRecord(prescription = plan.prescription)))
         database.intakes().upsert(
             plannedIntake().confirm(pack(id = PACK).take(dose("2"), LATER).getOrThrow())
                 .toIntakeStorageEntity()
@@ -75,24 +81,37 @@ class MedKitRemovalTest {
     @After
     fun tearDown() = database.close()
 
-    /**
-     * «Забрал аптечку домой»: содержимое переезжает целиком — и живое, и кончившееся, — а
-     * исходная аптечка уходит (ТЗ 4.1.1.2.3.2).
-     */
+    private suspend fun publish(vararg kits: Uuid) {
+        for (kit in kits) {
+            database.medKits().upsert(
+                medKit(id = kit, publication = MedKit.Publication.PUBLISHED, participantCount = 2).toMedKitStorageEntity()
+            )
+        }
+    }
+
+    private suspend fun commands(): List<SyncCommand> = database.syncOperations().all()
+        .map { (it.toDomain(VOCABULARY) as StoredSyncOperation.Readable).operation.command }
+
+    private suspend fun sourcesOfCourse(): List<Uuid> = database.courses().sourcePackagesOf(COURSE)
+
+    /** «Забрал аптечку домой», обе местные: содержимое переезжает целиком, курс коробку не теряет. */
     @Test
-    fun takingTheMedKitAwayMovesEverythingAndRemovesThePlace() = runTest {
+    fun takingALocalMedKitAwayIntoALocalOneMovesEverythingAndKeepsTheCourse() = runTest {
         val outcome = removal.remove(HOME_KIT, transferTo = SHARED_KIT)
 
         assertEquals(MedKitRemoval.Outcome.REMOVED, outcome)
         assertNull(database.medKits().find(HOME_KIT))
         assertEquals(SHARED_KIT, database.packageRepository().find(PACK)?.medKit?.id)
         assertEquals(SHARED_KIT, database.packageRepository().find(OTHER_PACK)?.medKit?.id)
+        assertEquals(listOf(PACK), sourcesOfCourse())
         assertEquals(1, database.stockMovements().ofPackage(PACK).size)
+        assertEquals(emptyList<SyncCommand>(), commands())
     }
 
     /**
-     * «Выбросил вместе с лекарствами» (ТЗ 4.1.1.2.3.1): коробок не остаётся, а история — запись
-     * эпизода, приём и движения — переживает: она держится за записи о коробках (PLAN D3, D6).
+     * «Выбросил вместе с лекарствами» (ТЗ 4.1.1.2.3.1): коробок не остаётся, курс теряет источник
+     * своим переходом, а история — запись эпизода, приём и движения — переживает: она держится за
+     * записи о коробках (PLAN D3, D6).
      *
      * Красная проверка: посадить ключ приёма на живую строку — аптечку, из которой хоть раз
      * принимали, выбросить станет нельзя, и случай краснеет.
@@ -105,6 +124,7 @@ class MedKitRemovalTest {
         assertNull(database.medKits().find(HOME_KIT))
         assertNull(database.packageRepository().find(PACK))
         assertNull(database.packageRepository().find(OTHER_PACK))
+        assertEquals(emptyList<Uuid>(), sourcesOfCourse())
         assertEquals(1, database.stockMovements().ofPackage(PACK).size)
 
         assertNotNull(database.courses().findRecord(COURSE))
@@ -113,22 +133,75 @@ class MedKitRemovalTest {
         assertEquals("Парацетамол", intake.taken?.pkg?.name)
     }
 
-    /** Общая аптечка местным решением не убирается: она есть у других людей (PLAN C3, E5). */
+    /**
+     * Местные коробки на общую полку: каждая публикуется в целевой аптечке, а выделение курса
+     * едет следом бронью — на сервере оно иначе не появилось бы (PLAN E6).
+     */
     @Test
-    fun aSharedMedKitNeedsTheServer() = runTest {
-        database.medKits().upsert(
-            medKit(
-                id = HOME_KIT,
-                publication = MedKit.Publication.PUBLISHED,
-                participantCount = 3
-            ).toMedKitStorageEntity()
-        )
+    fun takingALocalMedKitAwayIntoASharedOnePublishesEachPackage() = runTest {
+        publish(SHARED_KIT)
 
         val outcome = removal.remove(HOME_KIT, transferTo = SHARED_KIT)
 
-        assertEquals(MedKitRemoval.Outcome.NEEDS_NETWORK, outcome)
+        assertEquals(MedKitRemoval.Outcome.REMOVED, outcome)
+        assertNull(database.medKits().find(HOME_KIT))
+        assertEquals(SHARED_KIT, database.packageRepository().find(PACK)?.medKit?.id)
+        assertEquals(listOf(PACK), sourcesOfCourse())
+        val queued = commands()
+        val creates = queued.filterIsInstance<PackageSyncCommand.Create>()
+        assertEquals(setOf(PACK, OTHER_PACK), creates.mapTo(HashSet()) { it.packageId })
+        assertEquals(SHARED_KIT, creates.first().medKitId)
+        val claim = queued.filterIsInstance<PackageSyncCommand.SetClaim>().single()
+        assertEquals(PACK, claim.packageId)
+        assertEquals(tablets("10"), claim.amount)
+        assertEquals(3, queued.size)
+    }
+
+    /**
+     * Общая полка на общую: сервер переставляет всё сам одной командой аптечки и решает судьбу
+     * броней; локально коробки только меняют место, курс их не теряет.
+     */
+    @Test
+    fun takingASharedMedKitAwayIntoASharedOneIsOneCommand() = runTest {
+        publish(HOME_KIT, SHARED_KIT)
+
+        val outcome = removal.remove(HOME_KIT, transferTo = SHARED_KIT)
+
+        assertEquals(MedKitRemoval.Outcome.REMOVED, outcome)
+        assertNull(database.medKits().find(HOME_KIT))
+        assertEquals(SHARED_KIT, database.packageRepository().find(PACK)?.medKit?.id)
+        assertEquals(SHARED_KIT, database.packageRepository().find(OTHER_PACK)?.medKit?.id)
+        assertEquals(listOf(PACK), sourcesOfCourse())
+        assertEquals(listOf(MedKitSyncCommand.Delete(HOME_KIT, transferTo = SHARED_KIT)), commands())
+    }
+
+    /** Общую полку выбросили: коробок и частей нет, история цела, серверу — одна команда. */
+    @Test
+    fun throwingASharedMedKitOutIsOneCommand() = runTest {
+        publish(HOME_KIT)
+
+        val outcome = removal.remove(HOME_KIT, transferTo = null)
+
+        assertEquals(MedKitRemoval.Outcome.REMOVED, outcome)
+        assertNull(database.medKits().find(HOME_KIT))
+        assertNull(database.packageRepository().find(PACK))
+        assertEquals(emptyList<Uuid>(), sourcesOfCourse())
+        assertNotNull(database.courses().findRecord(COURSE))
+        assertEquals(1, database.stockMovements().ofPackage(PACK).size)
+        assertEquals(listOf(MedKitSyncCommand.Delete(HOME_KIT)), commands())
+    }
+
+    /** Общее содержимое на местную полку сервер не снимает: сначала публикация цели (PLAN E5, E6). */
+    @Test
+    fun aSharedMedKitIntoALocalTargetNeedsTheTargetPublished() = runTest {
+        publish(HOME_KIT)
+
+        val outcome = removal.remove(HOME_KIT, transferTo = SHARED_KIT)
+
+        assertEquals(MedKitRemoval.Outcome.TARGET_NEEDS_PUBLICATION, outcome)
         assertNotNull(database.medKits().find(HOME_KIT))
         assertEquals(HOME_KIT, database.packageRepository().find(PACK)?.medKit?.id)
+        assertEquals(emptyList<SyncCommand>(), commands())
     }
 
     /** Целевую аптечку удалили, пока человек выбирал: не записано ничего, и сказано почему. */

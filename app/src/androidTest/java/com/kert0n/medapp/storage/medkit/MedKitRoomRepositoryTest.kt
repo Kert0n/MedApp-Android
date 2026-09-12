@@ -2,6 +2,7 @@ package com.kert0n.medapp.storage.medkit
 
 import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.fixture.HOME_KIT
+import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.SHARED_KIT
 import com.kert0n.medapp.fixture.TABLETS
@@ -25,7 +26,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
@@ -42,10 +45,10 @@ class MedKitRoomRepositoryTest {
     private val at: Instant = Instant.parse("2026-09-10T12:00:00Z")
 
     /** Разрешённый снимок — таким его отдаёт резолвер очереди или сценарий публикации. */
-    private fun snapshot(medKitId: Uuid = HOME_KIT): PackageSnapshot = medAppJson.decodeFromString(
+    private fun snapshot(medKitId: Uuid = HOME_KIT, quantity: String = "20.000000"): PackageSnapshot = medAppJson.decodeFromString(
         PackageSnapshotNetworkDTO.serializer(),
         """
-        {"drug":{"id":"$PACK","name":"Парацетамол","quantity":"18.000000","quantityUnitId":"${TABLETS.id}",
+        {"drug":{"id":"$PACK","name":"Парацетамол","quantity":"$quantity","quantityUnitId":"${TABLETS.id}",
          "formTypeId":"${TABLET_FORM.id}","medKitId":"$medKitId","version":3},
          "reservations":{"total":"0.000000","version":1}}
         """
@@ -55,7 +58,7 @@ class MedKitRoomRepositoryTest {
     fun openDatabase() = runTest {
         database = inMemoryDatabase()
         medKits = database.medKitRepository()
-        database.packageRepository().add(pack(quantity = tablets("20")))
+        database.packageRepository().add(pack(quantity = tablets("20"), form = TABLET_FORM))
     }
 
     @After
@@ -63,14 +66,30 @@ class MedKitRoomRepositoryTest {
         database.close()
     }
 
-    /** Между попытками приняли две таблетки: остаток после переключения — серверный, 18. */
+    /** Переключение и первые подтверждённые остатки с версиями — одной записью (PLAN E5). */
     @Test
     fun publishingSwitchesTheKitAndTakesTheServerState() = runTest {
-        medKits.published(medKit().publish(), listOf(snapshot()), at)
+        assertTrue(medKits.published(medKit().publish(), listOf(snapshot()), at))
 
         assertEquals(MedKit.Publication.PUBLISHED, requireNotNull(medKits.find(HOME_KIT)).publication)
-        assertEquals(tablets("18"), requireNotNull(database.packageRepository().find(PACK)).quantity)
+        assertEquals(tablets("20"), requireNotNull(database.packageRepository().find(PACK)).quantity)
         assertEquals(ResourceVersion(3), requireNotNull(database.packages().find(PACK)).pack.syncState().version)
+    }
+
+    /**
+     * Между чтением содержимого и записью приняли две таблетки: серверу досталось 20, а местно уже
+     * 18. Старый снимок поверх нового расхода не ложится — переключения нет, публиковать заново
+     * (PLAN E5). То же — с пачкой, появившейся за это время.
+     */
+    @Test
+    fun aPackageChangedMeanwhileRefusesTheSwitch() = runTest {
+        assertFalse(medKits.published(medKit().publish(), listOf(snapshot(quantity = "18.000000")), at))
+        assertEquals(MedKit.Publication.LOCAL, requireNotNull(medKits.find(HOME_KIT)).publication)
+        assertNull(requireNotNull(database.packages().find(PACK)).pack.syncState().version)
+
+        database.packageRepository().add(pack(id = OTHER_PACK, name = "Ибупрофен"))
+        assertFalse(medKits.published(medKit().publish(), listOf(snapshot()), at))
+        assertEquals(MedKit.Publication.LOCAL, requireNotNull(medKits.find(HOME_KIT)).publication)
     }
 
     /**

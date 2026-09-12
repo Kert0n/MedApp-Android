@@ -82,7 +82,7 @@ fun MedAppDatabase.intakeRepository() = com.kert0n.medapp.storage.intake.IntakeR
 )
 
 fun MedAppDatabase.medKitRepository() = com.kert0n.medapp.storage.medkit.MedKitRoomRepository(
-    this, medKits(), packages()
+    this, medKits(), packages(), vocabulary()
 )
 
 fun MedAppDatabase.queueRepository() = com.kert0n.medapp.storage.server.SyncOperationRoomRepository(
@@ -109,3 +109,37 @@ suspend fun com.kert0n.medapp.storage.pack.PackageDao.save(
     pkg.toPackageStorageEntity(sync),
     pkg.toPackageDetailsStorageEntity()
 )
+
+/** Движения — репозиторием: сценарию утраты доступа нужен его порт. */
+fun MedAppDatabase.stockMovementRepository() = com.kert0n.medapp.storage.stock.StockMovementRoomRepository(
+    stockMovements(), vocabulary()
+)
+
+/** Служба очереди поверх той же базы: пара «изменение и команда» одной транзакцией. */
+fun MedAppDatabase.queueService() = com.kert0n.medapp.queue.QueueService(transactions(), queueStorage())
+
+/**
+ * Сценарии над одной базой с остановленными часами [now]: удаление и перенос коробки, разбор,
+ * выход. Собираются вместе, потому что аптечка зовёт шаги коробки, и граф один.
+ */
+class Scenarios(database: MedAppDatabase, now: java.time.Instant) {
+    private val clock = java.time.Clock.fixed(now, java.time.ZoneOffset.UTC)
+    private val packages = database.packageRepository()
+    private val medKits = database.medKitRepository()
+    private val courses = database.courseRepository()
+    private val queue = database.queueService()
+    private val transactions = database.transactions()
+
+    val packageRemoval = com.kert0n.medapp.feature.packages.PackageRemoval(
+        packages, courses, database.stockMovementRepository(), queue, transactions, clock
+    )
+    val packageRelocation = com.kert0n.medapp.feature.packages.PackageRelocation(
+        packages, medKits, courses, queue, transactions, clock
+    )
+    val medKitRemoval = com.kert0n.medapp.feature.medkits.MedKitRemoval(
+        medKits, packages, packageRemoval, packageRelocation, queue, transactions, clock
+    )
+    val medKitLeaving = com.kert0n.medapp.feature.medkits.MedKitLeaving(
+        medKits, packages, packageRemoval, queue, transactions, clock
+    )
+}

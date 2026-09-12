@@ -62,11 +62,12 @@ class PackageRoomRepository @Inject constructor(
     override suspend fun describe(packageId: Uuid, facts: PackageFacts): Boolean =
         change(packageId) { it.describe(facts) }
 
-    override suspend fun delete(packageId: Uuid): Boolean = packages.delete(packageId) > 0
+    override suspend fun discard(packageId: Uuid): Boolean = packages.delete(packageId) > 0
 
-    override suspend fun moveContents(from: Uuid, to: Uuid): Int = packages.moveContents(from, to)
-
-    override suspend fun deleteContentsOf(medKitId: Uuid): Int = packages.deleteContentsOf(medKitId)
+    override suspend fun contentsOf(medKitId: Uuid): List<Package> = database.withTransaction {
+        val words = vocabulary.snapshot()
+        packages.ofMedKit(medKitId).map { it.toDomain(words) }
+    }
 
     /**
      * Переход применяется к тому, что лежит в базе, и пишется вместе с сохранённой обвязкой:

@@ -199,16 +199,9 @@ interface PackageDao {
     @Query("DELETE FROM packages WHERE id = :id")
     suspend fun delete(id: Uuid): Int
 
-    /**
-     * Содержимое аптечки переехало целиком — и живое, и архивное: переезжает место, а не каждая
-     * коробка по отдельности (PLAN E6).
-     */
-    @Query("UPDATE packages SET med_kit_id = :target WHERE med_kit_id = :source")
-    suspend fun moveContents(source: Uuid, target: Uuid): Int
-
-    /** Аптечку выбросили вместе с лекарствами: пачки уходят со всеми своими частями. */
-    @Query("DELETE FROM packages WHERE med_kit_id = :medKitId")
-    suspend fun deleteContentsOf(medKitId: Uuid): Int
+    @Transaction
+    @Query("SELECT * FROM packages WHERE med_kit_id = :medKitId ORDER BY name")
+    suspend fun ofMedKit(medKitId: Uuid): List<PackageStorageRow>
 }
 
 /**

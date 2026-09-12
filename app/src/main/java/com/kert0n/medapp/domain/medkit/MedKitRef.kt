@@ -14,6 +14,9 @@ class MedKitRef(
     val id: Uuid,
     val publication: MedKit.Publication
 ) {
+    /** Кому отвечает лежащее в ней — то же правило, что у самой аптечки. */
+    val answersToServer: Boolean get() = publication == MedKit.Publication.PUBLISHED
+
     override fun equals(other: Any?): Boolean =
         this === other || (other is MedKitRef && other.id == id)
 
