@@ -45,6 +45,7 @@
 
     <!-- Упаковки -->
     <string name="pack_new">Новая упаковка</string>
+    <string name="pack_edit">Правка упаковки</string>
     <string name="pack_med_kit">Аптечка</string>
     <string name="pack_name">Название</string>
     <string name="pack_amount">Количество</string>
@@ -80,6 +81,8 @@
     <string name="pack_what_it_is">Что это</string>
     <string name="pack_dates">Сроки и цена</string>
     <string name="pack_expired_on">Просрочено %1$s</string>
+    <string name="pack_actions">Действия</string>
+    <string name="pack_action_edit">Править описание</string>
     <string name="pack_where">Где лежит</string>
     <string name="pack_med_kit_unknown">Аптечка неизвестна</string>
     <string name="pack_no_med_kits">Сначала заведите аптечку — упаковка лежит в каком-то одном месте.</string>

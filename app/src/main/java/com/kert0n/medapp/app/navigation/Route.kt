@@ -40,11 +40,12 @@ sealed interface Route {
     data class MedKitContents(val medKitId: Uuid) : Route
 
     /**
-     * Заведение упаковки (экран 7); [medKitId] — аптечка, из которой человек пришёл, и `null`,
-     * когда он ещё не выбрал её.
+     * Заведение (экран 7) и правка (экран 8) упаковки: поля те же, и маршрут один. [medKitId] —
+     * аптечка, из которой человек пришёл, `null` — он ещё не выбрал её; [packageId] назван, когда
+     * правится уже заведённая пачка.
      */
     @Serializable
-    data class PackageForm(val medKitId: Uuid? = null) : Route
+    data class PackageForm(val medKitId: Uuid? = null, val packageId: Uuid? = null) : Route
 
     /** Всё известное об одной упаковке (экран 6). */
     @Serializable

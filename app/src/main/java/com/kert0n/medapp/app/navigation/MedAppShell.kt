@@ -103,11 +103,21 @@ private fun MedAppNavHost(navController: NavHostController, modifier: Modifier =
         }
         composable<Route.PackageForm>(typeMap = RouteTypes) { entry ->
             val route = entry.toRoute<Route.PackageForm>()
-            PackageFormScreen(route.medKitId, onDone = { navController.popBackStack() })
+            PackageFormScreen(
+                medKitId = route.medKitId,
+                onDone = { navController.popBackStack() },
+                packageId = route.packageId
+            )
         }
         composable<Route.PackageCard>(typeMap = RouteTypes) { entry ->
             val route = entry.toRoute<Route.PackageCard>()
-            PackageScreen(route.packageId, onBack = { navController.popBackStack() })
+            PackageScreen(
+                packageId = route.packageId,
+                onBack = { navController.popBackStack() },
+                onEdit = { medKitId ->
+                    navController.navigate(Route.PackageForm(medKitId, route.packageId))
+                }
+            )
         }
     }
 }

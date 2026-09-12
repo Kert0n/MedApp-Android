@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -16,6 +17,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -55,6 +57,7 @@ private val DAY: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.uuuu")
 fun PackageScreen(
     packageId: Uuid,
     onBack: () -> Unit,
+    onEdit: (Uuid) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: PackageViewModel = hiltViewModel()
 ) {
@@ -95,6 +98,7 @@ fun PackageScreen(
                 WhatItIs(pkg)
                 DatesAndPrice(pkg, state.today)
                 WhereItLies(state.medKit?.name, pkg)
+                Actions(onEdit = { onEdit(pkg.medKitId) })
             }
         }
     }
@@ -186,6 +190,26 @@ private fun WhereItLies(medKitName: String?, pkg: PackagePresentationDTO) {
     Section(stringResource(R.string.pack_where)) {
         Fact(stringResource(R.string.pack_med_kit), medKitName ?: stringResource(R.string.pack_med_kit_unknown))
         pkg.note?.let { Fact(stringResource(R.string.pack_note), it) }
+    }
+}
+
+/**
+ * Что с упаковкой можно сделать. Правка меняет описание и только его: количество двигают
+ * пересчёт и утилизация, место — перенос, и у каждого из них свой след в истории (PLAN D7).
+ */
+@Composable
+private fun Actions(onEdit: () -> Unit) {
+    Section(stringResource(R.string.pack_actions)) {
+        TextButton(
+            onClick = onEdit,
+            modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp)
+        ) {
+            Icon(painterResource(R.drawable.ic_edit), contentDescription = null)
+            Text(
+                stringResource(R.string.pack_action_edit),
+                modifier = Modifier.padding(start = 8.dp).weight(1f)
+            )
+        }
     }
 }
 

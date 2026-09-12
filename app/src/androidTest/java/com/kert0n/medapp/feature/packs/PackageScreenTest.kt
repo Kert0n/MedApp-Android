@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kert0n.medapp.domain.pack.Claims
@@ -21,6 +22,8 @@ import java.math.BigDecimal
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+import kotlin.uuid.Uuid
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -38,6 +41,8 @@ class PackageScreenTest {
 
     private val clock = Clock.fixed(Instant.parse("2026-09-12T12:00:00Z"), ZoneOffset.UTC)
 
+    private var edited: Uuid? = null
+
     private fun show(pkg: Package) {
         val viewModel = PackageViewModel(
             packages = FakePackages(pkg),
@@ -45,7 +50,9 @@ class PackageScreenTest {
             clock = clock
         )
         compose.setContent {
-            MedAppTheme { PackageScreen(pkg.id, onBack = {}, viewModel = viewModel) }
+            MedAppTheme {
+                PackageScreen(pkg.id, onBack = {}, onEdit = { edited = it }, viewModel = viewModel)
+            }
         }
     }
 
@@ -121,5 +128,15 @@ class PackageScreenTest {
 
         compose.onNodeWithText("Где лежит").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Домашняя").performScrollTo().assertIsDisplayed()
+    }
+
+    /** Правка описания начинается отсюда и знает, из какой аптечки пачка (PLAN H3 №8). */
+    @Test
+    fun theCardLeadsToEditing() {
+        show(pack())
+
+        compose.onNodeWithText("Править описание").performScrollTo().performClick()
+
+        assertEquals(HOME_KIT, edited)
     }
 }

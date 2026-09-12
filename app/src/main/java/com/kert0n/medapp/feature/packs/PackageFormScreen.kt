@@ -44,10 +44,14 @@ import com.kert0n.medapp.ui.PickerField
 import kotlin.uuid.Uuid
 
 /**
- * Заведение упаковки (PLAN H3 №7). Сверху — четыре поля, без которых упаковки не бывает: аптечка,
- * название, количество и единица (PLAN C1). Всё остальное, что человек может знать о коробке,
- * лежит ниже в раскрываемом разделе — **все поля до одного** (ТЗ 4.1.1.1), но заполнять их сразу
- * он не обязан.
+ * Заведение (PLAN H3 №7) и правка (№8) упаковки. Сверху — четыре поля, без которых упаковки не
+ * бывает: аптечка, название, количество и единица (PLAN C1). Всё остальное, что человек может
+ * знать о коробке, лежит ниже в раскрываемом разделе — **все поля до одного** (ТЗ 4.1.1.1), но
+ * заполнять их сразу он не обязан.
+ *
+ * В правке количество и аптечка показаны, но не правятся: количество меняют пересчёт и
+ * утилизация (экран 9), место — перенос (экран 11). У обоих есть свой след в истории, а у правки
+ * описания его нет и быть не должно (PLAN D7, F5).
  *
  * Кнопка сохранения не гаснет: погашенная не объясняет, чего не хватает, — отказ называет поле и
  * причину.
@@ -58,16 +62,21 @@ fun PackageFormScreen(
     medKitId: Uuid?,
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
+    packageId: Uuid? = null,
     viewModel: PackageFormViewModel = hiltViewModel()
 ) {
-    LaunchedEffect(medKitId) { viewModel.open(medKitId) }
+    LaunchedEffect(medKitId, packageId) { viewModel.open(medKitId, packageId) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val form = state.form
+    // Пачку удалили, пока форму держали открытой: писать некуда, и держать форму незачем.
+    LaunchedEffect(state.gone) { if (state.gone) onDone() }
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.pack_new)) },
+                title = {
+                    Text(stringResource(if (state.isEditing) R.string.pack_edit else R.string.pack_new))
+                },
                 navigationIcon = {
                     IconButton(onClick = onDone) {
                         Icon(
@@ -87,15 +96,30 @@ fun PackageFormScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            PickerField(
-                label = stringResource(R.string.pack_med_kit),
-                selected = state.medKits.firstOrNull { it.id == form.medKitId },
-                options = state.medKits,
-                optionText = { it.name },
-                onPick = { viewModel.edit(form.copy(medKitId = it.id)) },
-                isError = state.error?.field == PackageFormError.Field.MED_KIT,
-                emptyText = stringResource(R.string.pack_no_med_kits)
-            )
+            if (state.isEditing) {
+                // Показано, но не правится: у переноса и пересчёта свои экраны и свой след.
+                Stored(
+                    label = stringResource(R.string.pack_med_kit),
+                    value = state.medKits.firstOrNull { it.id == form.medKitId }?.name
+                        ?: stringResource(R.string.pack_med_kit_unknown)
+                )
+                Stored(
+                    label = stringResource(R.string.pack_amount),
+                    value = state.stored?.let {
+                        stringResource(R.string.pack_left, it.quantity.amount, it.quantity.unit.name)
+                    } ?: stringResource(R.string.state_loading)
+                )
+            } else {
+                PickerField(
+                    label = stringResource(R.string.pack_med_kit),
+                    selected = state.medKits.firstOrNull { it.id == form.medKitId },
+                    options = state.medKits,
+                    optionText = { it.name },
+                    onPick = { viewModel.edit(form.copy(medKitId = it.id)) },
+                    isError = state.error?.field == PackageFormError.Field.MED_KIT,
+                    emptyText = stringResource(R.string.pack_no_med_kits)
+                )
+            }
             OutlinedTextField(
                 value = form.name,
                 onValueChange = { viewModel.edit(form.copy(name = it)) },
@@ -104,25 +128,27 @@ fun PackageFormScreen(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                OutlinedTextField(
-                    value = form.amount,
-                    onValueChange = { viewModel.edit(form.copy(amount = it)) },
-                    label = { Text(stringResource(R.string.pack_amount)) },
-                    isError = state.error?.field == PackageFormError.Field.AMOUNT,
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.weight(1f)
-                )
-                PickerField(
-                    label = stringResource(R.string.pack_unit),
-                    selected = state.units.firstOrNull { it.id == form.unit?.id },
-                    options = state.units,
-                    optionText = { it.name },
-                    onPick = { viewModel.edit(form.copy(unit = it)) },
-                    isError = state.error?.field == PackageFormError.Field.UNIT,
-                    modifier = Modifier.weight(1f)
-                )
+            if (!state.isEditing) {
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    OutlinedTextField(
+                        value = form.amount,
+                        onValueChange = { viewModel.edit(form.copy(amount = it)) },
+                        label = { Text(stringResource(R.string.pack_amount)) },
+                        isError = state.error?.field == PackageFormError.Field.AMOUNT,
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.weight(1f)
+                    )
+                    PickerField(
+                        label = stringResource(R.string.pack_unit),
+                        selected = state.units.firstOrNull { it.id == form.unit?.id },
+                        options = state.units,
+                        optionText = { it.name },
+                        onPick = { viewModel.edit(form.copy(unit = it)) },
+                        isError = state.error?.field == PackageFormError.Field.UNIT,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
 
             ExpandableSection(
@@ -234,6 +260,19 @@ fun PackageFormScreen(
                 modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp)
             ) { Text(stringResource(R.string.action_cancel)) }
         }
+    }
+}
+
+/** Сведение, которое форма показывает, но не правит: его меняют другим действием и с другим следом. */
+@Composable
+private fun Stored(label: String, value: String) {
+    Column(Modifier.fillMaxWidth()) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(value, style = MaterialTheme.typography.bodyLarge)
     }
 }
 

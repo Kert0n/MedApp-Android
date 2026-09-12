@@ -7,7 +7,12 @@ import com.kert0n.medapp.presentation.medkit.MedKitPresentationDTO
 import com.kert0n.medapp.presentation.medkit.toPresentationDTO
 import com.kert0n.medapp.presentation.pack.PackageFormError
 import com.kert0n.medapp.presentation.pack.PackageFormPresentationDTO
+import com.kert0n.medapp.presentation.pack.PackagePresentationDTO
 import com.kert0n.medapp.presentation.pack.toDomain
+import com.kert0n.medapp.presentation.pack.toFacts
+import com.kert0n.medapp.presentation.pack.toFormPresentationDTO
+import com.kert0n.medapp.presentation.pack.toPresentationDTO
+import com.kert0n.medapp.storage.pack.PackageStorageRepository
 import com.kert0n.medapp.presentation.value.FormPresentationDTO
 import com.kert0n.medapp.presentation.value.UnitPresentationDTO
 import com.kert0n.medapp.presentation.value.toPresentationDTO
@@ -21,12 +26,20 @@ import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
- * Заведение упаковки (PLAN H3 №7). Несохранённый ввод живёт здесь, а не в базе: пока человек
- * печатает, пачки ещё нет, и отменённая форма не оставляет следов (PLAN F5).
+ * Заведение и правка упаковки (PLAN H3 №7 и №8) — одна форма с двумя состояниями: у обеих те же
+ * поля, и разошлись бы они при первой же правке одной из них.
+ *
+ * Несохранённый ввод живёт здесь, а не в базе: пока человек печатает, пачки ещё нет, и
+ * отменённая форма не оставляет следов (PLAN F5).
+ *
+ * **Правка не трогает количество**: его меняют пересчёт и утилизация, и только они оставляют
+ * след в истории (D7). Единица в правке тоже не меняется — смена единицы это отдельный сценарий
+ * (D3), поэтому доза-подсказка меряется той единицей, что у пачки уже есть.
  *
  * Списки, из которых выбирают, приходят потоками: аптечка, заведённая в соседнем экране, и
  * единица, приехавшая с обновлением словаря, появляются в форме сами.
@@ -34,6 +47,7 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class PackageFormViewModel @Inject constructor(
     private val creation: PackageCreation,
+    private val packages: PackageStorageRepository,
     private val vocabulary: VocabularyStorageRepository,
     medKits: MedKitStorageRepository,
     clock: Clock
@@ -61,10 +75,23 @@ class PackageFormViewModel @Inject constructor(
         }
     }
 
-    /** Открытие формы: аптечка подставлена той, из которой человек пришёл. */
-    fun open(medKitId: Uuid?) {
+    /**
+     * Открытие формы: для новой пачки аптечка подставлена той, из которой человек пришёл; для
+     * правки — нынешние сведения пачки, а не пустые поля.
+     */
+    fun open(medKitId: Uuid?, packageId: Uuid? = null) {
         if (_state.value.opened) return
-        _state.update { it.copy(form = it.form.copy(medKitId = medKitId), opened = true) }
+        _state.update {
+            it.copy(form = it.form.copy(medKitId = medKitId), packageId = packageId, opened = true)
+        }
+        if (packageId == null) return
+        viewModelScope.launch {
+            val stored = packages.observe(packageId).first() ?: return@launch
+            val described = stored.toPresentationDTO()
+            _state.update {
+                it.copy(form = described.toFormPresentationDTO(), stored = described)
+            }
+        }
     }
 
     fun edit(form: PackageFormPresentationDTO) =
@@ -78,7 +105,10 @@ class PackageFormViewModel @Inject constructor(
      * Ушедшая аптечка — тоже отказ, и он виден на месте выбора аптечки.
      */
     fun save(onSaved: (Uuid) -> Unit) {
-        val form = _state.value.form
+        val current = _state.value
+        val packageId = current.packageId
+        if (packageId != null) return describe(packageId, current.form, onSaved)
+        val form = current.form
         viewModelScope.launch {
             when (val described = form.toDomain(vocabulary.snapshot())) {
                 // Отказ в скрытом поле бесполезен, пока поля не видно: раздел раскрывается сам.
@@ -104,6 +134,32 @@ class PackageFormViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Правка описания и только его: остаток, обвязка синхронизации и брони не трогаются, а
+     * переход применяется к тому, что лежит в базе (PLAN F5).
+     */
+    private fun describe(packageId: Uuid, form: PackageFormPresentationDTO, onSaved: (Uuid) -> Unit) {
+        viewModelScope.launch {
+            val words = vocabulary.snapshot()
+            val chosen = form.unit?.id?.let(words::unit)
+            if (chosen == null) {
+                _state.update { it.copy(error = PackageFormError.UnitMissing) }
+                return@launch
+            }
+            when (val described = form.toFacts(words, chosen)) {
+                is ParsedInput.Rejected -> _state.update {
+                    it.copy(
+                        error = described.error,
+                        optionalShown = it.optionalShown || !described.error.field.isRequired
+                    )
+                }
+                is ParsedInput.Parsed ->
+                    if (packages.describe(packageId, described.value)) onSaved(packageId)
+                    else _state.update { it.copy(gone = true) }
+            }
+        }
+    }
+
     /** Что видит форма: напечатанное, причина отказа и списки, из которых выбирают. */
     data class State(
         val form: PackageFormPresentationDTO = PackageFormPresentationDTO(),
@@ -111,7 +167,13 @@ class PackageFormViewModel @Inject constructor(
         val medKits: List<MedKitPresentationDTO> = emptyList(),
         val units: List<UnitPresentationDTO> = emptyList(),
         val forms: List<FormPresentationDTO> = emptyList(),
+        val packageId: Uuid? = null,
+        /** Что о пачке уже записано: в правке отсюда берётся количество, которое форма не трогает. */
+        val stored: PackagePresentationDTO? = null,
         val optionalShown: Boolean = false,
-        val opened: Boolean = false
-    )
+        val opened: Boolean = false,
+        val gone: Boolean = false
+    ) {
+        val isEditing: Boolean get() = packageId != null
+    }
 }

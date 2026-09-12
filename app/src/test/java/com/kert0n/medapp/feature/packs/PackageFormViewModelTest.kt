@@ -9,7 +9,9 @@ import com.kert0n.medapp.fixture.DirectTransactions
 import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.MainDispatcherRule
 import com.kert0n.medapp.fixture.TABLETS
+import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.medKit
+import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.presentation.pack.PackageFormError
 import com.kert0n.medapp.presentation.pack.PackageFormPresentationDTO
@@ -39,7 +41,7 @@ class PackageFormViewModelTest {
     private val medKits = FakeMedKits(medKit(id = HOME_KIT))
     private val movements = FakeMovements()
 
-    private fun viewModel() = PackageFormViewModel(
+    private fun viewModel(packages: FakePackages = this.packages) = PackageFormViewModel(
         creation = PackageCreation(
             packages = packages,
             medKits = medKits,
@@ -47,6 +49,7 @@ class PackageFormViewModelTest {
             transactions = DirectTransactions,
             clock = Clock.fixed(now, ZoneOffset.UTC)
         ),
+        packages = packages,
         vocabulary = FakeVocabulary(),
         medKits = medKits,
         clock = Clock.fixed(now, ZoneOffset.UTC)
@@ -164,6 +167,55 @@ class PackageFormViewModelTest {
         assertEquals(listOf("Домашняя"), form.state.value.medKits.map { it.name })
         assertEquals(listOf("таблетка", "мл"), form.state.value.units.map { it.name })
         assertEquals(listOf("таблетки", "капсулы"), form.state.value.forms.map { it.name })
+    }
+
+    /** Правка открывается на том, что записано, а не на пустых полях (PLAN H3 №8). */
+    @Test
+    fun anOpenedFormShowsWhatIsStored() = runTest {
+        val stored = FakePackages(pack(id = PACK, name = "Парацетамол", quantity = tablets("20")))
+        val form = viewModel(stored)
+
+        form.open(HOME_KIT, PACK)
+
+        assertEquals("Парацетамол", form.state.value.form.name)
+        assertEquals("20", form.state.value.form.amount)
+        assertTrue(form.state.value.isEditing)
+    }
+
+    /**
+     * Правка меняет описание и только его: количество двигают пересчёт и утилизация, и только
+     * они оставляют след в истории (PLAN D7, F5).
+     *
+     * Красная проверка: сохранять правку общей записью пачки — остаток станет тем, что экран
+     * прочитал когда-то раньше, и случай краснеет.
+     */
+    @Test
+    fun editingDoesNotTouchTheAmount() = runTest {
+        val stored = FakePackages(pack(id = PACK, name = "Парацетамол", quantity = tablets("20")))
+        val form = viewModel(stored)
+        form.open(HOME_KIT, PACK)
+
+        form.edit(form.state.value.form.copy(name = "Панадол", amount = "5"))
+        form.save {}
+
+        val written = stored.packages.single()
+        assertEquals("Панадол", written.name)
+        assertEquals(tablets("20"), written.quantity)
+        assertTrue("правка не пишет движений", movements.recorded.isEmpty())
+    }
+
+    /** Пачки больше нет — писать некуда, и форма не притворяется, что сохранила. */
+    @Test
+    fun aPackageThatIsGoneStopsTheForm() = runTest {
+        val form = viewModel(FakePackages())
+        form.open(HOME_KIT, PACK)
+
+        form.edit(form.state.value.form.copy(name = "Панадол", unit = UnitPresentationDTO(TABLETS.id, TABLETS.name)))
+        var done = false
+        form.save { done = true }
+
+        assertEquals(false, done)
+        assertTrue(form.state.value.gone)
     }
 
     @Test

@@ -12,7 +12,11 @@ import com.kert0n.medapp.fixture.FakeMovements
 import com.kert0n.medapp.fixture.FakePackages
 import com.kert0n.medapp.fixture.FakeVocabulary
 import com.kert0n.medapp.fixture.HOME_KIT
+import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.TABLETS
+import com.kert0n.medapp.fixture.pack
+import com.kert0n.medapp.fixture.tablets
+import kotlin.uuid.Uuid
 import com.kert0n.medapp.fixture.medKit
 import com.kert0n.medapp.presentation.value.UnitPresentationDTO
 import com.kert0n.medapp.ui.theme.MedAppTheme
@@ -38,22 +42,32 @@ class PackageFormScreenTest {
 
     private lateinit var viewModel: PackageFormViewModel
 
-    private fun show() {
+    private val packages = FakePackages(pack(id = PACK, name = "Парацетамол", quantity = tablets("20")))
+
+    private fun show(packageId: Uuid? = null) {
         val clock = Clock.fixed(Instant.parse("2026-09-12T12:00:00Z"), ZoneOffset.UTC)
         viewModel = PackageFormViewModel(
             creation = PackageCreation(
-                packages = FakePackages(),
+                packages = packages,
                 medKits = medKits,
                 movements = FakeMovements(),
                 transactions = DirectTransactions,
                 clock = clock
             ),
+            packages = packages,
             vocabulary = FakeVocabulary(),
             medKits = medKits,
             clock = clock
         )
         compose.setContent {
-            MedAppTheme { PackageFormScreen(HOME_KIT, onDone = {}, viewModel = viewModel) }
+            MedAppTheme {
+                PackageFormScreen(
+                    medKitId = HOME_KIT,
+                    onDone = {},
+                    packageId = packageId,
+                    viewModel = viewModel
+                )
+            }
         }
     }
 
@@ -115,5 +129,21 @@ class PackageFormScreenTest {
         compose.onNodeWithText("Название нужно: без него упаковку не найти.")
             .performScrollTo()
             .assertIsDisplayed()
+    }
+
+    /**
+     * В правке количество показано, но не правится: его меняют пересчёт и утилизация, и только
+     * они оставляют след (PLAN D7).
+     *
+     * Красная проверка: дать править количество здесь — остаток изменится без записи в истории,
+     * и случай краснеет.
+     */
+    @Test
+    fun inEditingTheAmountIsShownButNotEdited() {
+        show(packageId = PACK)
+
+        compose.onNodeWithText("Правка упаковки").assertIsDisplayed()
+        compose.onNodeWithText("20 таблетка").assertIsDisplayed()
+        compose.onNodeWithText("Единица").assertDoesNotExist()
     }
 }

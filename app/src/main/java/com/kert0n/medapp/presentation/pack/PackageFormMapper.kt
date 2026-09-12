@@ -9,6 +9,7 @@ import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.presentation.ParsedInput
 import com.kert0n.medapp.presentation.value.ExpiryDatePresentationDTO
 import com.kert0n.medapp.presentation.value.MoneyPresentationDTO
+import com.kert0n.medapp.presentation.value.toPresentationDTO
 import com.kert0n.medapp.presentation.value.QuantityPresentationDTO
 import com.kert0n.medapp.presentation.value.UnitPresentationDTO
 import com.kert0n.medapp.presentation.value.toDomain
@@ -140,3 +141,31 @@ private fun tooLong(
 
 private fun <T> rejected(error: PackageFormError): ParsedInput<T, PackageFormError> =
     ParsedInput.Rejected(error)
+
+/**
+ * Нынешние сведения пачки — в поля формы: правка начинается с того, что записано, а не с пустых
+ * полей (PLAN H3 №8). Количество и единица переносятся как есть: править их здесь нечем —
+ * количество меняют пересчёт и утилизация, а единица нужна форме лишь затем, чтобы померить
+ * дозу-подсказку.
+ *
+ * Срок годности возвращается той же записью, какой его печатают на упаковке, — и разбирается
+ * обратно ею же.
+ */
+fun PackagePresentationDTO.toFormPresentationDTO(): PackageFormPresentationDTO =
+    PackageFormPresentationDTO(
+        medKitId = medKitId,
+        name = name,
+        amount = quantity.amount,
+        unit = quantity.unit,
+        form = form,
+        category = category.orEmpty(),
+        manufacturer = manufacturer.orEmpty(),
+        country = country.orEmpty(),
+        description = description.orEmpty(),
+        expiresOn = expiresOn?.toPresentationDTO()?.text.orEmpty(),
+        defaultIntakeAmount = defaultIntakeAmount?.amount.orEmpty(),
+        note = note.orEmpty(),
+        price = price?.amount.orEmpty(),
+        purchasedOn = purchasedOn,
+        openedOn = openedOn
+    )
