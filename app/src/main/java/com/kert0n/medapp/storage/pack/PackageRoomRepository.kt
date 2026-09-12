@@ -10,14 +10,17 @@ import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.queue.PackageQueueState
 import com.kert0n.medapp.queue.pack.PackageSyncCommand
+import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.storage.course.CourseDao
 import com.kert0n.medapp.storage.course.CourseReallocation
 import com.kert0n.medapp.storage.course.toSourceStorageEntities
 import com.kert0n.medapp.storage.course.toStorageEntity as toCourseStorageEntity
 import com.kert0n.medapp.storage.database.MedAppDatabase
+import com.kert0n.medapp.storage.database.chunkedForQuery
 import com.kert0n.medapp.queue.StoredSyncOperation
 import com.kert0n.medapp.storage.server.SyncOperationDao
+import com.kert0n.medapp.storage.server.SyncOperationStorageRow
 import com.kert0n.medapp.storage.stock.StockMovementDao
 import com.kert0n.medapp.storage.stock.toStorageEntity as toMovementStorageEntity
 import com.kert0n.medapp.storage.value.VocabularyDao
@@ -77,11 +80,8 @@ class PackageRoomRepository @Inject constructor(
             true
         }
 
-    override suspend fun applyServerSnapshot(
-        pkg: Package,
-        sync: PackageSyncState,
-        observedAt: Instant
-    ): Boolean = packages.applyServerSnapshot(pkg.toStorageEntity(sync), observedAt)
+    override suspend fun applySnapshot(snapshot: PackageSnapshot, observedAt: Instant): SnapshotApplied =
+        packages.applySnapshot(snapshot, observedAt)
 
     override suspend fun saveClaims(packageId: Uuid, claims: Claims?) {
         if (claims == null) packages.deleteClaims(packageId)
@@ -123,8 +123,16 @@ class PackageRoomRepository @Inject constructor(
     private suspend fun projectionOf(id: Uuid): PackageProjection? = database.withTransaction {
         val words = vocabulary.snapshot()
         val pkg = packages.find(id)?.toDomain(words) ?: return@withTransaction null
-        projectionOf(pkg, packages.allocationsOf(listOf(id)).firstOrNull(), words)
+        projectionOf(pkg, packages.allocationsOf(listOf(id)).firstOrNull(), queue.unclosedOfPackages(listOf(id)), words)
     }
+
+    /**
+     * Обвязка синхронизации пачки — своим методом, а не полем проекции: версии и момент сверки
+     * принадлежат доставке, а не пачке, и нужны они одному экрану состояния синхронизации
+     * (PLAN E4, H3 №28). `null` — пачки больше нет.
+     */
+    override fun observeSyncState(id: Uuid): Flow<PackageSyncState?> =
+        packages.observe(id).map { it?.pack?.syncState() }
 
     /**
      * Список — готовые проекции одним чтением. «Есть свободное» запросом не выражается: это
@@ -135,8 +143,12 @@ class PackageRoomRepository @Inject constructor(
         database.withTransaction {
             val words = vocabulary.snapshot()
             val found = packages.matching(query, today).map { it.toDomain(words) }
-            val allocations = packages.allocationsOf(found.map { it.id })
-            val projected = found.map { pkg -> projectionOf(pkg, allocations.firstOrNull { it.packageId == pkg.id }, words) }
+            val ids = found.map { it.id }
+            val allocations = ids.chunkedForQuery().flatMap { packages.allocationsOf(it) }
+            val unclosed = unclosedOf(ids)
+            val projected = found.map { pkg ->
+                projectionOf(pkg, allocations.firstOrNull { it.packageId == pkg.id }, unclosed[pkg.id].orEmpty(), words)
+            }
             if (query.filter != PackageQuery.Filter.HasFree) projected
             else projected.filter { !it.availability.freeForAnyone.isZero }
         }
@@ -147,8 +159,13 @@ class PackageRoomRepository @Inject constructor(
      * не входит и названа среди нечитаемых отдельно (PLAN E1, F4). Выделение — из назначения
      * активному курсу (PLAN D4).
      */
-    private suspend fun projectionOf(pkg: Package, allocation: PackageAllocationRow?, words: Vocabulary): PackageProjection {
-        val commands = queue.unclosedOfPackage(pkg.id).mapNotNull {
+    private suspend fun projectionOf(
+        pkg: Package,
+        allocation: PackageAllocationRow?,
+        unclosed: List<SyncOperationStorageRow>,
+        words: Vocabulary
+    ): PackageProjection {
+        val commands = unclosed.mapNotNull {
             (it.toDomain(words) as? StoredSyncOperation.Readable)?.operation?.command as? PackageSyncCommand
         }
         val state = PackageQueueState(pkg, commands)
@@ -160,7 +177,18 @@ class PackageRoomRepository @Inject constructor(
         return pkg.projection(availability, state.hasUnconfirmedChanges)
     }
 
+    /**
+     * Незакрытые операции всего списка — одним чтением на порцию: спрашивать очередь про каждую
+     * пачку значило бы двести запросов там, где хватает одного. Порядок по `sequence` внутри
+     * пачки группировка сохраняет.
+     */
+    private suspend fun unclosedOf(ids: List<Uuid>): Map<Uuid, List<SyncOperationStorageRow>> =
+        ids.chunkedForQuery()
+            .flatMap { queue.unclosedOfPackages(it) }
+            .groupBy { requireNotNull(it.operation.packageId) { "операция пачки называет свою пачку" } }
+
     private companion object {
+
 
         /** Из чего складывается доступность: пачка с её сведениями и бронями, очередь, выделения. */
         val AVAILABILITY_TABLES = arrayOf(

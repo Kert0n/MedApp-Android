@@ -62,12 +62,12 @@ class PackageSnapshotResolverTest {
         override suspend fun medKit(id: Uuid): MedKitRef? =
             if (id == HOME_KIT) medKit(id = HOME_KIT, publication = MedKit.Publication.PUBLISHED).ref else null
         override fun changes(): kotlinx.coroutines.flow.Flow<Unit> = kotlinx.coroutines.flow.emptyFlow()
+        override suspend fun nextDueAt(now: Instant): Instant? = null
         override suspend fun ready(now: Instant) = error("не для этого теста")
         override suspend fun take(id: Uuid, fresh: PackageSnapshot?, at: Instant) = error("не для этого теста")
         override suspend fun answered(id: Uuid, answer: RawResponse, at: Instant) = error("не для этого теста")
         override suspend fun defer(id: Uuid, reason: String, at: Instant, notBefore: Instant) = error("не для этого теста")
         override suspend fun settle(id: Uuid, settlement: Settlement, at: Instant) = error("не для этого теста")
-        override suspend fun <T> transaction(block: suspend () -> T) = error("не для этого теста")
         override suspend fun enqueue(queued: QueuedCommand, at: Instant) = error("не для этого теста")
     }
 

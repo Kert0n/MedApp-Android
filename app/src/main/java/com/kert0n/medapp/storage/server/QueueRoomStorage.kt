@@ -26,6 +26,7 @@ import com.kert0n.medapp.storage.intake.IntakeDao
 import com.kert0n.medapp.storage.medkit.MedKitDao
 import com.kert0n.medapp.storage.pack.PackageDao
 import com.kert0n.medapp.storage.pack.toDetailsStorageEntity
+import com.kert0n.medapp.storage.pack.applySnapshot
 import com.kert0n.medapp.storage.pack.toStorageEntity
 import com.kert0n.medapp.storage.value.VocabularyDao
 import java.time.Instant
@@ -50,8 +51,6 @@ class QueueRoomStorage @Inject constructor(
     private val vocabulary: VocabularyDao
 ) : QueueStorage {
 
-    override suspend fun <T> transaction(block: suspend () -> T): T = database.withTransaction { block() }
-
     /** Room сообщает об изменении таблицы после коммита — то, что outbox и должен услышать. */
     override fun changes(): Flow<Unit> =
         database.invalidationTracker.createFlow("sync_operations", emitInitialState = false).map { }
@@ -63,6 +62,8 @@ class QueueRoomStorage @Inject constructor(
         val words = vocabulary.snapshot()
         queue.ready(now).map { it.toDomain(words) }
     }
+
+    override suspend fun nextDueAt(now: Instant): Instant? = queue.nextDueAt(now)
 
     override suspend fun medKit(id: Uuid): MedKitRef? = medKits.find(id)?.toRef()
 
@@ -142,8 +143,10 @@ class QueueRoomStorage @Inject constructor(
      */
     override suspend fun settle(id: Uuid, settlement: Settlement, at: Instant) = database.withTransaction {
         val changed = when (val transition = settlement.transition) {
+            // Закрытая операция не повторяется, а счёт попыток — вход задержки и только он:
+            // закрытию нечего им двигать (PLAN E2, E3).
             is Settlement.Transition.Close ->
-                queue.settle(id, transition.status, transition.lastError, at, attempted = 1)
+                queue.settle(id, transition.status, transition.lastError, at, attempted = 0)
             is Settlement.Transition.Reprepare ->
                 queue.reprepare(id, transition.lastError, at, transition.notBefore)
             is Settlement.Transition.Retry -> queue.settle(
@@ -183,11 +186,7 @@ class QueueRoomStorage @Inject constructor(
 
     /** Разрешённый снимок поверх подтверждённого остатка и броней; разрешать здесь нечего. */
     private suspend fun layDown(snapshot: PackageSnapshot, at: Instant) {
-        packages.applySnapshot(
-            snapshot.pack.toStorageEntity(snapshot.sync),
-            snapshot.pack.claims?.toStorageEntity(snapshot.pack.id),
-            observedAt = at
-        )
+        packages.applySnapshot(snapshot, observedAt = at)
     }
 
     /** Зависимость значит «нужен эффект»: не будет его у родителя — не будет и у зависимых, и у их зависимых. */

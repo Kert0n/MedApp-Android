@@ -109,6 +109,9 @@ class QueueWorkerTest {
 
         /** То же определение, что в SQL: срок наступил, зависимости применены, первая незакрытая по пачке. */
         override fun changes(): kotlinx.coroutines.flow.Flow<Unit> = kotlinx.coroutines.flow.emptyFlow()
+        override suspend fun nextDueAt(now: Instant): Instant? =
+            operations.values.filter { !it.status.isClosed }.mapNotNull { it.notBefore }.filter { it.isAfter(now) }.minOrNull()
+
         override suspend fun ready(now: Instant): List<StoredSyncOperation> =
             operations.values
                 .filter { !it.status.isClosed }
@@ -162,7 +165,6 @@ class QueueWorkerTest {
             operations[id] = operation.with(attempts = operation.attempts + 1, lastTriedAt = at, notBefore = notBefore)
         }
 
-        override suspend fun <T> transaction(block: suspend () -> T): T = block()
 
         override suspend fun enqueue(queued: QueuedCommand, at: Instant): SyncOperation =
             error("работник команд не ставит")
@@ -186,8 +188,9 @@ class QueueWorkerTest {
                     notBefore = transition.notBefore, dropNotBefore = transition.notBefore == null,
                     outcomeUnknown = operation.outcomeUnknown || transition.outcomeUnknown
                 )
+                // Как Room: закрытие попытки не считает — закрытая операция не повторяется.
                 is Settlement.Transition.Close -> operation.with(
-                    status = transition.status, attempts = operation.attempts + 1, lastTriedAt = at, dropAnswer = true, dropNotBefore = true
+                    status = transition.status, lastTriedAt = at, dropAnswer = true, dropNotBefore = true
                 )
             }
         }
@@ -650,6 +653,31 @@ class QueueWorkerTest {
         assertEquals(1, transport.sent.size)
         assertTrue(storage.operations.values.all { it.attempts == 0 })
         assertEquals(listOf(now.plusSeconds(2)), storage.operations.values.mapNotNull { it.notBefore })
+    }
+
+    /**
+     * Окончательный отказ пропуска — это срок, а не новый круг. HTTP-слой уже перевыпустил токен
+     * и повторил один раз (PLAN B5); дошедший сюда 401 значит «этой учётке сервер не отвечает».
+     * Операция должна ждать по задержке: без неё `take` оставляет строку `SENDING` без
+     * `not_before`, Room сигналит о собственной записи, outbox будит проход — и тот отправляет
+     * снова, без движения времени.
+     *
+     * Красная проверка: вернуть остановку прохода без записи исхода — `notBefore` пуст.
+     */
+    @Test
+    fun aFinalAuthorizationRefusalWaitsInsteadOfLooping() = runTest {
+        val storage = Storage(listOf(operation(PackageSyncCommand.Consume(PACK, dose("1"), INTAKE))))
+        val transport = transport { ApiResult.Failure(ApiFailure.Unauthorized) }
+
+        worker(storage, transport).drain()
+
+        assertEquals(1, transport.sent.size)
+        val stored = storage.operations.values.single()
+        assertEquals(SyncOperationStatus.PENDING, stored.status)
+        assertEquals(now.plusSeconds(2), stored.notBefore)
+        // Готовой раньше срока она не станет, и второй проход её не берёт.
+        worker(storage, transport).drain()
+        assertEquals(1, transport.sent.size)
     }
 
     @Test

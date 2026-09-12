@@ -137,7 +137,12 @@ class QueueWorker @Inject constructor(
                 is ApiFailure.Invalid ->
                     Step.Settled(refused(taken.command, (taken.command as? PackageSyncCommand)?.onInvalid ?: RefusalReason.INVALID))
                 ApiFailure.NotFound -> Step.Settled(notFound(taken, request))
-                ApiFailure.Unauthorized, ApiFailure.RegistrationRefused -> Step.Unauthorized
+                // Пропуска нет окончательно: перевыпуск и один повтор уже были в HTTP-слое
+                // (PLAN B5), и сервер этой учётке не отвечает. Проход останавливается, а операция
+                // ждёт по задержке — иначе она осталась бы готовой сейчас же, и собственная
+                // запись разбудила бы следующий круг.
+                ApiFailure.Unauthorized, ApiFailure.RegistrationRefused ->
+                    Step.Settled(Delivery.Retry("нет пропуска"), stop = true)
                 is ApiFailure.TooManyRequests ->
                     Step.Settled(Delivery.Retry("429"), retryAfter = failure.retryAfter, stop = true)
                 ApiFailure.Unavailable -> Step.Settled(Delivery.Retry("связи нет", attempted = false), stop = true)
@@ -309,7 +314,6 @@ class QueueWorker @Inject constructor(
         /** Шаг бросил: операция помечена и названа, проход идёт дальше. [answered] — ответ уже записан. */
         data class Failed(val cause: Exception, val answered: Boolean) : Step
 
-        data object Unauthorized : Step
 
         data object Skipped : Step
     }
@@ -384,7 +388,6 @@ class QueueWorker @Inject constructor(
                     }
                     return false
                 }
-                Step.Unauthorized -> return true
                 Step.Skipped -> {
                     // Взять не удалось — кто-то закрыл или взял её между чтением и взятием.
                     skippedIds += operation.id

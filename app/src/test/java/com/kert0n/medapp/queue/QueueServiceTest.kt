@@ -20,21 +20,26 @@ class QueueServiceTest {
 
     private class Storage : QueueStorage {
         val enqueued = mutableListOf<QueuedCommand>()
-        var transactions = 0
         override fun changes(): kotlinx.coroutines.flow.Flow<Unit> = kotlinx.coroutines.flow.emptyFlow()
+        override suspend fun nextDueAt(now: Instant): Instant? = null
         override suspend fun ready(now: Instant): List<StoredSyncOperation> = emptyList()
         override suspend fun medKit(id: Uuid): com.kert0n.medapp.domain.medkit.MedKitRef? = null
         override suspend fun take(id: Uuid, fresh: com.kert0n.medapp.network.pack.PackageSnapshot?, at: Instant): Take? = null
         override suspend fun answered(id: Uuid, answer: com.kert0n.medapp.network.server.RawResponse, at: Instant) = Unit
         override suspend fun defer(id: Uuid, reason: String, at: Instant, notBefore: Instant) = Unit
         override suspend fun settle(id: Uuid, settlement: Settlement, at: Instant) = Unit
-        override suspend fun <T> transaction(block: suspend () -> T): T {
-            transactions++
-            return block()
-        }
         override suspend fun enqueue(queued: QueuedCommand, at: Instant): SyncOperation {
             enqueued += queued
             return SyncOperation(queued.id, queued.command, enqueued.size.toLong(), at, 1)
+        }
+    }
+
+    /** Узкий порт: считает, что всё прошло одной транзакцией, и ничего больше не умеет. */
+    private class Transaction : Transactions {
+        var opened = 0
+        override suspend fun <T> run(block: suspend () -> T): T {
+            opened++
+            return block()
         }
     }
 
@@ -45,22 +50,23 @@ class QueueServiceTest {
     @Test
     fun changeAndItsCommandGoInOneTransaction() = runTest {
         val storage = Storage()
+        val transactions = Transaction()
         var changed = false
-        val applied = QueueService(storage).change(published.ref, listOf(consume), EARLIER) {
+        val applied = QueueService(transactions, storage).change(published.ref, listOf(consume), EARLIER) {
             changed = true
             true
         }
         assertTrue(applied)
         assertTrue(changed)
         assertEquals(listOf(consume), storage.enqueued)
-        assertEquals(1, storage.transactions)
+        assertEquals(1, transactions.opened)
     }
 
     @Test
     fun localKitGetsNoCommands() = runTest {
         val storage = Storage()
 
-        assertTrue(QueueService(storage).change(medKit(publication = MedKit.Publication.LOCAL).ref, listOf(consume), EARLIER) { true })
+        assertTrue(QueueService(Transaction(), storage).change(medKit(publication = MedKit.Publication.LOCAL).ref, listOf(consume), EARLIER) { true })
 
         assertTrue(storage.enqueued.isEmpty())
     }
@@ -69,7 +75,7 @@ class QueueServiceTest {
     fun aChangeThatDidNotLandQueuesNothing() = runTest {
         val storage = Storage()
 
-        assertFalse(QueueService(storage).change(published.ref, listOf(consume), EARLIER) { false })
+        assertFalse(QueueService(Transaction(), storage).change(published.ref, listOf(consume), EARLIER) { false })
 
         assertTrue(storage.enqueued.isEmpty())
     }

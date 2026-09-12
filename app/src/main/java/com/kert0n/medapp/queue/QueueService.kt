@@ -14,7 +14,10 @@ import javax.inject.Inject
  * Местной аптечке команд не ставится: на сервере её нет, и везти туда нечего (PLAN E1). Это
  * единственное, что служба решает сама; что именно изменилось, ей всё равно.
  */
-class QueueService @Inject constructor(private val storage: QueueStorage) {
+class QueueService @Inject constructor(
+    private val transactions: Transactions,
+    private val storage: QueueStorage
+) {
 
     /**
      * [change] — запись изменения; `false` значит «писать было некуда», и команды тогда тоже не
@@ -26,7 +29,7 @@ class QueueService @Inject constructor(private val storage: QueueStorage) {
         commands: List<QueuedCommand>,
         at: Instant,
         change: suspend () -> Boolean
-    ): Boolean = storage.transaction {
+    ): Boolean = transactions.run {
         val applied = change()
         if (applied && medKit.publication == MedKit.Publication.PUBLISHED) {
             for (command in commands) storage.enqueue(command, at)

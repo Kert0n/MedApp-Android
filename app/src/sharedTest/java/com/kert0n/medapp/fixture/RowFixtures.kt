@@ -7,7 +7,7 @@ import com.kert0n.medapp.domain.pack.PackageRef
 import com.kert0n.medapp.storage.medkit.MedKitStorageEntity
 import com.kert0n.medapp.storage.pack.PackageRefStorageRow
 import com.kert0n.medapp.domain.stock.StockMovement
-import com.kert0n.medapp.network.intake.IntakeSyncState
+import com.kert0n.medapp.queue.intake.IntakeSyncState
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.storage.intake.IntakeStorageRow
 import com.kert0n.medapp.storage.intake.toStorageEntity

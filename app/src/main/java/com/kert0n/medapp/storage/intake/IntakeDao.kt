@@ -7,7 +7,7 @@ import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
 import com.kert0n.medapp.domain.intake.IntakeStatus
-import com.kert0n.medapp.network.intake.IntakeAccounting
+import com.kert0n.medapp.queue.intake.IntakeAccounting
 import java.time.Instant
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.Flow

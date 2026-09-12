@@ -30,6 +30,13 @@ interface QueueStorage {
      */
     suspend fun ready(now: Instant): List<StoredSyncOperation>
 
+    /**
+     * Когда наступит ближайший срок незакрытой операции, ещё не наступивший к [now]; `null` — ждать
+     * нечего. Срок повтора — состояние базы, а не память прохода: проход видит только то, что
+     * трогал, а отложенная при старте или чужим проходом операция ждёт ровно здесь.
+     */
+    suspend fun nextDueAt(now: Instant): Instant?
+
     /** Ссылка на аптечку, которую называет снимок; `null` — локально её нет, и снимок положить некуда. */
     suspend fun medKit(id: Uuid): MedKitRef?
 
@@ -59,9 +66,6 @@ interface QueueStorage {
      * изменил строку — закрытие одно.
      */
     suspend fun settle(id: Uuid, settlement: Settlement, at: Instant)
-
-    /** Одна транзакция на изменение и его команду: порознь их не бывает (PLAN F5). */
-    suspend fun <T> transaction(block: suspend () -> T): T
 
     /** Ставит команду; номер выдаёт хранилище. Только внутри [transaction] с её причиной. */
     suspend fun enqueue(queued: QueuedCommand, at: Instant): SyncOperation

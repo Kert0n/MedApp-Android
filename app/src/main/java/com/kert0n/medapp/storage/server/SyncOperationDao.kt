@@ -68,14 +68,21 @@ interface SyncOperationDao {
     @Query("SELECT * FROM sync_operations WHERE package_id = :packageId ORDER BY sequence")
     suspend fun ofPackage(packageId: Uuid): List<SyncOperationStorageRow>
 
-    /** Незакрытые операции пачки. Чтение, а не поток: оценка количества складывается не из них одних. */
+    /**
+     * Незакрытые операции названных пачек, по возрастанию номера. Один вопрос на всю выборку:
+     * список из двухсот пачек спрашивал очередь двести раз, а знание то же. Раскладывает по
+     * пачкам вызывающий, он же держит длину списка в пределе переменных SQLite.
+     *
+     * Пачка одна — список из одной: определение «незакрытой» одно, и второго запроса под него
+     * заводить незачем. Чтение, а не поток: оценка количества складывается не из них одних.
+     */
     @Transaction
     @Query(
-        "SELECT * FROM sync_operations WHERE package_id = :packageId " +
+        "SELECT * FROM sync_operations WHERE package_id IN (:packageIds) " +
             "AND status NOT IN ('APPLIED', 'REFUSED', 'ACCESS_LOST') " +
             "ORDER BY sequence"
     )
-    suspend fun unclosedOfPackage(packageId: Uuid): List<SyncOperationStorageRow>
+    suspend fun unclosedOfPackages(packageIds: List<Uuid>): List<SyncOperationStorageRow>
 
     @Transaction
     @Query("SELECT * FROM sync_operations WHERE status = :status ORDER BY sequence")
@@ -99,6 +106,16 @@ interface SyncOperationDao {
             ") ORDER BY sequence"
     )
     suspend fun ready(now: Instant): List<SyncOperationStorageRow>
+
+    /**
+     * Ближайший срок среди незакрытых операций, который ещё не наступил; `null` — ждать нечего.
+     * Срок повтора живёт в базе, и спрашивают о нём базу, а не память прошлого прохода.
+     */
+    @Query(
+        "SELECT MIN(not_before) FROM sync_operations WHERE status IN ('PENDING', 'SENDING', 'ANSWERED') " +
+            "AND not_before > :now"
+    )
+    suspend fun nextDueAt(now: Instant): Instant?
 
     /** Замораживает запрос и берёт в отправку — только если операция ещё не закрыта. */
     @Query(

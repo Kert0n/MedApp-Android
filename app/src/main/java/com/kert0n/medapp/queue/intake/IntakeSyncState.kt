@@ -1,4 +1,4 @@
-package com.kert0n.medapp.network.intake
+package com.kert0n.medapp.queue.intake
 
 import kotlin.uuid.Uuid
 

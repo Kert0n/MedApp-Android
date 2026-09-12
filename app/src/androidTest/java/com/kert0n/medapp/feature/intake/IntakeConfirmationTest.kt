@@ -29,10 +29,11 @@ import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.packageRepository
 import com.kert0n.medapp.fixture.plannedIntake
 import com.kert0n.medapp.fixture.queueStorage
+import com.kert0n.medapp.fixture.transactions
 import com.kert0n.medapp.fixture.schedule
 import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
-import com.kert0n.medapp.network.intake.IntakeAccounting
+import com.kert0n.medapp.queue.intake.IntakeAccounting
 import com.kert0n.medapp.queue.QueueService
 import com.kert0n.medapp.queue.StoredSyncOperation
 import com.kert0n.medapp.queue.SyncCommand
@@ -78,10 +79,10 @@ class IntakeConfirmationTest {
         courses = database.courseRepository()
         intakes = database.intakeRepository()
         packages = database.packageRepository()
-        val queue = database.queueStorage()
+        val transactions = database.transactions()
         val clock = Clock.fixed(now, ZoneOffset.UTC)
-        val service = QueueService(queue)
-        confirmation = IntakeConfirmation(intakes, courses, packages, queue, service, CourseClosing(courses, service), clock)
+        val service = QueueService(transactions, database.queueStorage())
+        confirmation = IntakeConfirmation(intakes, courses, packages, transactions, service, CourseClosing(courses, service), clock)
         packages.add(pack(quantity = tablets("20")))
     }
 
@@ -227,6 +228,41 @@ class IntakeConfirmationTest {
         assertEquals(IntakeRejected.Reason.UNIT_MISMATCH, (refused as IntakeRejected).reason)
         assertEquals(IntakeStatus.PLANNED, requireNotNull(intakes.find(INTAKE)).status)
         assertEquals(millilitres("100"), requireNotNull(packages.find(OTHER_PACK)).quantity)
+    }
+
+    /**
+     * Пачка вне источников курса той же единицей: пункт курса принимают из пачки курса, а такой
+     * приём — внеплановый факт, и пункт им не закрывается (PLAN D5). Отказ до записи: ни остатка,
+     * ни статуса, ни команды.
+     *
+     * Красная проверка: убрать отказ — пункт становится `TAKEN`, а чужая пачка худеет.
+     */
+    @Test
+    fun aPackageOutsideTheCourseSourcesIsRefusedAndWritesNothing() = runTest {
+        activate()
+        packages.add(pack(id = OTHER_PACK, quantity = tablets("30")))
+
+        val refused = confirmation.confirm(INTAKE, OTHER_PACK, dose("2"), FIRST_PLANNED_AT).exceptionOrNull()
+
+        assertEquals(IntakeRejected.Reason.PACKAGE_NOT_A_SOURCE, (refused as IntakeRejected).reason)
+        assertEquals(IntakeStatus.PLANNED, requireNotNull(intakes.find(INTAKE)).status)
+        assertEquals(tablets("30"), requireNotNull(packages.find(OTHER_PACK)).quantity)
+        assertEquals(tablets("20"), requireNotNull(packages.find(PACK)).quantity)
+        assertEquals(0, database.syncOperations().all().size)
+    }
+
+    /** Другая пачка **из источников** курса разрешена: расход и выделение идут по ней (PLAN D5). */
+    @Test
+    fun anotherPackageOfTheCourseSourcesIsAccepted() = runTest {
+        packages.add(pack(id = OTHER_PACK, quantity = tablets("30")))
+        val plan = activeCourse(totalDoses = 7, sources = listOf(source(PACK, 5), source(OTHER_PACK, 2)))
+        courses.activate(CourseDraft.Activation(plan, courseRecord(prescription = plan.prescription)), listOf(plannedIntake()))
+
+        val confirmed = confirmation.confirm(INTAKE, OTHER_PACK, dose("2"), FIRST_PLANNED_AT).getOrThrow()
+
+        assertEquals(IntakeStatus.TAKEN, confirmed.intake.status)
+        assertEquals(tablets("28"), requireNotNull(packages.find(OTHER_PACK)).quantity)
+        assertEquals(tablets("20"), requireNotNull(packages.find(PACK)).quantity)
     }
 
     /** Двойное нажатие: второй раз отвечает записанным и второй раз не списывает (PLAN D6). */

@@ -5,15 +5,16 @@ import com.kert0n.medapp.domain.course.CourseProgress
 import com.kert0n.medapp.domain.pack.PackageAvailability
 import com.kert0n.medapp.feature.course.CourseClosing
 import com.kert0n.medapp.domain.intake.CourseIntake
+import com.kert0n.medapp.domain.intake.IntakeProjection
 import com.kert0n.medapp.domain.intake.IntakeRejected
 import com.kert0n.medapp.domain.intake.IntakeStatus
 import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
-import com.kert0n.medapp.network.intake.IntakeAccounting
-import com.kert0n.medapp.network.intake.IntakeSyncState
+import com.kert0n.medapp.queue.intake.IntakeAccounting
+import com.kert0n.medapp.queue.intake.IntakeSyncState
 import com.kert0n.medapp.queue.QueueService
-import com.kert0n.medapp.queue.QueueStorage
+import com.kert0n.medapp.queue.Transactions
 import com.kert0n.medapp.queue.QueuedCommand
 import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import com.kert0n.medapp.storage.course.CourseReallocation
@@ -38,7 +39,7 @@ class IntakeConfirmation @Inject constructor(
     private val intakes: IntakeStorageRepository,
     private val courses: CourseStorageRepository,
     private val packages: PackageStorageRepository,
-    private val transactions: QueueStorage,
+    private val transactions: Transactions,
     private val queue: QueueService,
     private val closing: CourseClosing,
     private val clock: Clock
@@ -50,7 +51,7 @@ class IntakeConfirmation @Inject constructor(
      * ничего. Повтор по уже принятому пункту ничего не меняет и отвечает тем, что записано.
      */
     suspend fun confirm(intakeId: Uuid, packageId: Uuid, amount: Dose, at: Instant): Result<Confirmed> =
-        transactions.transaction { write(intakeId, packageId, amount, at) }
+        transactions.run { write(intakeId, packageId, amount, at) }
 
     private suspend fun write(intakeId: Uuid, packageId: Uuid, amount: Dose, at: Instant): Result<Confirmed> {
         val now = clock.instant()
@@ -58,12 +59,15 @@ class IntakeConfirmation @Inject constructor(
         val record = checkNotNull(courses.findRecord(intake.courseId)) { "у пункта курса есть запись эпизода" }
         if (intake.status == IntakeStatus.TAKEN) {
             val sync = checkNotNull(intakes.syncStateOf(intake.id)) { "принятый пункт записан" }
-            return Result.success(Confirmed(intake, sync.accounting, episodeClosed = !record.isOpen))
+            return Result.success(Confirmed(intake.projection(), sync.accounting, episodeClosed = !record.isOpen))
         }
         if (!record.isOpen) return rejected(IntakeRejected.Reason.EPISODE_CLOSED)
         val course = checkNotNull(courses.findPlan(intake.courseId)) { "у идущего эпизода есть план" }
         val pkg = packages.find(packageId) ?: return rejected(IntakeRejected.Reason.PACKAGE_UNUSABLE)
         if (amount.unit != intake.unit) return rejected(IntakeRejected.Reason.UNIT_MISMATCH)
+        // Пункт курса принимают из пачки курса; из любой другой это внеплановый факт, и пункт им
+        // не закрывается (PLAN D5). Отказ — до `take`: не записано ничего.
+        if (!course.isSource(pkg.ref)) return rejected(IntakeRejected.Reason.PACKAGE_NOT_A_SOURCE)
         val confirmed = intake.confirm(pkg.take(amount, at).getOrElse { return Result.failure(it) })
 
         val others = intakes.ofCourse(course.id).filterIsInstance<CourseIntake>().filter { it != intake }
@@ -105,17 +109,18 @@ class IntakeConfirmation @Inject constructor(
         } else {
             intakes.prunePlanned(course.id, course.remainingOccurrences(progress).toSet())
         }
-        return Result.success(Confirmed(confirmed, sync.accounting, episodeClosed = finished))
+        return Result.success(Confirmed(confirmed.projection(), sync.accounting, episodeClosed = finished))
     }
 
     private fun rejected(reason: IntakeRejected.Reason): Result<Confirmed> = Result.failure(IntakeRejected(reason))
 
     /**
-     * Что стало после подтверждения: принятый пункт, где его расход — в локальном остатке или в
-     * очереди, — и закончилось ли им лечение.
+     * Что стало после подтверждения: принятый пункт **проекцией** — сущность действительна лишь
+     * в транзакции, которая её прочитала, и наружу не уходит (PLAN H1), — где его расход, в
+     * локальном остатке или в очереди, и закончилось ли им лечение.
      */
     data class Confirmed(
-        val intake: CourseIntake,
+        val intake: IntakeProjection.Scheduled,
         val accounting: IntakeAccounting,
         val episodeClosed: Boolean
     )

@@ -5,6 +5,8 @@ import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.doses
 import com.kert0n.medapp.fixture.COURSE
+import com.kert0n.medapp.fixture.OTHER_PACK
+import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.courseRecord
 import com.kert0n.medapp.fixture.LATER
@@ -14,9 +16,11 @@ import com.kert0n.medapp.fixture.course
 import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.schedule
+import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
 import java.math.BigDecimal
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 import com.kert0n.medapp.fixture.prescribedDraft
@@ -165,5 +169,17 @@ class CourseTest {
     @Test(expected = IllegalArgumentException::class)
     fun noteOverTheLimitIsRejected() {
         course(note = "я".repeat(CourseRecord.NOTE_MAX_LENGTH + 1))
+    }
+
+    /**
+     * Состав препарата знает курс: пункт курса принимают из его пачки, любая другая — внеплановый
+     * факт (PLAN D5). Спрашивают об этом курс, а не перебирают источники на стороне.
+     */
+    @Test
+    fun courseTellsItsOwnSourcesFromStrangers() {
+        val treatment = activeCourse(sources = listOf(source(PACK, 5)))
+
+        assertTrue(treatment.isSource(pack(id = PACK).ref))
+        assertFalse(treatment.isSource(pack(id = OTHER_PACK).ref))
     }
 }

@@ -25,7 +25,9 @@ import kotlinx.coroutines.launch
  * тот, кто положил, а тот, кто следит за таблицей: сигнал [QueueStorage.changes] приходит после
  * коммита по определению, и гонки «разбудили до фиксации» нет (PLAN E4, F5). Проход идёт и при
  * старте процесса — в очереди могло остаться с прошлого запуска, — и по ближайшему
- * `not_before` из отчёта. Сигналы, пришедшие во время прохода, сворачиваются в один следующий.
+ * `not_before`, о котором после каждого прохода спрашивают базу: память прохода знает только то,
+ * что он трогал, а отложенная операция лежит в таблице. Сигналы, пришедшие во время прохода,
+ * сворачиваются в один следующий — в том числе сигнал от собственной записи.
  *
  * Здесь же политика ошибок: исключение прохода не роняет процесс — оно записано в [state], и
  * очередь пробуется снова через [RETRY_AFTER_FAILURE]. Сбой одной операции работник изолирует
@@ -62,6 +64,7 @@ class QueueOutbox @Inject constructor(
         for (signal in wake) {
             timer?.cancel()
             val nextRunAt = pass()
+            _state.update { it.copy(nextRunAt = nextRunAt) }
             timer = nextRunAt?.let { at ->
                 scope.launch {
                     delay(Duration.between(clock.instant(), at).coerceAtLeast(Duration.ZERO).toMillis())
@@ -71,17 +74,21 @@ class QueueOutbox @Inject constructor(
         }
     }
 
-    /** Один проход; `null` — приходить не надо, пока таблица не изменится. */
+    /**
+     * Один проход и ближайший срок после него — из базы; `null` — приходить не надо, пока таблица
+     * не изменится. Сбой прохода — тоже срок: не позже [RETRY_AFTER_FAILURE].
+     */
     private suspend fun pass(): Instant? = try {
         val report = worker.drain()
-        _state.update { it.copy(passes = it.passes + 1, lastReport = report, lastFailure = null, nextRunAt = report.retryAt) }
-        report.retryAt
+        _state.update { it.copy(passes = it.passes + 1, lastReport = report, lastFailure = null) }
+        storage.nextDueAt(clock.instant())
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (failure: Exception) {
+        _state.update { it.copy(passes = it.passes + 1, lastFailure = failure.toString()) }
         val retryAt = clock.instant().plus(RETRY_AFTER_FAILURE.toJavaDuration())
-        _state.update { it.copy(passes = it.passes + 1, lastFailure = failure.toString(), nextRunAt = retryAt) }
-        retryAt
+        val due = runCatching { storage.nextDueAt(clock.instant()) }.getOrNull()
+        if (due != null && due.isBefore(retryAt)) due else retryAt
     }
 
     /** Сколько проходов было, чем кончился последний, и когда следующий по сроку. */
