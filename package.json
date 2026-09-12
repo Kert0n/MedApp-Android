@@ -1,0 +1,11 @@
+{
+  "name": "medapp-android-icons",
+  "private": true,
+  "description": "Только выгрузка значков Material Symbols в res/drawable: приложение собирается Gradle, npm здесь ни при чём.",
+  "scripts": {
+    "icon": "node scripts/add-icon.mjs"
+  },
+  "devDependencies": {
+    "@material-symbols/svg-400": "^0.36.0"
+  }
+}

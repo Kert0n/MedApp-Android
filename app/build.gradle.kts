@@ -140,8 +140,8 @@ android {
      * проверяется в androidTest (PLAN J1). Второй набор строителей разошёлся бы с первым.
      */
     sourceSets {
-        getByName("test").kotlin.srcDir("src/sharedTest/java")
-        getByName("androidTest").kotlin.srcDir("src/sharedTest/java")
+        getByName("test").kotlin.directories.add("src/sharedTest/java")
+        getByName("androidTest").kotlin.directories.add("src/sharedTest/java")
     }
 }
 
@@ -178,6 +178,9 @@ dependencies {
 
     implementation(libs.hilt.android)
     implementation(libs.androidx.hilt.navigation.compose)
+    // `hiltViewModel` переехал сюда из hilt-navigation-compose: зависимость объявлена явно,
+    // потому что транзитивная однажды уже исчезла (значки).
+    implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)
     implementation(libs.androidx.hilt.work)
     ksp(libs.hilt.compiler)
     ksp(libs.androidx.hilt.compiler)

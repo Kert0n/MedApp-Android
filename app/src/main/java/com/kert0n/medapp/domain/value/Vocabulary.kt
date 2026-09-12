@@ -20,6 +20,12 @@ class Vocabulary(units: Collection<QuantityUnit>, forms: Collection<DosageForm>)
         require(this.forms.size == forms.size) { "форма в снимке словаря заведена дважды" }
     }
 
+    /**
+     * Известна ли хоть одна единица. Без неё не показать ни одного количества, а форма без
+     * единицы количества не измеряет: «словарь не пуст» — это не то же самое (PLAN D1).
+     */
+    val knowsUnits: Boolean get() = units.isNotEmpty()
+
     /** `null` — единицы в снимке нет: он старее, чем тот, кто её назвал. */
     fun unit(id: Uuid): QuantityUnit? = units[id]
 

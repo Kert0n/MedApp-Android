@@ -4,7 +4,11 @@ import android.util.Log
 import com.kert0n.medapp.BuildConfig
 import com.kert0n.medapp.network.account.AccessTokens
 import io.ktor.client.plugins.logging.Logger
+import com.kert0n.medapp.domain.account.DeviceAccount
+import com.kert0n.medapp.domain.value.VocabularyLibrary
+import com.kert0n.medapp.network.account.ServerDeviceAccount
 import com.kert0n.medapp.network.server.MedAppApi
+import com.kert0n.medapp.network.value.ServerVocabularyLibrary
 import com.kert0n.medapp.queue.QueueHttpTransport
 import com.kert0n.medapp.network.server.crptHttpClient
 import com.kert0n.medapp.network.server.medAppHttpClient
@@ -82,4 +86,16 @@ object NetworkModule {
     @Provides
     @Singleton
     fun clock(): Clock = Clock.systemUTC()
+
+    /**
+     * Доменные порты, которые выполняет сеть: знакомство устройства с сервером и пополнение
+     * словаря. Сценарии видят порт, а не провод (PLAN H1).
+     */
+    @Provides
+    @Singleton
+    fun deviceAccount(implementation: ServerDeviceAccount): DeviceAccount = implementation
+
+    @Provides
+    @Singleton
+    fun vocabularyLibrary(implementation: ServerVocabularyLibrary): VocabularyLibrary = implementation
 }
