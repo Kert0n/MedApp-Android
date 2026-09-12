@@ -14,18 +14,10 @@ import java.time.Instant
 
 /**
  * Снимок пачки с сервера, собранный в домен: подтверждённое состояние и его обвязка вместе,
- * потому что порознь с провода они не приходят (PLAN E4).
+ * потому что порознь с провода они не приходят (PLAN E4). Равенство — по обвязке и тождеству
+ * пачки: два снимка одной пачки различаются версиями, а не полями.
  */
-class PackageSnapshot(val pack: Package, val sync: PackageSyncState)
-
-/**
- * Знает ли снимок словаря всё, что называет этот снимок пачки. Промах — `VocabularyMiss`, как
- * и у полного разбора: тот, кто держит словарь, дочитывает его до того, как снимок ляжет в базу.
- */
-fun PackageSnapshotNetworkDTO.requireKnownIn(vocabulary: Vocabulary) {
-    vocabulary.unitOrMiss(pack.unitId)
-    pack.formId?.let(vocabulary::formOrMiss)
-}
+data class PackageSnapshot(val pack: Package, val sync: PackageSyncState)
 
 /**
  * Провод → домен. Единица и форма приходят идентификаторами и разрешаются по снимку словаря;

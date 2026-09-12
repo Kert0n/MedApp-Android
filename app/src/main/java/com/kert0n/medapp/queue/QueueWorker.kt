@@ -1,7 +1,7 @@
 package com.kert0n.medapp.queue
 
+import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
-import com.kert0n.medapp.network.pack.requireKnownIn
 import com.kert0n.medapp.network.server.ApiFailure
 import com.kert0n.medapp.network.server.ApiResult
 import com.kert0n.medapp.network.server.RawResponse
@@ -29,8 +29,9 @@ import kotlinx.coroutines.sync.withLock
  * неизвестным исходом либо отправка, пережившая смерть процесса, — уходит как есть.
  *
  * Полученный ответ записывается до того, как применён: если применить его нечем — словарь не
- * знает единицы, снимок следом не прочитался, — операция ждёт с ответом в руках и закрывается
- * из него, не спрашивая сервер второй раз.
+ * знает единицы, аптечка снимка неизвестна, снимок следом не прочитался, — операция ждёт с
+ * ответом в руках и закрывается из него, не спрашивая сервер второй раз. Что снимок называет,
+ * разрешает [PackageSnapshotResolver] одним исходом; хранение получает уже разрешённый снимок.
  *
  * Один проход — [drain]: пока есть связь, по одной операции в порядке очереди. Обрыв оставляет
  * операцию на повтор тем же запросом и останавливает проход; ограничение частоты соблюдает
@@ -42,6 +43,7 @@ class QueueWorker @Inject constructor(
     private val storage: QueueStorage,
     private val transport: QueueTransport,
     private val vocabulary: VocabularyResolver,
+    private val snapshots: PackageSnapshotResolver,
     private val clock: Clock
 ) {
 
@@ -170,12 +172,11 @@ class QueueWorker @Inject constructor(
         }
     }
 
-    /** Снимок из ответа ложится в базу только словами, которые словарь знает: промах дочитывается. */
-    private suspend fun known(snapshot: PackageSnapshotNetworkDTO, then: (PackageSnapshotNetworkDTO) -> Step): Step =
-        when (val resolution = vocabulary.resolve { snapshot.requireKnownIn(it) }) {
-            is VocabularyResolver.Resolution.Resolved -> then(snapshot)
-            is VocabularyResolver.Resolution.Unresolved ->
-                Step.Deferred(resolution.reason, stop = resolution.failure != null)
+    /** Снимок из ответа ложится в базу только разрешённым: неизвестное дочитывается или ждёт. */
+    private suspend fun known(snapshot: PackageSnapshotNetworkDTO, then: (PackageSnapshot) -> Step): Step =
+        when (val resolution = snapshots.resolve(snapshot, clock.instant())) {
+            is PackageSnapshotResolver.Resolution.Resolved -> then(resolution.snapshot)
+            is PackageSnapshotResolver.Resolution.Unresolved -> Step.Deferred(resolution.reason, stop = resolution.stop)
         }
 
     /**
@@ -249,21 +250,20 @@ class QueueWorker @Inject constructor(
     }
 
     /** Истина по пачке, прочитанная следом, — и исход по ней; не прочиталась — исход чтения. */
-    private suspend fun snapshotThen(packageId: Uuid, then: (PackageSnapshotNetworkDTO) -> Delivery): Delivery =
+    private suspend fun snapshotThen(packageId: Uuid, then: (PackageSnapshot) -> Delivery): Delivery =
         when (val read = snapshotRead(packageId)) {
             is Read.Snapshot -> then(read.snapshot)
             is Read.Failed -> read.delivery
         }
 
     /**
-     * Что у сервера сейчас по этой пачке — словами, которые словарь знает: промах дочитывается.
+     * Что у сервера сейчас по этой пачке — разрешённым снимком: неизвестное дочитывается или ждёт.
      * Пачки нет — доступа к ней нет; связи нет — проход останавливается; иначе — повтор позже.
      */
     private suspend fun snapshotRead(packageId: Uuid): Read = when (val read = transport.packageSnapshot(packageId)) {
-        is ApiResult.Success -> when (val resolution = vocabulary.resolve { read.value.requireKnownIn(it) }) {
-            is VocabularyResolver.Resolution.Resolved -> Read.Snapshot(read.value)
-            is VocabularyResolver.Resolution.Unresolved ->
-                Read.Failed(Delivery.Retry(resolution.reason), stop = resolution.failure != null)
+        is ApiResult.Success -> when (val resolution = snapshots.resolve(read.value, clock.instant())) {
+            is PackageSnapshotResolver.Resolution.Resolved -> Read.Snapshot(resolution.snapshot)
+            is PackageSnapshotResolver.Resolution.Unresolved -> Read.Failed(Delivery.Retry(resolution.reason), stop = resolution.stop)
         }
         is ApiResult.Failure -> when (val failure = read.failure) {
             ApiFailure.NotFound -> Read.Failed(Delivery.AccessLost)
@@ -275,7 +275,7 @@ class QueueWorker @Inject constructor(
     }
 
     private sealed interface Read {
-        data class Snapshot(val snapshot: PackageSnapshotNetworkDTO) : Read
+        data class Snapshot(val snapshot: PackageSnapshot) : Read
         data class Failed(val delivery: Delivery, val stop: Boolean = false) : Read
     }
 

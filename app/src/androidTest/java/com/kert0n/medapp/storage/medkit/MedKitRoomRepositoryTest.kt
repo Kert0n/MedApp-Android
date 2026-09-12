@@ -12,6 +12,9 @@ import com.kert0n.medapp.fixture.medKitRepository
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.packageRepository
 import com.kert0n.medapp.fixture.tablets
+import com.kert0n.medapp.network.pack.PackageSnapshot
+import com.kert0n.medapp.network.pack.toDomain
+import com.kert0n.medapp.fixture.VOCABULARY
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
 import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.network.server.medAppJson
@@ -36,14 +39,15 @@ class MedKitRoomRepositoryTest {
 
     private val at: Instant = Instant.parse("2026-09-10T12:00:00Z")
 
-    private fun snapshot(medKitId: Uuid = HOME_KIT): PackageSnapshotNetworkDTO = medAppJson.decodeFromString(
+    /** Разрешённый снимок — таким его отдаёт резолвер очереди или сценарий публикации. */
+    private fun snapshot(medKitId: Uuid = HOME_KIT): PackageSnapshot = medAppJson.decodeFromString(
         PackageSnapshotNetworkDTO.serializer(),
         """
         {"drug":{"id":"$PACK","name":"Парацетамол","quantity":"18.000000","quantityUnitId":"${TABLETS.id}",
          "formTypeId":"${TABLET_FORM.id}","medKitId":"$medKitId","version":3},
          "reservations":{"total":"0.000000","version":1}}
         """
-    )
+    ).toDomain(VOCABULARY, medKit(id = medKitId, publication = MedKit.Publication.PUBLISHED).ref, addedAt = at, observedAt = at)
 
     @Before
     fun openDatabase() = runTest {

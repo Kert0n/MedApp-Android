@@ -5,6 +5,11 @@ import org.junit.Assert.assertFalse
 import java.math.BigDecimal
 import com.kert0n.medapp.queue.pack.prepare
 import com.kert0n.medapp.fixture.pack
+import com.kert0n.medapp.domain.medkit.MedKit
+import com.kert0n.medapp.domain.medkit.MedKitRef
+import com.kert0n.medapp.network.pack.PackageSnapshot
+import com.kert0n.medapp.network.pack.toDomain
+import com.kert0n.medapp.fixture.medKit
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.fixture.EARLIER
@@ -13,6 +18,7 @@ import com.kert0n.medapp.fixture.INTAKE
 import com.kert0n.medapp.fixture.MILLILITRES
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
+import com.kert0n.medapp.fixture.SHARED_KIT
 import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.dose
@@ -85,16 +91,19 @@ class QueueWorkerTest {
         var frozen = 0
         var known = PackageSyncState(PACK, ResourceVersion(3))
         var knownPack: Package = pack(quantity = tablets("20"))
-        val takenWith = mutableListOf<PackageSnapshotNetworkDTO?>()
+        val takenWith = mutableListOf<PackageSnapshot?>()
+
+        /** Аптечки, которые «есть в базе»: снимок, называющий другую, положить некуда. */
+        val knownMedKits = mutableSetOf(HOME_KIT)
 
         /** Снимок «лёг в базу»: версии, остаток и брони — те, что у сервера. */
-        private fun learn(snapshot: PackageSnapshotNetworkDTO) {
-            known = PackageSyncState(PACK, snapshot.pack.version, snapshot.claims.version)
-            knownPack = pack(
-                quantity = tablets(snapshot.pack.amount),
-                claims = Claims(BigDecimal(snapshot.claims.total), snapshot.claims.mine?.let(::BigDecimal))
-            )
+        private fun learn(snapshot: PackageSnapshot) {
+            known = snapshot.sync
+            knownPack = snapshot.pack
         }
+
+        override suspend fun medKit(id: Uuid): MedKitRef? =
+            if (id in knownMedKits) medKit(id = id, publication = MedKit.Publication.PUBLISHED).ref else null
 
         val deferred = mutableListOf<Pair<Uuid, String>>()
 
@@ -113,7 +122,7 @@ class QueueWorkerTest {
                 .sortedBy { it.sequence }
                 .map<SyncOperation, StoredSyncOperation> { StoredSyncOperation.Readable(it) } + unreadable
 
-        override suspend fun take(id: Uuid, fresh: PackageSnapshotNetworkDTO?, at: Instant): Take? {
+        override suspend fun take(id: Uuid, fresh: PackageSnapshot?, at: Instant): Take? {
             val operation = operations[id] ?: return null
             if (operation.status.isClosed) return null
             takenWith += fresh
@@ -279,8 +288,12 @@ class QueueWorkerTest {
     private fun transport(fresh: PackageSnapshotNetworkDTO = snapshot, answer: (PreparedRequest) -> ApiResult<RawResponse>) =
         Transport(answer).also { it.fresh = ApiResult.Success(fresh) }
 
-    private fun worker(storage: Storage, transport: Transport, online: Boolean = true) =
-        QueueWorker(storage, transport, resolver(online), clock)
+    private fun worker(storage: Storage, transport: QueueTransport, online: Boolean = true, clock: Clock = this.clock) =
+        QueueWorker(storage, transport, resolver(online), PackageSnapshotResolver(resolver(online), storage), clock)
+
+    /** Снимок, каким его положит хранение: разрешённый, с домашней аптечкой. */
+    private fun resolved(dto: PackageSnapshotNetworkDTO): PackageSnapshot =
+        dto.toDomain(Vocabulary(listOf(TABLETS), listOf(TABLET_FORM)), medKit(id = HOME_KIT, publication = MedKit.Publication.PUBLISHED).ref, now, now)
 
     @Test
     fun pendingOperationIsSentAndSettledDoneWithTheSnapshot() = runTest {
@@ -295,7 +308,7 @@ class QueueWorkerTest {
         assertEquals("PUT", transport.sent.single().method)
         assertEquals("/v1/drugs/$PACK/sync/$INTAKE", transport.sent.single().path)
         assertFalse(transport.sent.single().body!!.contains("reservation"))
-        assertEquals(Delivery.Applied(PackageState.Present(snapshot)), storage.settled.single().second)
+        assertEquals(Delivery.Applied(PackageState.Present(resolved(snapshot))), storage.settled.single().second)
         assertEquals(SyncOperationStatus.APPLIED, storage.operations.getValue(INTAKE).status)
         assertNull(report.retryAt)
     }
@@ -311,7 +324,7 @@ class QueueWorkerTest {
         assertEquals(1, transport.snapshots)
         assertEquals(ResourceVersion(7), transport.sent.single().drugVersion)
         assertTrue(transport.sent.single().body!!.contains("\"drugVersion\":7"))
-        assertEquals(snapshotWithVersion(7), storage.takenWith.single())
+        assertEquals(resolved(snapshotWithVersion(7)), storage.takenWith.single())
     }
 
     /** Ответ на первую операцию пачки уже лёг в базу — вторая готовится по нему, без второго чтения. */
@@ -326,7 +339,7 @@ class QueueWorkerTest {
         assertEquals(2, report.settled)
         assertEquals(1, transport.snapshots)
         assertEquals(listOf(ResourceVersion(7), ResourceVersion(8)), transport.sent.map { it.drugVersion })
-        assertEquals(listOf(snapshotWithVersion(7), null), storage.takenWith)
+        assertEquals(listOf(resolved(snapshotWithVersion(7)), null), storage.takenWith)
     }
 
     /** Отправка, пережившая смерть процесса: исход неизвестен, запрос уже заморожен — уходит как есть. */
@@ -403,7 +416,7 @@ class QueueWorkerTest {
         worker(storage, transport).drain()
 
         assertEquals(2, transport.sent.size)
-        assertEquals(Delivery.Stale(snapshotWithVersion(7)), storage.settled[0].second)
+        assertEquals(Delivery.Stale(resolved(snapshotWithVersion(7))), storage.settled[0].second)
         assertEquals(Delivery.AccessLost, storage.settled[1].second)
     }
 
@@ -424,7 +437,7 @@ class QueueWorkerTest {
         assertFalse(storage.operations.getValue(INTAKE).outcomeUnknown)
 
         limited = false
-        QueueWorker(storage, transport, resolver(true), Clock.fixed(now.plusSeconds(31), ZoneOffset.UTC)).drain()
+        worker(storage, transport, clock = Clock.fixed(now.plusSeconds(31), ZoneOffset.UTC)).drain()
 
         assertEquals(2, transport.sent.size)
         assertEquals(Delivery.AccessLost, storage.settled.last().second)
@@ -443,7 +456,7 @@ class QueueWorkerTest {
         assertTrue(storage.operations.getValue(INTAKE).outcomeUnknown)
 
         lost = false
-        QueueWorker(storage, transport, resolver(true), Clock.fixed(now.plusSeconds(31), ZoneOffset.UTC)).drain()
+        worker(storage, transport, clock = Clock.fixed(now.plusSeconds(31), ZoneOffset.UTC)).drain()
 
         assertEquals(2, transport.sent.size)
         assertSame(transport.sent[0], transport.sent[1])
@@ -480,8 +493,8 @@ class QueueWorkerTest {
         val report = worker(storage, transport).drain()
 
         assertEquals(1, report.settled)
-        assertEquals(Delivery.Stale(snapshotWithVersion(7)), storage.settled[0].second)
-        assertEquals(Delivery.Applied(PackageState.Present(snapshotWithVersion(8))), storage.settled[1].second)
+        assertEquals(Delivery.Stale(resolved(snapshotWithVersion(7))), storage.settled[0].second)
+        assertEquals(Delivery.Applied(PackageState.Present(resolved(snapshotWithVersion(8)))), storage.settled[1].second)
         assertEquals(2, transport.sent.size)
         assertTrue(transport.sent.all { it.path.endsWith("/sync/$INTAKE") })
         assertEquals(listOf(ResourceVersion(3), ResourceVersion(7)), transport.sent.map { it.drugVersion })
@@ -505,7 +518,7 @@ class QueueWorkerTest {
 
         assertEquals(1, report.settled)
         assertEquals(1, transport.sent.size)
-        assertEquals(Delivery.Applied(PackageState.Present(snapshot)), storage.settled.single().second)
+        assertEquals(Delivery.Applied(PackageState.Present(resolved(snapshot))), storage.settled.single().second)
     }
 
     /**
@@ -523,7 +536,7 @@ class QueueWorkerTest {
 
         assertEquals(1, transport.sent.size)
         assertEquals(
-            Delivery.Refused(RefusalReason.INVALID, PackageState.Present(snapshot)),
+            Delivery.Refused(RefusalReason.INVALID, PackageState.Present(resolved(snapshot))),
             storage.settled.single().second
         )
         assertEquals(SyncOperationStatus.REFUSED, storage.operations.getValue(INTAKE).status)
@@ -543,7 +556,7 @@ class QueueWorkerTest {
 
         worker(storage, transport).drain()
 
-        assertEquals(Delivery.Refused(RefusalReason.STALE, PackageState.Present(snapshot)), storage.settled.single().second)
+        assertEquals(Delivery.Refused(RefusalReason.STALE, PackageState.Present(resolved(snapshot))), storage.settled.single().second)
         assertEquals(SyncOperationStatus.REFUSED, storage.operations.getValue(INTAKE).status)
     }
 
@@ -560,7 +573,7 @@ class QueueWorkerTest {
 
         worker(storage, transport).drain()
 
-        assertEquals(Delivery.Refused(RefusalReason.INVALID, PackageState.Present(snapshot)), storage.settled.single().second)
+        assertEquals(Delivery.Refused(RefusalReason.INVALID, PackageState.Present(resolved(snapshot))), storage.settled.single().second)
     }
 
     @Test
@@ -594,7 +607,7 @@ class QueueWorkerTest {
         broken = false
         val second = worker(storage, transport).drain()
         assertEquals(0, second.settled) // задержка после первой попытки ещё не прошла
-        val later = QueueWorker(storage, transport, resolver(true), Clock.fixed(now.plusSeconds(600), ZoneOffset.UTC))
+        val later = worker(storage, transport, clock = Clock.fixed(now.plusSeconds(600), ZoneOffset.UTC))
         assertEquals(1, later.drain().settled)
         assertEquals(2, transport.sent.size)
         assertSame(transport.sent[0], transport.sent[1])
@@ -665,7 +678,7 @@ class QueueWorkerTest {
 
         worker(storage, transport).drain()
 
-        assertEquals(Delivery.Applied(PackageState.Present(snapshot)), storage.settled.single().second)
+        assertEquals(Delivery.Applied(PackageState.Present(resolved(snapshot))), storage.settled.single().second)
     }
 
     /** 409 на заявлении брони — она уже есть: по свежему `mine` та же команда становится правкой. */
@@ -713,7 +726,7 @@ class QueueWorkerTest {
 
         worker(storage, transport).drain()
 
-        assertEquals(Delivery.Applied(PackageState.Present(snapshot)), storage.settled.single().second)
+        assertEquals(Delivery.Applied(PackageState.Present(resolved(snapshot))), storage.settled.single().second)
         assertEquals(SyncOperationStatus.APPLIED, storage.operations.getValue(INTAKE).status)
     }
 
@@ -726,7 +739,7 @@ class QueueWorkerTest {
 
         worker(storage, transport).drain()
 
-        assertEquals(Delivery.Refused(RefusalReason.INSUFFICIENT, PackageState.Present(snapshot)), storage.settled.single().second)
+        assertEquals(Delivery.Refused(RefusalReason.INSUFFICIENT, PackageState.Present(resolved(snapshot))), storage.settled.single().second)
     }
 
     /** Единицу пачки сменили: дозу в прежней единице на провод не везут — единицы там нет. */
@@ -771,13 +784,36 @@ class QueueWorkerTest {
         assertEquals(1, storage.deferred.size)
         assertTrue(storage.settled.isEmpty())
 
-        val later = QueueWorker(storage, transport, resolver(online = true), Clock.fixed(now.plusSeconds(600), ZoneOffset.UTC))
+        val later = worker(storage, transport, clock = Clock.fixed(now.plusSeconds(600), ZoneOffset.UTC))
         val second = later.drain()
 
         assertEquals(1, second.settled)
         assertEquals(1, transport.sent.size)
         assertEquals(1, store.refreshed)
         assertEquals(SyncOperationStatus.APPLIED, storage.operations.getValue(INTAKE).status)
+    }
+
+    /**
+     * Сосед перенёс пачку в аптечку, которой у нас локально нет: снимок в ответе положить некуда.
+     * Это тот же вопрос, что и промах словаря, и исход тот же — операция ждёт с ответом в руках и
+     * названной причиной, а проход жив и следующая операция обрабатывается (PLAN E3, E4).
+     */
+    @Test
+    fun aSnapshotNamingAnUnknownMedKitIsDeferredAndThePassGoesOn() = runTest {
+        val storage = Storage(listOf(operation(sequence = 0), operation(id = OTHER_PACK, sequence = 1, command = PackageSyncCommand.Consume(OTHER_PACK, dose("1"), OTHER_PACK))))
+        val elsewhere = snapshotJson.replace(HOME_KIT.toString(), SHARED_KIT.toString())
+        val transport = transport { request ->
+            if (request.path.contains(PACK.toString())) ApiResult.Success(RawResponse(200, elsewhere))
+            else ApiResult.Success(RawResponse(200, snapshotJson.replace(PACK.toString(), OTHER_PACK.toString())))
+        }
+
+        val report = worker(storage, transport).drain()
+
+        assertEquals(1, report.settled)
+        assertEquals(SyncOperationStatus.ANSWERED, storage.operations.getValue(INTAKE).status)
+        assertEquals("аптечка $SHARED_KIT неизвестна", storage.deferred.single().second)
+        assertEquals(SyncOperationStatus.APPLIED, storage.operations.getValue(OTHER_PACK).status)
+        assertEquals(0, store.refreshed)
     }
 
     /** Ответ, записанный до смерти процесса, закрывается из записи: сервер о нём не спрашивают. */
@@ -796,7 +832,7 @@ class QueueWorkerTest {
 
         assertEquals(1, report.settled)
         assertTrue(transport.sent.isEmpty())
-        assertEquals(Delivery.Applied(PackageState.Present(snapshot)), storage.settled.single().second)
+        assertEquals(Delivery.Applied(PackageState.Present(resolved(snapshot))), storage.settled.single().second)
     }
 
     /** Второй офлайн-приём той же пачки не уходит, пока первый ждёт срока: порядок по пачке — в определении готовности. */
@@ -825,9 +861,9 @@ class QueueWorkerTest {
         assertEquals(now.plusSeconds(30), storage.operations.getValue(INTAKE).notBefore)
 
         limited = false
-        QueueWorker(storage, transport, resolver(true), Clock.fixed(now.plusSeconds(10), ZoneOffset.UTC)).drain()
+        worker(storage, transport, clock = Clock.fixed(now.plusSeconds(10), ZoneOffset.UTC)).drain()
         assertEquals(1, transport.sent.size)
-        val inTime = QueueWorker(storage, transport, resolver(true), Clock.fixed(now.plusSeconds(31), ZoneOffset.UTC)).drain()
+        val inTime = worker(storage, transport, clock = Clock.fixed(now.plusSeconds(31), ZoneOffset.UTC)).drain()
         assertEquals(2, transport.sent.size)
         assertEquals(1, inTime.settled)
     }
@@ -867,7 +903,7 @@ class QueueWorkerTest {
             }
             override suspend fun packageSnapshot(packageId: Uuid): ApiResult<PackageSnapshotNetworkDTO> = ApiResult.Success(snapshot)
         }
-        val worker = QueueWorker(storage, transport, resolver(true), clock)
+        val worker = worker(storage, transport)
 
         val reports = kotlinx.coroutines.coroutineScope {
             val first = async { worker.drain() }

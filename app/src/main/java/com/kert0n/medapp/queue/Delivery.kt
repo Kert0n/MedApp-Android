@@ -1,6 +1,6 @@
 package com.kert0n.medapp.queue
 
-import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
+import com.kert0n.medapp.network.pack.PackageSnapshot
 import java.time.Instant
 
 /**
@@ -19,7 +19,7 @@ sealed interface Delivery {
      * снова ждёт и готовится по свежему состоянию под тем же номером (PLAN E3). [notBefore] —
      * когда сервер отвергает свежую версию раз за разом: дальше не сейчас, а по задержке.
      */
-    data class Stale(val snapshot: PackageSnapshotNetworkDTO, val notBefore: Instant? = null) : Delivery
+    data class Stale(val snapshot: PackageSnapshot, val notBefore: Instant? = null) : Delivery
 
     /** Сервер делать не будет. [state] — истина, прочитанная следом, где её было чем прочитать. */
     data class Refused(val reason: RefusalReason, val state: PackageState) : Delivery

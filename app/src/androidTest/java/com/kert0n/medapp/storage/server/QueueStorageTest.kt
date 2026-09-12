@@ -16,6 +16,9 @@ import com.kert0n.medapp.fixture.queueRepository
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.network.intake.IntakeAccounting
 import com.kert0n.medapp.network.intake.IntakeSyncState
+import com.kert0n.medapp.network.pack.PackageSnapshot
+import com.kert0n.medapp.network.pack.toDomain
+import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
 import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncState
@@ -64,8 +67,12 @@ class QueueStorageTest {
          "reservations":{"total":"4.000000","mine":"4.000000","version":2}}
     """
 
-    private val snapshot: PackageSnapshotNetworkDTO =
-        medAppJson.decodeFromString(PackageSnapshotNetworkDTO.serializer(), snapshotJson)
+    private val snapshot: PackageSnapshot = resolved(snapshotJson)
+
+    /** Снимок, каким его отдаёт резолвер: собранный в домен, аптечка — домашняя. */
+    private fun resolved(json: String): PackageSnapshot =
+        medAppJson.decodeFromString(PackageSnapshotNetworkDTO.serializer(), json)
+            .toDomain(VOCABULARY, medKit(publication = MedKit.Publication.PUBLISHED).ref, addedAt = at, observedAt = at)
 
     @Before
     fun openDatabase() = runTest {
@@ -264,10 +271,7 @@ class QueueStorageTest {
             )
         )
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
-        val inMillilitres = medAppJson.decodeFromString(
-            PackageSnapshotNetworkDTO.serializer(),
-            snapshotJson.replace(TABLETS.id.toString(), com.kert0n.medapp.fixture.MILLILITRES.id.toString())
-        )
+        val inMillilitres = resolved(snapshotJson.replace(TABLETS.id.toString(), com.kert0n.medapp.fixture.MILLILITRES.id.toString()))
 
         val take = storage.take(operation, inMillilitres, at)
 
@@ -320,10 +324,7 @@ class QueueStorageTest {
     fun anOlderSnapshotDoesNotOverwriteANewerOne() = runTest {
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
         storage.take(operation, null, at)
-        val older = medAppJson.decodeFromString(
-            PackageSnapshotNetworkDTO.serializer(),
-            snapshotJson.replace("\"version\":4", "\"version\":2").replace("17.000000", "19.000000")
-        )
+        val older = resolved(snapshotJson.replace("\"version\":4", "\"version\":2").replace("17.000000", "19.000000"))
 
         storage.settle(operation, Delivery.Applied(PackageState.Present(older)), at.plusSeconds(1))
 

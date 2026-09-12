@@ -1,6 +1,7 @@
 package com.kert0n.medapp.queue
 
-import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
+import com.kert0n.medapp.domain.medkit.MedKitRef
+import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.network.server.RawResponse
 import java.time.Instant
 import kotlin.uuid.Uuid
@@ -22,16 +23,19 @@ interface QueueStorage {
      */
     suspend fun ready(now: Instant): List<StoredSyncOperation>
 
+    /** Ссылка на аптечку, которую называет снимок; `null` — локально её нет, и снимок положить некуда. */
+    suspend fun medKit(id: Uuid): MedKitRef?
+
     /**
-     * Берёт операцию в отправку: применяет [fresh] — только что прочитанное состояние пачки,
-     * если работник его читал, — замораживает запрос по нему, если он ещё не собран, и переводит
+     * Берёт операцию в отправку: применяет [fresh] — только что прочитанное и разрешённое
+     * состояние пачки, если работник его читал, — замораживает запрос по нему, если он ещё не собран, и переводит
      * в `SENDING` одной транзакцией. Так запрос везёт предусловия, которые у сервера **сейчас**,
      * а не те, что устройство видело когда-то (PLAN E2, E3). Собранный запрос не
      * пересобирается: повтор с неизвестным исходом идёт тем же. Подготовка может и не дать
      * запроса — отказать или найти желаемое уже наступившим: тогда операция закрывается здесь
      * же, той же транзакцией. `null` — операции нет или она уже закрыта.
      */
-    suspend fun take(id: Uuid, fresh: PackageSnapshotNetworkDTO?, at: Instant): Take?
+    suspend fun take(id: Uuid, fresh: PackageSnapshot?, at: Instant): Take?
 
     /**
      * Записывает ответ сервера до того, как он применён: полученное подтверждение не теряется,

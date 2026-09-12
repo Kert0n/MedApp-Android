@@ -3,12 +3,12 @@ package com.kert0n.medapp.storage.server
 import androidx.room.withTransaction
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.Vocabulary
-import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
+import com.kert0n.medapp.domain.medkit.MedKitRef
+import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.network.server.RawResponse
 import com.kert0n.medapp.queue.medkit.MedKitSyncCommand
 import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncState
-import com.kert0n.medapp.network.pack.toDomain
 import com.kert0n.medapp.queue.pack.prepare
 import com.kert0n.medapp.queue.medkit.toPreparedRequest as toMedKitPreparedRequest
 import com.kert0n.medapp.queue.Delivery
@@ -97,7 +97,9 @@ class SyncOperationRoomRepository @Inject constructor(
      * транзакции: версии, подтверждённый остаток и своя бронь — то, что у сервера сейчас (PLAN
      * E2, E3). Второй раз запрос не собирается: `freeze` не трогает строку, где он уже есть.
      */
-    override suspend fun take(id: Uuid, fresh: PackageSnapshotNetworkDTO?, at: Instant): Take? = database.withTransaction {
+    override suspend fun medKit(id: Uuid): MedKitRef? = medKits.find(id)?.toRef()
+
+    override suspend fun take(id: Uuid, fresh: PackageSnapshot?, at: Instant): Take? = database.withTransaction {
         val words = vocabulary.snapshot()
         val stored = queue.find(id)?.toDomain(words) as? StoredSyncOperation.Readable
             ?: return@withTransaction null
@@ -106,7 +108,7 @@ class SyncOperationRoomRepository @Inject constructor(
         if (operation.status != SyncOperationStatus.PENDING && operation.status != SyncOperationStatus.SENDING) {
             return@withTransaction null
         }
-        fresh?.let { apply(it, words, at) }
+        fresh?.let { apply(it, at) }
         if (operation.prepared == null) {
             val request = when (val command = operation.command) {
                 is PackageSyncCommand -> {
@@ -162,18 +164,11 @@ class SyncOperationRoomRepository @Inject constructor(
         return Take.Closed(delivery)
     }
 
-    /**
-     * Снимок поверх подтверждённого остатка и броней. Аптечка снимка — объектом из базы: перенос
-     * мог сменить её, и берётся та, которую называет снимок.
-     */
-    private suspend fun apply(snapshot: PackageSnapshotNetworkDTO, words: Vocabulary, at: Instant) {
-        val medKit = requireNotNull(medKits.find(snapshot.pack.medKitId)) {
-            "снимок пачки называет аптечку, которой нет: ${snapshot.pack.medKitId}"
-        }.toRef()
-        val resolved = snapshot.toDomain(words, medKit, addedAt = at, observedAt = at)
+    /** Разрешённый снимок поверх подтверждённого остатка и броней; разрешать здесь нечего. */
+    private suspend fun apply(snapshot: PackageSnapshot, at: Instant) {
         // Запоздалый снимок свежий не перекрывает — ни состояние, ни брони.
-        if (packages.applyServerSnapshot(resolved.pack.toStorageEntity(resolved.sync), observedAt = at)) {
-            resolved.pack.claims?.let { packages.upsertClaims(it.toStorageEntity(snapshot.pack.id)) }
+        if (packages.applyServerSnapshot(snapshot.pack.toStorageEntity(snapshot.sync), observedAt = at)) {
+            snapshot.pack.claims?.let { packages.upsertClaims(it.toStorageEntity(snapshot.pack.id)) }
         }
     }
 
@@ -197,10 +192,10 @@ class SyncOperationRoomRepository @Inject constructor(
                 command?.let { apply(outcome.state, it, words, at) }
             }
             is Delivery.Stale -> {
-                if (queue.reprepare(id, lastError = "устарело: ${outcome.snapshot.pack.version}", at = at, notBefore = outcome.notBefore) == 0) {
+                if (queue.reprepare(id, lastError = "устарело: ${outcome.snapshot.sync.version}", at = at, notBefore = outcome.notBefore) == 0) {
                     return@withTransaction
                 }
-                apply(outcome.snapshot, words, at)
+                apply(outcome.snapshot, at)
             }
             is Delivery.Refused -> {
                 if (queue.settle(id, SyncOperationStatus.REFUSED, outcome.reason.name, at, attempted = 1) == 0) return@withTransaction
@@ -233,7 +228,7 @@ class SyncOperationRoomRepository @Inject constructor(
     /** Истина по пачке после закрытия — снимок, «пачки нет» либо ничего. */
     private suspend fun apply(state: PackageState, command: PackageSyncCommand, words: Vocabulary, at: Instant) {
         when (state) {
-            is PackageState.Present -> apply(state.snapshot, words, at)
+            is PackageState.Present -> apply(state.snapshot, at)
             PackageState.Gone -> {
                 // Пачки на сервере больше нет: истина — ноль, и локально она архивируется.
                 val row = packages.find(command.packageId) ?: return
