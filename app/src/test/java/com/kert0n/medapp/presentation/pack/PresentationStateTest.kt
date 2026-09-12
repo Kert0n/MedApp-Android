@@ -6,11 +6,16 @@ import com.kert0n.medapp.domain.pack.PackageProjection
 import com.kert0n.medapp.domain.medkit.MedKitProjection
 import com.kert0n.medapp.fixture.projected
 import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.value.DosageForm
 import com.kert0n.medapp.domain.value.Money
+import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.domain.value.QuantityUnit
 import com.kert0n.medapp.presentation.medkit.MedKitPresentationDTO
 import com.kert0n.medapp.presentation.medkit.toPresentationDTO
 
 import com.kert0n.medapp.fixture.HOME_KIT
+import com.kert0n.medapp.fixture.TABLETS_ID
+import com.kert0n.medapp.fixture.TABLET_FORM_ID
 import com.kert0n.medapp.fixture.factsOf
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.dose
@@ -104,6 +109,34 @@ class PresentationStateTest {
         )
         assertEquals(first.projected().toPresentationDTO(), same.projected().toPresentationDTO())
         assertEquals(first.projected().toPresentationDTO().hashCode(), same.projected().toPresentationDTO().hashCode())
+    }
+
+    /**
+     * Экран показывает **имя** единицы и формы, а не их номера. Домен различает словарь по
+     * тождеству — переименованная единица та же самая (PLAN D1), — поэтому состояние экрана
+     * держит свои величины и переименование замечает.
+     *
+     * Красная проверка: вернуть в DTO доменные `QuantityUnit` и `DosageForm` — оба случая
+     * краснеют, состояния оказываются равными.
+     */
+    @Test
+    fun aRenamedUnitChangesThePresentationState() {
+        val before = pack(quantity = Quantity(BigDecimal("20"), QuantityUnit(TABLETS_ID, "таблетка")))
+        val after = pack(quantity = Quantity(BigDecimal("20"), QuantityUnit(TABLETS_ID, "пилюля")))
+        assertEquals(before.quantity.unit, after.quantity.unit)
+
+        assertNotEquals(before.projected().toPresentationDTO(), after.projected().toPresentationDTO())
+        assertEquals("пилюля", after.projected().toPresentationDTO().quantity.unit.name)
+    }
+
+    @Test
+    fun aRenamedFormChangesThePresentationState() {
+        val before = pack(form = DosageForm(TABLET_FORM_ID, "таблетки"))
+        val after = pack(form = DosageForm(TABLET_FORM_ID, "пилюли"))
+        assertEquals(before.facts.form, after.facts.form)
+
+        assertNotEquals(before.projected().toPresentationDTO(), after.projected().toPresentationDTO())
+        assertEquals("пилюли", requireNotNull(after.projected().toPresentationDTO().form).name)
     }
 
     @Test

@@ -4,6 +4,7 @@ import com.kert0n.medapp.domain.pack.PackageProjection
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.presentation.value.MoneyPresentationDTO
 import com.kert0n.medapp.presentation.value.QuantityPresentationDTO
+import com.kert0n.medapp.presentation.value.toPresentationDTO as toVocabularyPresentationDTO
 import java.time.Instant
 
 /**
@@ -19,7 +20,7 @@ fun PackageProjection.toPresentationDTO(syncedAt: Instant? = null): PackagePrese
         medKitId = medKit.id,
         name = facts.name,
         quantity = quantity.toPresentationDTO(),
-        form = facts.form,
+        form = facts.form?.toVocabularyPresentationDTO(),
         category = facts.category,
         manufacturer = facts.manufacturer,
         country = facts.country,
@@ -51,4 +52,4 @@ fun PackageProjection.toPresentationDTO(syncedAt: Instant? = null): PackagePrese
 
 /** Строки нормализованы: 1 и 1.000000 дают одинаковое состояние экрана. */
 private fun Quantity.toPresentationDTO() =
-    QuantityPresentationDTO(amount.stripTrailingZeros().toPlainString(), unit)
+    QuantityPresentationDTO(amount.stripTrailingZeros().toPlainString(), unit.toVocabularyPresentationDTO())

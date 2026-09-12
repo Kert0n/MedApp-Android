@@ -1,8 +1,13 @@
 package com.kert0n.medapp.presentation.value
 
 
+import com.kert0n.medapp.domain.value.QuantityUnit
+import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.fixture.TABLETS
+import com.kert0n.medapp.fixture.TABLETS_ID
+import com.kert0n.medapp.fixture.VOCABULARY
 import com.kert0n.medapp.fixture.tablets
+import kotlin.uuid.Uuid
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -15,7 +20,7 @@ import org.junit.Test
 class QuantityPresentationMapperTest {
 
     private fun mapped(input: String) =
-        QuantityPresentationDTO(input, TABLETS).toDomain()
+        QuantityPresentationDTO(input, TABLETS.toPresentationDTO()).toDomain(VOCABULARY)
 
     private fun errorOf(input: String): QuantityPresentationError {
         val error = mapped(input).errorOrNull
@@ -69,6 +74,40 @@ class QuantityPresentationMapperTest {
         val longest = "1234567890123.123456"
         assertTrue(longest.length <= QUANTITY_MAX_INPUT_LENGTH)
         assertEquals(tablets(longest), requireNotNull(mapped(longest).valueOrNull))
+    }
+
+    /**
+     * Единицу домену даёт словарь, а не поля экрана: тождество единицы принадлежит словарю, и
+     * его снимок может оказаться старее того, кто единицу назвал (PLAN D1).
+     */
+    @Test
+    fun aUnitTheVocabularyDoesNotKnowIsRejected() {
+        val stranger = UnitPresentationDTO(Uuid.parse("00000000-0000-4000-8000-0000000000ff"), "капля")
+
+        val error = QuantityPresentationDTO("2", stranger).toDomain(VOCABULARY).errorOrNull
+
+        assertEquals(QuantityPresentationError.UNKNOWN_UNIT, error)
+    }
+
+    /** Имя с экрана на разбор не влияет: единицу берут по номеру, а имя — сведения (PLAN D1). */
+    @Test
+    fun theUnitComesFromTheVocabularyNotFromTheTypedName() {
+        val renamed = UnitPresentationDTO(TABLETS_ID, "пилюля")
+
+        val parsed = QuantityPresentationDTO("2", renamed).toDomain(VOCABULARY).valueOrNull
+
+        assertEquals(tablets("2"), requireNotNull(parsed))
+        assertEquals("таблетка", parsed.unit.name)
+    }
+
+    /** Словарь дочитан и единицу знает под новым именем — разбор идёт по нему. */
+    @Test
+    fun aRenamedUnitIsResolvedByTheFreshVocabulary() {
+        val fresh = Vocabulary(listOf(QuantityUnit(TABLETS_ID, "пилюля")), emptyList())
+
+        val parsed = QuantityPresentationDTO("2", TABLETS.toPresentationDTO()).toDomain(fresh).valueOrNull
+
+        assertEquals("пилюля", requireNotNull(parsed).unit.name)
     }
 
     @Test
