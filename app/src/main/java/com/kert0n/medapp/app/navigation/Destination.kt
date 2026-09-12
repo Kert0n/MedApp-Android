@@ -10,19 +10,41 @@ import com.kert0n.medapp.R
  *
  * Значок и подпись — ссылки на ресурсы, а не готовые `ImageVector`: перечисление остаётся
  * обычным значением, которое можно построить где угодно, а не только внутри композиции. Красит
- * значок сам `Icon` по `LocalContentColor`, поэтому тёмная тема и выбранная вкладка получаются
- * без второго набора цветов.
+ * значок сам `Icon` по `LocalContentColor`, поэтому второго набора цветов для тёмной темы нет.
+ *
+ * Значка два: у выбранного места он залит — так Material отличает, где человек стоит, не одним
+ * лишь цветом. Оба выгружены из Material Symbols (`scripts/add-icon.mjs`).
  *
  * Порядок объявления — порядок на экране.
  */
 enum class Destination(
     val route: Route,
     @param:StringRes val label: Int,
-    @param:DrawableRes val icon: Int
+    @param:DrawableRes val icon: Int,
+    @param:DrawableRes val iconSelected: Int
 ) {
-    MED_KITS(Route.MedKits, R.string.tab_med_kits, R.drawable.ic_tab_med_kits),
-    PLAN(Route.Plan, R.string.tab_plan, R.drawable.ic_tab_plan),
-    SCANNER(Route.Scanner, R.string.tab_scanner, R.drawable.ic_tab_scanner),
-    ANALYTICS(Route.Analytics, R.string.tab_analytics, R.drawable.ic_tab_analytics),
-    SETTINGS(Route.Settings, R.string.tab_settings, R.drawable.ic_tab_settings)
+    MED_KITS(
+        Route.MedKits, R.string.tab_med_kits,
+        R.drawable.ic_tab_med_kits, R.drawable.ic_tab_med_kits_filled
+    ),
+    PLAN(
+        Route.Plan, R.string.tab_plan,
+        R.drawable.ic_tab_plan, R.drawable.ic_tab_plan_filled
+    ),
+    SCANNER(
+        Route.Scanner, R.string.tab_scanner,
+        R.drawable.ic_tab_scanner, R.drawable.ic_tab_scanner_filled
+    ),
+    ANALYTICS(
+        Route.Analytics, R.string.tab_analytics,
+        R.drawable.ic_tab_analytics, R.drawable.ic_tab_analytics_filled
+    ),
+    SETTINGS(
+        Route.Settings, R.string.tab_settings,
+        R.drawable.ic_tab_settings, R.drawable.ic_tab_settings_filled
+    );
+
+    /** Где человек стоит, видно и формой значка, а не только цветом (PLAN H3). */
+    @DrawableRes
+    fun icon(selected: Boolean): Int = if (selected) iconSelected else icon
 }

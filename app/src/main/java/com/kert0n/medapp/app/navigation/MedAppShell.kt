@@ -56,7 +56,7 @@ private fun MedAppBottomBar(navController: NavController) {
             NavigationBarItem(
                 selected = selected,
                 onClick = { navController.goTo(destination) },
-                icon = { Icon(painterResource(destination.icon), contentDescription = null) },
+                icon = { Icon(painterResource(destination.icon(selected)), contentDescription = null) },
                 label = { Text(stringResource(destination.label)) }
             )
         }

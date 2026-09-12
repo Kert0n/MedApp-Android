@@ -194,6 +194,30 @@ KDoc говорит, что это и какое правило держит, в
   Сохранённые данные экран наблюдает из Room; несохранённый ввод остаётся состоянием формы.
 - Учётные данные не попадают в логи, навигацию, отчёты об ошибках и резервные копии (PLAN G).
 
+## Значки
+
+Библиотека `androidx.compose.material:material-icons-*` **заморожена** (последняя версия 1.7.8)
+и в проекте не используется: с `material` 1.7.1 она перестала приходить транзитивно, а на смену
+ей пришли Material Symbols. `Icons.Default.*` не разрешается — **это ожидаемо, и добавлением
+зависимости не чинится**.
+
+Значок берётся из набора, а не сочиняется:
+
+```bash
+node scripts/add-icon.mjs medication calendar_month
+node scripts/add-icon.mjs medication --fill            # залитый — для выбранной вкладки
+node scripts/add-icon.mjs medical_services --as tab_med_kits
+```
+
+Имя — в `snake_case` из набора Material Symbols; есть ли такое, показывает
+`ls node_modules/@material-symbols/svg-400/outlined/ | grep <часть имени>`. Набор ставится
+`npm install` и в git не попадает. В коде значок берётся `painterResource(R.drawable.ic_<имя>)`.
+
+**Не пишите `pathData` от себя и не правьте выгруженные файлы руками.** У Material Symbols
+начало координат по Y отрицательное (`viewBox="0 -960 960 960"`), VectorDrawable этого не умеет,
+и перенос делает `<group android:translateY>` в скрипте. Нарисованный на глаз значок ломается
+незаметно: в код-ревью кривой путь неотличим от правильного.
+
 ## Проверки
 
 Из корня клиента:
