@@ -251,9 +251,15 @@ class QueueRoomStorageTest {
         assertEquals(PackageStatus.REMOVING, pkg.status)
     }
 
-    /** Коробку на местной полке снимок не переставляет и не пересчитывает: он несёт ей только версию (E6). */
+    /**
+     * Коробку на местной полке снимок не переставляет и не пересчитывает, но обе её версии ведёт:
+     * команды, поставленные до уноса домой, ещё доставляются по ним (PLAN E3, E6).
+     *
+     * Красная проверка: без версии броней расход с бронью переподготавливается без конца — так проба
+     * на сервере и поймала этот случай.
+     */
     @Test
-    fun aSnapshotOfABoxOnALocalShelfBringsOnlyTheVersion() = runTest {
+    fun aSnapshotOfABoxOnALocalShelfBringsOnlyItsVersions() = runTest {
         database.medKits().upsert(medKit().toMedKitStorageEntity())
 
         database.packageRepository().applySnapshot(snapshot, at)
@@ -262,6 +268,7 @@ class QueueRoomStorageTest {
         assertEquals(tablets("20"), row.toDomain(VOCABULARY).quantity)
         assertEquals(HOME_KIT, row.pack.medKitId)
         assertEquals(ResourceVersion(4), row.pack.syncState().version)
+        assertEquals(ResourceVersion(2), row.pack.syncState().claimsVersion)
     }
 
     /**
@@ -508,7 +515,7 @@ class QueueRoomStorageTest {
         delay(300) // подписка на таблицу успела встать
 
         database.transactions().run {
-            storage.enqueue(QueuedCommand(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE)), at)
+            storage.enqueue(QueuedCommand(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE)), HOME_KIT, at)
             delay(300) // транзакция ещё открыта: сигнала быть не должно
             assertFalse(seen.isCompleted)
         }

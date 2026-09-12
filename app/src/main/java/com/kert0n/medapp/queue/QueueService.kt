@@ -31,7 +31,8 @@ class QueueService @Inject constructor(
     ): Boolean = transactions.run {
         val applied = change()
         if (applied && medKit.answersToServer) {
-            for (command in commands) storage.enqueue(command, at)
+            // Полка изменения и есть полка его команд: порядок внутри неё держит очередь (PLAN E3).
+            for (command in commands) storage.enqueue(command, medKit.id, at)
         }
         applied
     }

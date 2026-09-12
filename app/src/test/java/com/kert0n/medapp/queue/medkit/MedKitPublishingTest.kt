@@ -100,7 +100,7 @@ class MedKitPublishingTest {
         override suspend fun answered(id: Uuid, answer: RawResponse, at: Instant) = error("не для этого теста")
         override suspend fun defer(id: Uuid, reason: String, at: Instant, notBefore: Instant) = error("не для этого теста")
         override suspend fun settle(id: Uuid, settlement: Settlement, at: Instant) = error("не для этого теста")
-        override suspend fun enqueue(queued: QueuedCommand, at: Instant) = error("не для этого теста")
+        override suspend fun enqueue(queued: QueuedCommand, shelf: kotlin.uuid.Uuid, at: Instant) = error("не для этого теста")
     }
 
     private fun publishing(storage: Storage, answer: suspend (HttpRequestData) -> Pair<HttpStatusCode, String>): MedKitPublishing {

@@ -71,10 +71,15 @@ interface PackageDao {
     ): SnapshotApplied {
         val known = versionsOf(pack.id)
         // Местная полка серверу не принадлежит: коробка оказывается на ней, только если её унесли
-        // домой, а сервер ещё не согласился. Переставить или пересчитать её снимок не может —
-        // он несёт ей одну версию, по которой коробку снимут с сервера (PLAN E6).
+        // домой, а сервер ещё не согласился. Переставить или пересчитать её снимок не может. Но у
+        // сервера она пока есть, и команды, поставленные до уноса, ещё доставляются по её версиям:
+        // снимок несёт ей **обе** версии — каждую, если она не старее (PLAN E3, E6). Иначе расход
+        // с бронью переподготавливался бы по устаревшей версии броней без конца.
         if (liesOnLocalShelf(pack.id)) {
             if (pack.version.laysOver(known?.version)) setVersion(pack.id, pack.version)
+            if (pack.claimsVersion != null && pack.claimsVersion.laysOver(known?.claimsVersion)) {
+                setClaimsVersion(pack.id, pack.claimsVersion)
+            }
             return SnapshotApplied(pack = false, claims = false)
         }
         val packLaysDown = pack.version.laysOver(known?.version)

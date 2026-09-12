@@ -280,6 +280,66 @@ class SharedMedKitProbe {
         assertNotNull(success(boris.api.packageSnapshot(shared.box)).claims.mine)
     }
 
+    /**
+     * Борис подтвердил приём офлайн **до** того, как Анна переставила полку, а доставил **после**.
+     * Приём не подвешивается и не теряется: коробка перепрыгнула на общую полку, которую он знает,
+     * расход применён, лечение держит коробку.
+     */
+    @Test
+    fun borisConfirmsOfflineBeforeTheMoveAndDeliversAfterIt(): Unit = runBlocking {
+        val shared = sharedShelfWithBorisTreated()
+        val dacha = anna.localShelf("Дача")
+        anna.publish(dacha)
+        boris.join(success(anna.api.createInvitation(dacha)).key)
+
+        boris.confirm(shared.intakes[1], shared.box)
+        assertEquals(MedKitRemoval.Outcome.MARKED, anna.scenarios().medKitRemoval.remove(shared.shelf, MedKitRemoval.Fate.MoveTo(dacha)))
+        anna.drain()
+        boris.drain()
+
+        assertEquals(listOf(SyncOperationStatus.APPLIED), anna.statuses().distinct())
+        assertEquals(listOf(SyncOperationStatus.APPLIED), boris.statuses().distinct())
+        assertEquals(IntakeAccounting.REMOTE_APPLIED, boris.accountingOf(shared.intakes[1]))
+        val jumped = requireNotNull(boris.packages.find(shared.box))
+        assertEquals(dacha, jumped.medKit.id)
+        assertAmount("16", jumped.quantity.amount)
+        assertAmount("16", serverAmount(shared.box))
+        assertEquals(listOf(shared.box), boris.database.courses().sourcePackagesOf(COURSE))
+    }
+
+    /**
+     * У Анны свой приём из общей коробки ещё не доставлен, когда она уносит полку домой. Полка ждёт
+     * его по номеру: сначала расход, потом унос, потом удаление полки. Дома у Анны то, что осталось
+     * на самом деле, — минус приём Бориса и её собственный; её лечение держит коробку.
+     */
+    @Test
+    fun annasEarlierIntakeIsDeliveredBeforeSheCarriesTheShelfHome(): Unit = runBlocking {
+        val shared = sharedShelfWithBorisTreated()
+        val home = anna.localShelf("Дом")
+        val annas = anna.treatFrom(shared.box)
+        anna.confirm(annas[0], shared.box)
+
+        assertEquals(MedKitRemoval.Outcome.MARKED, anna.scenarios().medKitRemoval.remove(shared.shelf, MedKitRemoval.Fate.MoveTo(home)))
+        anna.drain()
+
+        val delivered = anna.operations()
+        val words = anna.vocabulary.snapshot()
+        val stuck = anna.database.syncOperations().all()
+            .map { (it.toDomain(words) as StoredSyncOperation.Readable).operation }
+            .filter { it.status != SyncOperationStatus.APPLIED }
+        assertTrue(
+            "не доставлено: " + stuck.joinToString { "${it.command} ${it.status} «${it.lastError}» до ${it.notBefore}" },
+            stuck.isEmpty()
+        )
+        assertTrue("расход доставлен раньше уноса", delivered.first().first is com.kert0n.medapp.queue.pack.PackageSyncCommand.Consume)
+        assertEquals(IntakeAccounting.REMOTE_APPLIED, anna.accountingOf(annas[0]))
+        val carried = requireNotNull(anna.packages.find(shared.box))
+        assertEquals(home, carried.medKit.id)
+        assertEquals(PackageStatus.ACTIVE, carried.status)
+        assertAmount("16", carried.quantity.amount)
+        assertEquals(listOf(shared.box), anna.database.courses().sourcePackagesOf(COURSE))
+    }
+
     /** Коробки у Бориса нет, остаток ушёл в историю утратой доступа, лечение без источника, но идёт. */
     private suspend fun assertBorisLostTheBox(box: Uuid) {
         assertNull(boris.packages.find(box))

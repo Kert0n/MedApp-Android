@@ -166,7 +166,7 @@ class QueueWorkerTest {
         }
 
 
-        override suspend fun enqueue(queued: QueuedCommand, at: Instant): SyncOperation =
+        override suspend fun enqueue(queued: QueuedCommand, shelf: kotlin.uuid.Uuid, at: Instant): SyncOperation =
             error("работник команд не ставит")
 
         override suspend fun settle(id: Uuid, settlement: Settlement, at: Instant) {

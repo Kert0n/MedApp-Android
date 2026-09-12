@@ -73,7 +73,8 @@ class PackageRelocation @Inject constructor(
             // где лежит. Иначе отказ по версии оставил бы её на чужой полке (PLAN E1, E6). Новое
             // место придёт снимком ответа — он же истина по этой коробке.
             from.answersToServer -> {
-                queue.change(to, listOf(command(PackageSyncCommand.Move(pkg.id, to.id))), at) {
+                // Переставляют с полки, где коробка лежит: там её команды и ждут своей очереди.
+                queue.change(from, listOf(command(PackageSyncCommand.Move(pkg.id, to.id))), at) {
                     packages.mark(pkg.id, PackageStatus.CHANGING)
                 }
                 Outcome.MARKED

@@ -68,8 +68,8 @@ class QueueRoomStorage @Inject constructor(
     override fun changes(): Flow<Unit> =
         database.invalidationTracker.createFlow("sync_operations", emitInitialState = false).map { }
 
-    override suspend fun enqueue(queued: QueuedCommand, at: Instant): SyncOperation =
-        queue.enqueue(queued.id, queued.command, at, queued.groupId, queued.dependsOn)
+    override suspend fun enqueue(queued: QueuedCommand, shelf: Uuid, at: Instant): SyncOperation =
+        queue.enqueue(queued.id, queued.command, at, queued.groupId, queued.dependsOn, medKitId = shelf)
 
     override suspend fun ready(now: Instant): List<StoredSyncOperation> = database.withTransaction {
         val words = vocabulary.snapshot()
