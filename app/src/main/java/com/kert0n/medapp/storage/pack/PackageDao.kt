@@ -44,6 +44,17 @@ interface PackageDao {
      * откатывает (PLAN E1): запоздалый снимок ложится, только если он не старее того, что есть.
      * `false` — снимок старее и не применён.
      */
+    /**
+     * Разрешённый снимок целиком: серверная часть и картина броней вместе, потому что порознь с
+     * провода они не приходят. Запоздалый снимок не перекрывает свежий — ни состояние, ни брони.
+     */
+    @Transaction
+    suspend fun applySnapshot(pack: PackageStorageEntity, claims: ClaimsStorageEntity?, observedAt: Instant): Boolean {
+        if (!applyServerSnapshot(pack, observedAt)) return false
+        claims?.let { upsertClaims(it) }
+        return true
+    }
+
     @Transaction
     suspend fun applyServerSnapshot(pack: PackageStorageEntity, observedAt: Instant): Boolean {
         val known = serverVersionOf(pack.id)

@@ -62,7 +62,7 @@ import com.kert0n.medapp.fixture.VOCABULARY
 import com.kert0n.medapp.queue.QueueSending
 import com.kert0n.medapp.queue.QueueService
 import com.kert0n.medapp.domain.medkit.MedKit
-import com.kert0n.medapp.fixture.queueRepository
+import com.kert0n.medapp.fixture.queueStorage
 
 /**
  * Связанные изменения сохраняются атомарно: откат не оставляет ни отдельного расхода, ни
@@ -89,7 +89,7 @@ class TransactionBoundariesTest {
         packages = database.packageRepository()
         courses = database.courseRepository()
         intakes = database.intakeRepository()
-        queue = QueueService(database.queueRepository(), QueueSending.none)
+        queue = QueueService(database.queueStorage(), QueueSending.none)
         database.medKits().upsert(medKit().toMedKitStorageEntity())
         database.medKits().upsert(medKit(id = SHARED_KIT, name = "Дача").toMedKitStorageEntity())
         packages.add(paracetamol)

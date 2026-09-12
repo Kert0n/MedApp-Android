@@ -42,8 +42,11 @@ class MedKitRoomRepository @Inject constructor(
             require(snapshots.all { it.pack.medKit.id == medKit.id }) { "публикуются снимки этой аптечки" }
             medKits.upsert(medKit.toStorageEntity(syncedAt = at))
             for (snapshot in snapshots) {
-                packages.applyServerSnapshot(snapshot.pack.toStorageEntity(snapshot.sync), observedAt = at)
-                snapshot.pack.claims?.let { packages.upsertClaims(it.toStorageEntity(snapshot.pack.id)) }
+                packages.applySnapshot(
+                    snapshot.pack.toStorageEntity(snapshot.sync),
+                    snapshot.pack.claims?.toStorageEntity(snapshot.pack.id),
+                    observedAt = at
+                )
             }
         }
 }

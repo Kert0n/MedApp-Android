@@ -8,6 +8,7 @@ import com.kert0n.medapp.storage.medkit.MedKitRoomRepository
 import com.kert0n.medapp.storage.medkit.MedKitStorageRepository
 import com.kert0n.medapp.storage.pack.PackageRoomRepository
 import com.kert0n.medapp.storage.pack.PackageStorageRepository
+import com.kert0n.medapp.storage.server.QueueRoomStorage
 import com.kert0n.medapp.storage.server.SyncOperationRoomRepository
 import com.kert0n.medapp.storage.server.SyncOperationStorageRepository
 import com.kert0n.medapp.storage.stock.StockMovementRoomRepository
@@ -62,10 +63,10 @@ abstract class StorageModule {
     @Singleton
     abstract fun vocabulary(implementation: VocabularyRoomRepository): VocabularyStorageRepository
 
-    /** Работник очереди видит хранилище через свой интерфейс; транзакции остаются здесь. */
+    /** Работник очереди видит хранилище через свой порт; транзакции очереди остаются в хранении. */
     @Binds
     @Singleton
-    abstract fun queueStorage(implementation: SyncOperationRoomRepository): QueueStorage
+    abstract fun queueStorage(implementation: QueueRoomStorage): QueueStorage
 
     /** Резолвер словаря живёт в сети и получает снимок через свой интерфейс. */
     @Binds

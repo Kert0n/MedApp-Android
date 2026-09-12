@@ -131,8 +131,8 @@ class QueueWorkerTest {
                 frozen++
                 when (val prepared = (operation.command as PackageSyncCommand).prepare(operation.id, knownPack, known, at)) {
                     is Preparation.Request -> prepared.request
-                    is Preparation.Refuse -> return Take.Closed(Delivery.Refused(prepared.reason, PackageState.None)).also { settle(id, it.delivery, at) }
-                    Preparation.AlreadyApplied -> return Take.Closed(Delivery.Applied(PackageState.None)).also { settle(id, it.delivery, at) }
+                    is Preparation.Refuse -> return Take.Closed(Delivery.Refused(prepared.reason, PackageState.None)).also { settle(id, it.delivery.settlement(operation.command), at) }
+                    Preparation.AlreadyApplied -> return Take.Closed(Delivery.Applied(PackageState.None)).also { settle(id, it.delivery.settlement(operation.command), at) }
                 }
             }
             // Операция, найденная в отправке, — прошлый полёт умер вместе с процессом: исход неизвестен.
@@ -159,35 +159,49 @@ class QueueWorkerTest {
         override suspend fun enqueue(queued: QueuedCommand, at: Instant): SyncOperation =
             error("работник команд не ставит")
 
-        override suspend fun settle(id: Uuid, outcome: Delivery, at: Instant) {
+        override suspend fun settle(id: Uuid, settlement: Settlement, at: Instant) {
+            val outcome = settlement.asDelivery()
             settled += id to outcome
-            val state = when (outcome) {
-                is Delivery.Applied -> outcome.state
-                is Delivery.Refused -> outcome.state
-                is Delivery.Stale -> PackageState.Present(outcome.snapshot)
-                is Delivery.Retry, Delivery.AccessLost -> PackageState.None
-            }
-            (state as? PackageState.Present)?.let { learn(it.snapshot) }
+            settlement.effects.filterIsInstance<Settlement.Effect.LayDown>().forEach { learn(it.snapshot) }
             val operation = operations.getValue(id)
-            operations[id] = if (outcome is Delivery.Stale) {
+            operations[id] = when (val transition = settlement.transition) {
                 // Факт о запросе умирает вместе с запросом; счёт попыток остаётся у операции.
-                operation.with(status = SyncOperationStatus.PENDING, dropPrepared = true, dropAnswer = true, notBefore = outcome.notBefore, dropNotBefore = outcome.notBefore == null, outcomeUnknown = false)
-            } else {
-                operation.with(
-                    status = when (outcome) {
-                        is Delivery.Applied -> SyncOperationStatus.APPLIED
-                        is Delivery.Refused -> SyncOperationStatus.REFUSED
-                        is Delivery.Retry -> SyncOperationStatus.PENDING
-                        Delivery.AccessLost -> SyncOperationStatus.ACCESS_LOST
-                        is Delivery.Stale -> error("разобрано выше")
-                    },
-                    attempts = operation.attempts + (if ((outcome as? Delivery.Retry)?.attempted == false) 0 else 1),
-                    lastTriedAt = at,
-                    dropAnswer = true,
-                    notBefore = (outcome as? Delivery.Retry)?.notBefore,
-                    dropNotBefore = (outcome as? Delivery.Retry)?.notBefore == null,
-                    outcomeUnknown = operation.outcomeUnknown || (outcome as? Delivery.Retry)?.outcomeUnknown == true
+                is Settlement.Transition.Reprepare -> operation.with(
+                    status = SyncOperationStatus.PENDING, dropPrepared = true, dropAnswer = true,
+                    notBefore = transition.notBefore, dropNotBefore = transition.notBefore == null, outcomeUnknown = false
                 )
+                is Settlement.Transition.Retry -> operation.with(
+                    status = SyncOperationStatus.PENDING,
+                    attempts = operation.attempts + (if (transition.attempted) 1 else 0),
+                    lastTriedAt = at, dropAnswer = true,
+                    notBefore = transition.notBefore, dropNotBefore = transition.notBefore == null,
+                    outcomeUnknown = operation.outcomeUnknown || transition.outcomeUnknown
+                )
+                is Settlement.Transition.Close -> operation.with(
+                    status = transition.status, attempts = operation.attempts + 1, lastTriedAt = at, dropAnswer = true, dropNotBefore = true
+                )
+            }
+        }
+
+        /** Решение очереди, прочитанное обратно как исход: тесты говорят на языке `Delivery`. */
+        private fun Settlement.asDelivery(): Delivery {
+            val state = effects.firstNotNullOfOrNull {
+                when (it) {
+                    is Settlement.Effect.LayDown -> PackageState.Present(it.snapshot)
+                    is Settlement.Effect.PackageGone -> PackageState.Gone
+                    else -> null
+                }
+            } ?: PackageState.None
+            return when (val transition = transition) {
+                is Settlement.Transition.Retry ->
+                    Delivery.Retry(transition.lastError, transition.notBefore, transition.attempted, transition.outcomeUnknown)
+                is Settlement.Transition.Reprepare -> Delivery.Stale((state as PackageState.Present).snapshot, transition.notBefore)
+                is Settlement.Transition.Close -> when (transition.status) {
+                    SyncOperationStatus.APPLIED -> Delivery.Applied(state)
+                    SyncOperationStatus.REFUSED -> Delivery.Refused(RefusalReason.valueOf(transition.lastError!!), state)
+                    SyncOperationStatus.ACCESS_LOST -> Delivery.AccessLost
+                    else -> error("закрытие ведёт в закрытое состояние")
+                }
             }
         }
 

@@ -27,7 +27,7 @@ import com.kert0n.medapp.fixture.millilitres
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.packageRepository
 import com.kert0n.medapp.fixture.plannedIntake
-import com.kert0n.medapp.fixture.queueRepository
+import com.kert0n.medapp.fixture.queueStorage
 import com.kert0n.medapp.fixture.schedule
 import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
@@ -98,7 +98,7 @@ class IntakeConfirmationTest {
         courses = database.courseRepository()
         intakes = database.intakeRepository()
         packages = database.packageRepository()
-        val queue = database.queueRepository()
+        val queue = database.queueStorage()
         val clock = Clock.fixed(now, ZoneOffset.UTC)
         confirmation = IntakeConfirmation(intakes, courses, packages, queue, QueueService(queue, sending), clock)
         packages.add(pack(quantity = tablets("20")))

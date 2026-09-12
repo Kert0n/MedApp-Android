@@ -12,7 +12,7 @@ import com.kert0n.medapp.fixture.medKit
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.unplannedIntake
 import com.kert0n.medapp.fixture.packageRepository
-import com.kert0n.medapp.fixture.queueRepository
+import com.kert0n.medapp.fixture.queueStorage
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.network.intake.IntakeAccounting
 import com.kert0n.medapp.network.intake.IntakeSyncState
@@ -26,6 +26,7 @@ import com.kert0n.medapp.network.server.RawResponse
 import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.network.server.medAppJson
 import com.kert0n.medapp.queue.Delivery
+import com.kert0n.medapp.queue.settlement
 import com.kert0n.medapp.queue.PackageState
 import com.kert0n.medapp.queue.RefusalReason
 import com.kert0n.medapp.queue.StoredSyncOperation
@@ -50,13 +51,20 @@ import org.junit.Test
 import com.kert0n.medapp.fixture.VOCABULARY
 
 /**
- * Хранилище очереди для работника: заморозка запроса с предусловиями пачки, закрытие с
- * применением снимка и учётом приёма — одной транзакцией каждое (PLAN E1, E2, F5).
+ * Порт очереди в Room: заморозка запроса с предусловиями пачки, применение исхода со всеми его
+ * эффектами — одной транзакцией каждое (PLAN E1, E2, F5). Что исход значит, решает очередь
+ * (`Delivery.settlement`); здесь проверяется, что хранение применяет решённое.
  */
-class QueueStorageTest {
+class QueueRoomStorageTest {
 
     private lateinit var database: MedAppDatabase
-    private val storage get() = database.queueRepository()
+    private val storage get() = database.queueStorage()
+
+    /** Исход — через решение очереди, как его отдаёт работник. */
+    private suspend fun QueueRoomStorage.settle(id: Uuid, outcome: Delivery, at: Instant) {
+        val command = (requireNotNull(database.syncOperations().find(id)).toDomain(VOCABULARY) as StoredSyncOperation.Readable).operation.command
+        settle(id, outcome.settlement(command), at)
+    }
 
     private val operation: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000091")
     private val at: Instant = Instant.parse("2026-09-10T12:00:00Z")

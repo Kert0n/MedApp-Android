@@ -76,5 +76,10 @@ fun MedAppDatabase.medKitRepository() = com.kert0n.medapp.storage.medkit.MedKitR
 )
 
 fun MedAppDatabase.queueRepository() = com.kert0n.medapp.storage.server.SyncOperationRoomRepository(
+    syncOperations(), vocabulary()
+)
+
+/** Порт очереди для работника — транзакции взятия и применения исхода. */
+fun MedAppDatabase.queueStorage() = com.kert0n.medapp.storage.server.QueueRoomStorage(
     this, syncOperations(), packages(), intakes(), medKits(), vocabulary()
 )

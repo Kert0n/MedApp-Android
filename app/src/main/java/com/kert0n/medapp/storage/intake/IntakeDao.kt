@@ -89,13 +89,12 @@ interface IntakeDao {
         operationId: Uuid?
     ): Int
 
-    /** Операция расхода применена — факт учтён на сервере; закрытие и учёт ложатся одной транзакцией. */
-    @Query("UPDATE intakes SET accounting = 'REMOTE_APPLIED' WHERE operation_id = :operationId AND accounting = 'PENDING'")
-    suspend fun markRemoteApplied(operationId: Uuid): Int
-
-    /** Операция расхода отказана или пачки не стало — серверный остаток факт не включает, и это видно. */
-    @Query("UPDATE intakes SET accounting = 'REMOTE_REFUSED' WHERE operation_id = :operationId AND accounting = 'PENDING'")
-    suspend fun markRemoteRefused(operationId: Uuid): Int
+    /**
+     * Учёт расхода у приёма, который поставил операцию [operationId]: применён или отказан — что
+     * именно, решила очередь. Меняется только ожидающий: учтённое дважды не учитывается.
+     */
+    @Query("UPDATE intakes SET accounting = :accounting WHERE operation_id = :operationId AND accounting = 'PENDING'")
+    suspend fun setAccounting(operationId: Uuid, accounting: IntakeAccounting): Int
 
     @Query("DELETE FROM intakes WHERE id = :id")
     suspend fun delete(id: Uuid)

@@ -46,8 +46,12 @@ interface QueueStorage {
     /** Ответ есть, применить его пока нечем — операция остаётся `ANSWERED` до [notBefore], причина названа. */
     suspend fun defer(id: Uuid, reason: String, at: Instant, notBefore: Instant)
 
-    /** Отпускает операцию с исходом; что исход значит для строк, решает хранилище. */
-    suspend fun settle(id: Uuid, outcome: Delivery, at: Instant)
+    /**
+     * Применяет [settlement] одной транзакцией: переход строки операции и его эффекты. Что исход
+     * значит, уже решено в очереди ([Delivery.settlement]); эффекты ложатся только если переход
+     * изменил строку — закрытие одно.
+     */
+    suspend fun settle(id: Uuid, settlement: Settlement, at: Instant)
 
     /** Одна транзакция на изменение и его команду: порознь их не бывает (PLAN F5). */
     suspend fun <T> transaction(block: suspend () -> T): T

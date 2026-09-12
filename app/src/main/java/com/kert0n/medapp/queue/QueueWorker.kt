@@ -338,7 +338,7 @@ class QueueWorker @Inject constructor(
                         }
                         else -> delivery
                     }
-                    storage.settle(operation.id, delivery, clock.instant())
+                    storage.settle(operation.id, delivery.settlement(operation.command), clock.instant())
                     if (delivery is Delivery.Applied || delivery is Delivery.Refused || delivery is Delivery.AccessLost) settled++
                     return step.stop
                 }
