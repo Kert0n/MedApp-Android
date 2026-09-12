@@ -116,10 +116,9 @@ class QueueWorker @Inject constructor(
                 resolve(taken.command, result.value)
             }
             is ApiResult.Failure -> when (val failure = result.failure) {
-                ApiFailure.Conflict, ApiFailure.PreconditionFailed ->
-                    // Версия устарела либо объект уже есть: сервер отверг запрос до применения.
-                    // Что делать дальше, знает команда; истина в любом случае читается.
-                    Step.Settled(stale(taken.command, request))
+                // Версия устарела — сервер отверг запрос до применения; 409 о версии не говорит.
+                ApiFailure.PreconditionFailed -> Step.Settled(stale(taken.command, request))
+                ApiFailure.Conflict -> Step.Settled(conflict(taken.command))
                 ApiFailure.PreconditionRequired -> Step.Settled(refused(taken.command, RefusalReason.INVALID))
                 is ApiFailure.Invalid ->
                     Step.Settled(refused(taken.command, (taken.command as? PackageSyncCommand)?.onInvalid ?: RefusalReason.INVALID))
@@ -188,8 +187,6 @@ class QueueWorker @Inject constructor(
     private suspend fun stale(command: SyncCommand, request: PreparedRequest): Delivery = when (command) {
         is PackageSyncCommand -> snapshotThen(command.packageId) { snapshot ->
             when {
-                // 409 у создания — «уже есть»: пачка с нашим номером видна нам, значит наша.
-                command is PackageSyncCommand.Create -> Delivery.Applied(PackageState.Present(snapshot))
                 command is PackageSyncCommand.Consume && command.provenAppliedBy(snapshot, request) ->
                     Delivery.Applied(PackageState.Present(snapshot))
                 command.onStale == StalePolicy.REPREPARE -> Delivery.Stale(snapshot)
@@ -197,6 +194,22 @@ class QueueWorker @Inject constructor(
             }
         }
         is MedKitSyncCommand -> Delivery.Refused(RefusalReason.STALE, PackageState.None)
+        else -> command.unknownRoot()
+    }
+
+    /**
+     * 409 — не о версии (её отвергает 412), а о занятом номере: объект с ним уже есть, бронь уже
+     * заявлена или под этим номером уже применили другое тело. Последнее — дефект клиента:
+     * переподготовка тела не меняет, и сервер ответит так же всегда (PLAN E3).
+     */
+    private suspend fun conflict(command: SyncCommand): Delivery = when (command) {
+        is PackageSyncCommand -> when (command.onConflict) {
+            ConflictPolicy.EXISTS -> snapshotThen(command.packageId) { Delivery.Applied(PackageState.Present(it)) }
+            ConflictPolicy.REPREPARE -> snapshotThen(command.packageId) { Delivery.Stale(it) }
+            ConflictPolicy.REFUSE -> refused(command, RefusalReason.INVALID)
+        }
+        // Аптечка с нашим номером уже есть, участник уже вступил — желаемое уже так (PLAN B4).
+        is MedKitSyncCommand -> Delivery.Applied(PackageState.None)
         else -> command.unknownRoot()
     }
 

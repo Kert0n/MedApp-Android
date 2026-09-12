@@ -5,6 +5,7 @@ import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.QuantityUnit
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
+import com.kert0n.medapp.queue.ConflictPolicy
 import com.kert0n.medapp.queue.Expected
 import com.kert0n.medapp.queue.NotFoundPolicy
 import com.kert0n.medapp.queue.RefusalReason
@@ -72,6 +73,19 @@ sealed interface PackageSyncCommand : SyncCommand {
             is CorrectStock -> if (actual.isZero) NotFoundPolicy.APPLIED else NotFoundPolicy.ACCESS_LOST
             is SetClaim -> NotFoundPolicy.REPREPARE
             is ReleaseClaim, is Delete -> NotFoundPolicy.APPLIED
+        }
+
+    /**
+     * 409: у создания — «уже есть», у заявления брони — «уже заявлена». У расхода это тот же номер
+     * с другим телом: переподготовка тела не меняет, значит такой ответ — дефект, а не состояние
+     * сервера (PLAN E3). Версия сюда не относится: она отвечает 412.
+     */
+    val onConflict: ConflictPolicy
+        get() = when (this) {
+            is Create -> ConflictPolicy.EXISTS
+            is SetClaim -> ConflictPolicy.REPREPARE
+            is Consume, is Describe, is CorrectStock, is Move, is Delete, is ReleaseClaim ->
+                ConflictPolicy.REFUSE
         }
 
     /** 400: у расхода — больше остатка, единственный отказ по условию, что у него есть; у прочих — ввод. */
