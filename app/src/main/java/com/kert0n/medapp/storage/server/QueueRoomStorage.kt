@@ -2,7 +2,8 @@ package com.kert0n.medapp.storage.server
 
 import androidx.room.withTransaction
 import com.kert0n.medapp.domain.medkit.MedKitRef
-import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.stock.StockMovement
 import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.network.server.RawResponse
 import com.kert0n.medapp.queue.Delivery
@@ -21,13 +22,15 @@ import com.kert0n.medapp.queue.pack.prepare
 import com.kert0n.medapp.queue.settlement
 import com.kert0n.medapp.queue.unknownRoot
 import com.kert0n.medapp.queue.medkit.toPreparedRequest as toMedKitPreparedRequest
+import com.kert0n.medapp.storage.course.CourseDao
+import com.kert0n.medapp.storage.course.dropSource
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.storage.intake.IntakeDao
 import com.kert0n.medapp.storage.medkit.MedKitDao
 import com.kert0n.medapp.storage.pack.PackageDao
-import com.kert0n.medapp.storage.pack.toDetailsStorageEntity
 import com.kert0n.medapp.storage.pack.applySnapshot
-import com.kert0n.medapp.storage.pack.toStorageEntity
+import com.kert0n.medapp.storage.stock.StockMovementDao
+import com.kert0n.medapp.storage.stock.toStorageEntity as toMovementStorageEntity
 import com.kert0n.medapp.storage.value.VocabularyDao
 import java.time.Instant
 import javax.inject.Inject
@@ -48,6 +51,8 @@ class QueueRoomStorage @Inject constructor(
     private val packages: PackageDao,
     private val intakes: IntakeDao,
     private val medKits: MedKitDao,
+    private val courses: CourseDao,
+    private val movements: StockMovementDao,
     private val vocabulary: VocabularyDao
 ) : QueueStorage {
 
@@ -163,25 +168,26 @@ class QueueRoomStorage @Inject constructor(
     private suspend fun apply(id: Uuid, effect: Settlement.Effect, at: Instant) {
         when (effect) {
             is Settlement.Effect.LayDown -> layDown(effect.snapshot, at)
-            is Settlement.Effect.PackageGone -> {
-                val words = vocabulary.snapshot()
-                val row = packages.find(effect.packageId) ?: return
-                val pkg = row.toDomain(words)
-                if (pkg.suppliesStock) {
-                    val gone = pkg.correctTo(Quantity.zero(pkg.quantity.unit))
-                    packages.save(gone.toStorageEntity(row.pack.syncState()), gone.toDetailsStorageEntity())
-                }
-                packages.deleteClaims(effect.packageId)
-            }
-            is Settlement.Effect.PackageLost -> {
-                val row = packages.find(effect.packageId) ?: return
-                val lost = row.toDomain(vocabulary.snapshot()).loseAccess()
-                packages.save(lost.toStorageEntity(row.pack.syncState()), lost.toDetailsStorageEntity())
-                packages.deleteClaims(effect.packageId)
-            }
+            // Коробки у нас больше нет — строки не остаётся, курс теряет источник (D3, D5).
+            // На сервере её нет по нашей же причине — о количестве это не говорит ничего (D7);
+            // утрачен доступ — последний виденный остаток уходит из учёта записью в историю.
+            is Settlement.Effect.PackageGone -> gone(effect.packageId, movement = null, at)
+            is Settlement.Effect.PackageLost -> gone(effect.packageId, movement = { it.lost(Uuid.random(), at) }, at)
             is Settlement.Effect.Account -> intakes.setAccounting(id, effect.accounting)
             is Settlement.Effect.Cascade -> cascade(id, effect)
         }
+    }
+
+    private suspend fun gone(
+        packageId: Uuid,
+        movement: ((Package) -> StockMovement)?,
+        at: Instant
+    ) {
+        val words = vocabulary.snapshot()
+        val pkg = packages.find(packageId)?.toDomain(words) ?: return
+        movement?.let { movements.insert(it(pkg).toMovementStorageEntity()) }
+        courses.dropSource(pkg.ref, words, at)
+        packages.delete(packageId)
     }
 
     /** Разрешённый снимок поверх подтверждённого остатка и броней; разрешать здесь нечего. */

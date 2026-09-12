@@ -66,7 +66,6 @@ class IntakeStorageMapperTest {
         assertEquals(IntakeStatus.TAKEN, restored.status)
         assertEquals(taken.taken, restored.taken)
         assertEquals(OTHER_PACK, restored.taken?.pkg?.id)
-        assertEquals(SHARED_KIT, restored.taken?.pkg?.medKit?.id)
         assertEquals(PACK, restored.plannedPackage?.id)
     }
 
@@ -78,28 +77,6 @@ class IntakeStorageMapperTest {
      * Красная проверка: потребовать пачку при чтении — прошлое станет нечитаемым ровно тогда,
      * когда человек выбросил аптечку.
      */
-    @Test
-    fun aTakenDoseIsReadableAfterItsPackageIsGone() {
-        val planned = plannedIntake()
-        val forgotten = CourseIntake(
-            id = planned.id,
-            courseId = planned.courseId,
-            courseRevision = planned.courseRevision,
-            slot = planned.slot,
-            plannedAmount = planned.plannedAmount,
-            plannedPackage = null,
-            answer = IntakeAnswer.Taken(TakenDose(pkg = null, amount = dose("2"), at = LATER))
-        )
-
-        val restored = forgotten.toStorageRow().toDomain(VOCABULARY) as CourseIntake
-
-        assertEquals(IntakeStatus.TAKEN, restored.status)
-        assertEquals(dose("2"), restored.taken?.amount)
-        assertEquals(LATER, restored.taken?.at)
-        assertNull(restored.taken?.pkg)
-        assertNull(restored.plannedPackage)
-    }
-
     /** Сосед сменил единицу пачки на сервере: приёмы в таблетках читаются по-прежнему. */
     @Test
     fun historyIsReadableAfterThePackChangedItsUnit() {

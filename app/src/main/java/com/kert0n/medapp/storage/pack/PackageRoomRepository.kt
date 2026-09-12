@@ -53,8 +53,11 @@ class PackageRoomRepository @Inject constructor(
     override fun list(query: PackageQuery, today: LocalDate): Flow<List<PackageProjection>> =
         onChange { listing(query, today) }
 
-    override suspend fun add(pkg: Package, sync: PackageSyncState) =
-        packages.save(pkg.toStorageEntity(sync), pkg.toDetailsStorageEntity())
+    override suspend fun add(pkg: Package, sync: PackageSyncState) = save(pkg, sync)
+
+    /** Пачка целиком — запись, живая строка и сведения — одной транзакцией DAO. */
+    private suspend fun save(pkg: Package, sync: PackageSyncState) =
+        packages.save(pkg.record.toStorageEntity(), pkg.toStorageEntity(sync), pkg.toDetailsStorageEntity())
 
     override suspend fun describe(packageId: Uuid, facts: PackageFacts): Boolean =
         change(packageId) { it.describe(facts) }
@@ -65,12 +68,6 @@ class PackageRoomRepository @Inject constructor(
 
     override suspend fun deleteContentsOf(medKitId: Uuid): Int = packages.deleteContentsOf(medKitId)
 
-    override suspend fun loseAccess(packageId: Uuid): Boolean = database.withTransaction {
-        val changed = change(packageId) { it.loseAccess() }
-        if (changed) packages.deleteClaims(packageId)
-        changed
-    }
-
     /**
      * Переход применяется к тому, что лежит в базе, и пишется вместе с сохранённой обвязкой:
      * версии и время сверки принадлежат снимку сервера, а не действию человека (PLAN E4).
@@ -79,10 +76,7 @@ class PackageRoomRepository @Inject constructor(
         database.withTransaction {
             val stored = packages.find(packageId) ?: return@withTransaction false
             val changed = transition(stored.toDomain(vocabulary.snapshot()))
-            packages.save(
-                changed.toStorageEntity(stored.pack.syncState()),
-                changed.toDetailsStorageEntity()
-            )
+            save(changed, stored.pack.syncState())
             true
         }
 
@@ -101,13 +95,16 @@ class PackageRoomRepository @Inject constructor(
     ): Boolean = database.withTransaction {
         val stored = packages.find(adjustment.packageId) ?: return@withTransaction false
         val applied = adjustment.applyTo(stored.toDomain(vocabulary.snapshot()), at)
-        // Версии и время сверки остаются те, что записал снимок сервера: их двигает сеть (E4).
-        packages.save(
-            applied.pack.toStorageEntity(stored.pack.syncState()),
-            applied.pack.toDetailsStorageEntity()
-        )
-        // След есть не у всякого перехода: перенос остаток не меняет и записи не оставляет (D7).
+        // След пишется раньше строки: у кончившейся коробки строки не остаётся, а история — за
+        // записью, и её след переживает (D7).
         applied.movement?.let { movements.insert(it.toMovementStorageEntity()) }
+        val left = applied.pack
+        if (left == null) {
+            packages.delete(adjustment.packageId)
+        } else {
+            // Версии и время сверки остаются те, что записал снимок сервера: их двигает сеть (E4).
+            save(left, stored.pack.syncState())
+        }
         reallocation?.let { (plan, expected) ->
             courses.updateAllocations(
                 plan.toCourseStorageEntity(),
@@ -200,6 +197,7 @@ class PackageRoomRepository @Inject constructor(
         /** Из чего складывается доступность: пачка с её сведениями и бронями, очередь, выделения. */
         val AVAILABILITY_TABLES = arrayOf(
             "packages",
+            "package_records",
             "package_details",
             "claims",
             "sync_operations",

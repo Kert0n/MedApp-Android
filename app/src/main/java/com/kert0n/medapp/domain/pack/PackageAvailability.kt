@@ -15,18 +15,13 @@ import kotlin.uuid.Uuid
  * [effective] — число, которое считает очередь: подтверждённый остаток с незакрытыми командами
  * поверх (E1). Число есть всегда: истина по количеству — сервер, а до ответа устройство знает
  * то, что само отправило.
- *
- * Допуск пачки к обеспечению [suppliesStock] едет сюда вместе с ней: последнее известное
- * количество утраченной или выброшенной пачки остаётся видимым, но доступным запасом она быть
- * перестаёт. Иначе снятие броней вместе с доступом делало бы «свободно» даже больше.
  */
 data class PackageAvailability(
     val packageId: Uuid,
     val expiresOn: ExpiryDate?,
     val effective: Quantity,
     val reservedByOthers: Quantity,
-    val myAllocation: Quantity,
-    val suppliesStock: Boolean = true
+    val myAllocation: Quantity
 ) {
 
     constructor(
@@ -39,8 +34,7 @@ data class PackageAvailability(
         effective = effective,
         reservedByOthers = pkg.claims?.let { Quantity(it.reservedByOthers, pkg.quantity.unit) }
             ?: Quantity.zero(pkg.quantity.unit),
-        myAllocation = myAllocation,
-        suppliesStock = pkg.suppliesStock
+        myAllocation = myAllocation
     )
 
     init {
@@ -49,14 +43,8 @@ data class PackageAvailability(
         require(myAllocation.unit == unit) { "выделение измеряется единицей пачки" }
     }
 
-    /**
-     * Сколько могу взять я: вычитается только чужое, свою бронь я заявил сам. Из пачки, которая
-     * запаса не обеспечивает, взять нельзя нисколько.
-     */
-    val availableToMe: Quantity
-        get() =
-            if (suppliesStock) effective.minusOrZero(reservedByOthers)
-            else Quantity.zero(effective.unit)
+    /** Сколько могу взять я: вычитается только чужое, свою бронь я заявил сам. */
+    val availableToMe: Quantity get() = effective.minusOrZero(reservedByOthers)
 
     /**
      * Свободно любому: доступное мне без моего выделения. Считается не от суммы броней: моя

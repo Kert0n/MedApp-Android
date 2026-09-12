@@ -256,33 +256,13 @@ class PackageRoomRepositoryTest {
     }
 
     /**
-     * Пачка, к которой утрачен доступ, свободной не считается — хотя её количество осталось
-     * известным, а брони с неё сняты вместе с доступом.
-     */
-    @Test
-    fun packageOutOfReachIsNotCountedAsFree() = runTest {
-        repository.saveClaims(PACK, Claims(total = BigDecimal("8")))
-
-        assertTrue(repository.loseAccess(PACK))
-
-        val availability = requireNotNull(repository.observe(PACK).first()).availability
-        assertEquals(tablets("0"), availability.freeForAnyone)
-        // Брони снимаются вместе с доступом: их больше не существует, а не «их не видно».
-        assertNull(requireNotNull(repository.observe(PACK).first()).claims)
-        assertEquals(
-            emptyList<String>(),
-            repository.list(PackageQuery(filter = PackageQuery.Filter.HasFree), today).first().map { it.name }
-        )
-    }
-
-    /**
      * Переименование правит описание и только его: остаток, обвязка синхронизации и брони
      * остаются нынешними, хотя экран загрузил пачку до чужой записи.
      */
     @Test
     fun describingDoesNotWriteBackAStaleAmount() = runTest {
         val sync = PackageSyncState(PACK, version = ResourceVersion(5), syncedAt = at)
-        repository.applySnapshot(PackageSnapshot(paracetamol.correctTo(tablets("11")), sync), at)
+        repository.applySnapshot(PackageSnapshot(requireNotNull(paracetamol.correctTo(tablets("11"))), sync), at)
 
         val renamed = paracetamol.facts.let { it.copy(shared = it.shared.copy(name = "Панадол")) }
 

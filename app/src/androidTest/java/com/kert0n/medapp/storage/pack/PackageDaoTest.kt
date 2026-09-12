@@ -10,6 +10,7 @@ import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.expiry
 import com.kert0n.medapp.fixture.fileDatabase
 import com.kert0n.medapp.fixture.inMemoryDatabase
+import com.kert0n.medapp.fixture.save
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.reopenFileDatabase
 import com.kert0n.medapp.fixture.tablets
@@ -56,7 +57,7 @@ class PackageDaoTest {
 
     @Test
     fun savedPackageComesBackWholeFromTwoTables() = runTest {
-        packages.save(local.toStorageEntity(), local.toDetailsStorageEntity())
+        packages.save(local)
         val restored = requireNotNull(packages.find(PACK)).toDomain(VOCABULARY)
         assertEquals(local.facts, restored.facts)
         assertEquals(local.quantity, restored.quantity)
@@ -76,9 +77,9 @@ class PackageDaoTest {
     /** Повторный снимок меняет серверные поля и не трогает срок годности, заметку и цену. */
     @Test
     fun repeatedServerSnapshotKeepsLocalDetails() = runTest {
-        packages.save(local.toStorageEntity(), local.toDetailsStorageEntity())
+        packages.save(local)
 
-        val fromServer = local.correctTo(tablets("12")).describe(
+        val fromServer = requireNotNull(local.correctTo(tablets("12"))).describe(
             local.facts.copy(shared = local.facts.shared.copy(name = "Paracetamol"))
         )
         packages.applySnapshot(
@@ -200,9 +201,9 @@ class PackageDaoTest {
 
     @Test
     fun packagesOfAMedKitAreObservable() = runTest {
-        packages.save(local.toStorageEntity(), local.toDetailsStorageEntity())
+        packages.save(local)
         val other = pack(id = OTHER_PACK, name = "Ибупрофен")
-        packages.save(other.toStorageEntity(), other.toDetailsStorageEntity())
+        packages.save(other)
 
         val seen = packages.observeOfMedKit(HOME_KIT).first().map { it.toDomain(VOCABULARY).name }
         assertEquals(listOf("Ибупрофен", "Парацетамол"), seen)
@@ -212,7 +213,7 @@ class PackageDaoTest {
     fun writtenPackageSurvivesClosingTheDatabase() = runTest {
         val name = "survives.db"
         val first = fileDatabase(name)
-        first.packages().save(local.toStorageEntity(), local.toDetailsStorageEntity())
+        first.packages().save(local)
         first.close()
 
         val second = reopenFileDatabase(name)

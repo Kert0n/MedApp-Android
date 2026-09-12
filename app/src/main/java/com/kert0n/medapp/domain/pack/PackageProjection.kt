@@ -22,8 +22,6 @@ data class PackageProjection(
     val addedAt: Instant,
     val templateId: Uuid?,
     val claims: Claims?,
-    val lifecycle: Package.Lifecycle,
-    val access: Package.Access,
     val availability: PackageAvailability,
     val hasUnconfirmedChanges: Boolean
 ) {
@@ -32,6 +30,4 @@ data class PackageProjection(
     }
 
     val name: String get() = facts.name
-
-    val suppliesStock: Boolean get() = Package.suppliesStock(lifecycle, access)
 }

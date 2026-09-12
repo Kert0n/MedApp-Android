@@ -1,42 +1,30 @@
 package com.kert0n.medapp.domain.pack
 
+import com.kert0n.medapp.domain.stock.StockMovement
 import com.kert0n.medapp.domain.value.Money
 
 import com.kert0n.medapp.fixture.HOME_KIT
+import com.kert0n.medapp.fixture.LATER
 import com.kert0n.medapp.fixture.SHARED_KIT
 import com.kert0n.medapp.fixture.factsOf
 import com.kert0n.medapp.fixture.expiry
 import com.kert0n.medapp.fixture.withShared
 import com.kert0n.medapp.fixture.medKit
 import com.kert0n.medapp.fixture.pack
-import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.tablets
 
 import java.math.BigDecimal
+import kotlin.uuid.Uuid
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertSame
 import org.junit.Test
 
 /**
- * Переходы упаковки. Кончившаяся пачка архивируется, а не исчезает: иначе история приёмов за
- * прошлый месяц оборвалась бы вместе с ней (PLAN D3).
- */
-/**
- * Переходы, меняющие сведения, принадлежность и две оси состояния. Жизненный цикл и доступ
- * независимы: выбросить свою часть общей пачки и выйти из аптечки можно в любом порядке (PLAN D3).
+ * Переходы, меняющие сведения и принадлежность. Состояний у коробки нет: она либо есть, либо её
+ * нет, и утрата доступа — не состояние пачки, а запись в истории о том, что из учёта ушло
+ * (PLAN D3, D7).
  */
 class PackageStateTransitionsTest {
-
-    @Test(expected = IllegalStateException::class)
-    fun inaccessiblePackIsNotEdited() {
-        pack(access = Package.Access.LOST).describe(factsOf(pack()))
-    }
-
-    @Test(expected = IllegalStateException::class)
-    fun inaccessiblePackIsNotMoved() {
-        pack(access = Package.Access.LOST).moveTo(medKit(id = SHARED_KIT, name = "Общая").ref)
-    }
 
     @Test
     fun editReplacesTheWholeDescriptiveState() {
@@ -86,49 +74,11 @@ class PackageStateTransitionsTest {
     }
 
     @Test
-    fun archivingTwiceIsNotAnError() {
-        val archived = pack().archive()
-        assertSame(archived, archived.archive())
-    }
-
-    @Test
-    fun archivingAnInaccessiblePackRemovesItFromTheList() {
-        assertEquals(
-            Package.Lifecycle.ARCHIVED,
-            pack(access = Package.Access.LOST).archive().lifecycle
-        )
-    }
-
-    @Test
-    fun losingAccessDropsTheClaimsSnapshot() {
-        // Сервер снял брони каскадом по участию: держать их снимок значило бы показывать
-        // чужие брони на пачке, которой у нас больше нет.
-        val shared = pack(claims = Claims(BigDecimal("5"), BigDecimal("2")))
-        val lost = shared.loseAccess()
-        assertEquals(Package.Access.LOST, lost.access)
-        assertEquals(Package.Lifecycle.ACTIVE, lost.lifecycle)
-        assertNull(lost.claims)
-    }
-
-    @Test
-    fun losingAccessTwiceIsNotAnError() {
-        val lost = pack().loseAccess()
-        assertSame(lost, lost.loseAccess())
-    }
-
-    @Test
-    fun archivedPackCanAlsoLoseAccess() {
-        // Две оси, а не одна: выбросить свою часть общей пачки и потом выйти из аптечки — это
-        // два разных события, и оба остаются записанными.
-        val lost = pack(quantity = tablets("2")).consume(dose("2")).loseAccess()
-        assertEquals(Package.Lifecycle.ARCHIVED, lost.lifecycle)
-        assertEquals(Package.Access.LOST, lost.access)
-    }
-
-    @Test
-    fun losingAccessKeepsWhatWasLeft() {
-        // Остаток недоступной пачки помним: он нужен движению ACCESS_LOST и отчёту.
-        val lost = pack(quantity = tablets("7")).loseAccess()
-        assertEquals(tablets("7"), lost.quantity)
+    fun losingAccessWritesWhatWasLeftIntoTheHistory() {
+        // Коробка цела, но не у нас: последний виденный остаток уходит из учёта записью, и
+        // она держится за ссылку на пачку, а не за саму пачку — той больше не будет.
+        val movementId = Uuid.random()
+        val lost = pack(quantity = tablets("7")).lost(movementId, LATER)
+        assertEquals(StockMovement.AccessLoss(movementId, pack().ref, tablets("7"), observedAt = LATER), lost)
     }
 }

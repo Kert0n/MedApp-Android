@@ -36,8 +36,17 @@ import com.kert0n.medapp.queue.Take
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.storage.intake.toStorageEntity as toIntakeStorageEntity
 import com.kert0n.medapp.storage.medkit.toStorageEntity as toMedKitStorageEntity
-import com.kert0n.medapp.storage.pack.toDetailsStorageEntity
 import com.kert0n.medapp.storage.pack.toStorageEntity
+import com.kert0n.medapp.fixture.COURSE
+import com.kert0n.medapp.fixture.activeCourse
+import com.kert0n.medapp.fixture.save
+import com.kert0n.medapp.fixture.source
+import com.kert0n.medapp.domain.course.Revision
+import com.kert0n.medapp.domain.stock.StockMovement
+import com.kert0n.medapp.storage.course.ActivePackageAssignmentStorageEntity
+import com.kert0n.medapp.storage.course.toSourceStorageEntities
+import com.kert0n.medapp.storage.course.toStorageEntity as toCourseStorageEntity
+import com.kert0n.medapp.storage.course.toTimeStorageEntities
 import java.math.BigDecimal
 import java.time.Instant
 import kotlin.uuid.Uuid
@@ -97,10 +106,7 @@ class QueueRoomStorageTest {
         database = inMemoryDatabase()
         database.medKits().upsert(medKit().toMedKitStorageEntity())
         val paracetamol = pack(quantity = tablets("20"), form = TABLET_FORM)
-        database.packages().save(
-            paracetamol.toStorageEntity(PackageSyncState(PACK, ResourceVersion(3), ResourceVersion(1), at)),
-            paracetamol.toDetailsStorageEntity()
-        )
+        database.packages().save(paracetamol, PackageSyncState(PACK, ResourceVersion(3), ResourceVersion(1), at))
     }
 
     @After
@@ -196,29 +202,47 @@ class QueueRoomStorageTest {
         assertEquals(tablets("20"), requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY).quantity)
     }
 
+    /** На сервере пачки нет по нашей же причине: коробки нет, движения нет, курс без источника (D3, D7). */
     @Test
-    fun packageGoneFromTheServerIsArchivedLocally() = runTest {
+    fun packageGoneFromTheServerIsGoneLocally() = runTest {
+        holdByACourse()
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("20"), INTAKE), at)
         storage.take(operation, null, at)
 
         storage.settle(operation, Delivery.Applied(PackageState.Gone), at.plusSeconds(1))
 
-        val pkg = requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY)
-        assertEquals(tablets("0"), pkg.quantity)
-        assertEquals(false, pkg.suppliesStock)
+        assertNull(database.packages().find(PACK))
+        assertTrue(database.stockMovements().ofPackage(PACK).isEmpty())
+        assertEquals(emptyList<Uuid>(), database.courses().sourcePackagesOf(COURSE))
+        assertEquals(Revision(2), requireNotNull(database.courses().findPlan(COURSE)).toPlan(VOCABULARY).revision)
     }
 
+    /** Доступ утрачен: последний виденный остаток уходит в историю, коробки и источника нет. */
     @Test
-    fun accessLostMarksThePackageAndClosesTheOperation() = runTest {
+    fun accessLostRemovesThePackageAndWritesTheLossDown() = runTest {
+        holdByACourse()
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
         storage.take(operation, null, at)
 
         storage.settle(operation, Delivery.AccessLost, at.plusSeconds(1))
 
-        val pkg = requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY)
-        assertEquals(com.kert0n.medapp.domain.pack.Package.Access.LOST, pkg.access)
-        assertNull(pkg.claims)
+        assertNull(database.packages().find(PACK))
+        val loss = database.stockMovements().ofPackage(PACK).single().toDomain(VOCABULARY) as StockMovement.AccessLoss
+        assertEquals(tablets("20"), loss.amount)
+        assertEquals(at.plusSeconds(1), loss.observedAt)
+        assertEquals(emptyList<Uuid>(), database.courses().sourcePackagesOf(COURSE))
         assertTrue(storage.ready(at.plusSeconds(600)).isEmpty())
+    }
+
+    /** Курс, держащий пачку: назначение и источник, как их пишет активация. */
+    private suspend fun holdByACourse() {
+        val plan = activeCourse(sources = listOf(source(PACK, 5)))
+        database.courses().saveCourse(
+            plan.toCourseStorageEntity(),
+            plan.schedule.toTimeStorageEntities(COURSE),
+            plan.medicine.toSourceStorageEntities(COURSE)
+        )
+        database.courses().assignPackage(ActivePackageAssignmentStorageEntity(PACK, COURSE))
     }
 
     @Test
@@ -440,7 +464,7 @@ class QueueRoomStorageTest {
 
         val stored = (requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable).operation
         assertEquals(SyncOperationStatus.APPLIED, stored.status)
-        assertEquals(com.kert0n.medapp.domain.pack.Package.Access.AVAILABLE, requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY).access)
+        assertNotNull(database.packages().find(PACK))
         assertNull(storage.take(operation, null, at.plusSeconds(3)))
     }
 }

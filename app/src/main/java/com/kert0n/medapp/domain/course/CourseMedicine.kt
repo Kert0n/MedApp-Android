@@ -57,7 +57,6 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
         form: DosageForm
     ): Result<CourseMedicine> {
         val rejection = when {
-            !pkg.suppliesStock -> CourseRejected.Reason.PACKAGE_UNUSABLE
             holds(pkg) -> CourseRejected.Reason.ALREADY_ATTACHED
             // Пачка без формы не годится ни под какое назначение: сказать, тот ли это препарат,
             // нечем, и сначала форму надо заполнить.

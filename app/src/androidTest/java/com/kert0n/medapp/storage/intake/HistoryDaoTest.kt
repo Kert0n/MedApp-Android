@@ -2,7 +2,6 @@ package com.kert0n.medapp.storage.intake
 
 import android.database.sqlite.SQLiteConstraintException
 import com.kert0n.medapp.domain.intake.IntakeStatus
-import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.stock.StockMovement
 import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.FIRST_PLANNED_AT
@@ -20,12 +19,11 @@ import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.plannedIntake
 import com.kert0n.medapp.fixture.rejectedByDatabase
 import com.kert0n.medapp.fixture.tablets
-import com.kert0n.medapp.fixture.unplannedIntake
 import com.kert0n.medapp.queue.intake.IntakeAccounting
 import com.kert0n.medapp.storage.course.toStorageEntity as toRecordStorageEntity
 import com.kert0n.medapp.storage.database.MedAppDatabase
-import com.kert0n.medapp.storage.pack.toDetailsStorageEntity
-import com.kert0n.medapp.storage.pack.toStorageEntity as toPackageStorageEntity
+import com.kert0n.medapp.fixture.save
+import com.kert0n.medapp.storage.pack.ClaimsStorageEntity
 import com.kert0n.medapp.storage.stock.toStorageEntity as toMovementStorageEntity
 import java.time.Instant
 import kotlin.uuid.Uuid
@@ -44,12 +42,11 @@ import com.kert0n.medapp.fixture.intakeRepository
 import com.kert0n.medapp.fixture.FIRST_SCHEDULED_ON
 
 /**
- * Что переживает удаление упаковки, а что уходит вместе с ней (PLAN D3, D6, D7, F2).
+ * Что переживает конец коробки, а что уходит вместе с ней (PLAN D3, D6, D7, F2).
  *
- * Приём — факт лечения: он держится на записи эпизода и на себе самом, поэтому остаётся, а ссылка
- * на исчезнувшую пачку пустеет. Движение — запись о самой пачке: без неё оно не значит ничего и
- * уходит с ней. Архивирование при этом не трогает ни того, ни другого: кончившаяся пачка — не
- * удалённая.
+ * Приёмы и движения держатся за запись о коробке, а не за живую строку: коробки нет — история
+ * читается по-прежнему, с именем и единицей из записи. Части живой коробки — сведения, брони,
+ * связи с курсами — уходят вместе с ней.
  */
 class HistoryDaoTest {
 
@@ -64,7 +61,7 @@ class HistoryDaoTest {
         database = inMemoryDatabase()
         for (id in listOf(PACK, OTHER_PACK)) {
             val pkg = pack(id = id)
-            database.packages().save(pkg.toPackageStorageEntity(), pkg.toDetailsStorageEntity())
+            database.packages().save(pkg)
         }
         database.courses().upsertRecord(courseRecord().toRecordStorageEntity())
     }
@@ -154,11 +151,11 @@ class HistoryDaoTest {
     }
 
     /**
-     * Приём переживает удаление пачки: количество и момент записаны в нём самом, а ссылка
-     * пустеет (`SET NULL`, PLAN D6).
+     * Приём переживает коробку: количество и момент записаны в нём самом, а имя и единица
+     * читаются из записи о коробке, которая остаётся (PLAN D3, D6).
      *
-     * Красная проверка: вернуть ключу `RESTRICT` — человек не сможет выбросить коробку, из
-     * которой хоть раз принимал, и случай краснеет.
+     * Красная проверка: посадить ключ приёма на живую строку — человек не сможет выбросить
+     * коробку, из которой хоть раз принимал, либо история потеряет, из чего принимали.
      */
     @Test
     fun anIntakeOutlivesThePackageItCameFrom() = runTest {
@@ -169,12 +166,14 @@ class HistoryDaoTest {
         val left = requireNotNull(intakes.find(INTAKE)).toDomain(VOCABULARY)
         assertEquals(IntakeStatus.TAKEN, left.status)
         assertEquals(dose("2"), left.taken?.amount)
-        assertNull(left.taken?.pkg)
+        assertEquals(LATER, left.taken?.at)
+        assertEquals("Парацетамол", left.taken?.pkg?.name)
+        assertEquals(TABLETS, left.taken?.pkg?.unit)
     }
 
-    /** Движение — запись о пачке: без неё оно не значит ничего и уходит вместе с ней (D7). */
+    /** Движение держится за запись о коробке и объясняет, куда она делась, — и после неё (D7). */
     @Test
-    fun movementsGoAwayWithTheirPackage() = runTest {
+    fun movementsOutliveTheirPackage() = runTest {
         movements.insert(
             StockMovement.Receipt(movementId, pack().ref, tablets("20"), Instant.EPOCH, LATER)
                 .toMovementStorageEntity()
@@ -182,38 +181,38 @@ class HistoryDaoTest {
 
         assertEquals(1, database.packages().delete(PACK))
 
-        assertTrue(movements.ofPackage(PACK).isEmpty())
+        val receipt = movements.ofPackage(PACK).single().toDomain(VOCABULARY) as StockMovement.Receipt
+        assertEquals(tablets("20"), receipt.amount)
+        assertEquals("Парацетамол", receipt.pkg.name)
     }
 
-    /** Части пачки уходят с ней: без сведений упаковки не бывает, это не половина (PLAN F1). */
+    /** Части живой коробки уходят с ней: сведения и брони без коробки не значат ничего (PLAN F1, F2). */
     @Test
-    fun theDetailsOfAPackageGoAwayWithIt() = runTest {
+    fun thePartsOfAPackageGoAwayWithIt() = runTest {
+        database.packages().save(pack(note = "в машине"))
+        database.packages().upsertClaims(ClaimsStorageEntity(PACK, "5", null))
+
         assertEquals(1, database.packages().delete(PACK))
 
         assertNull(database.packages().find(PACK))
+        assertEquals(0, count("package_details", PACK))
+        assertEquals(0, count("claims", PACK))
         assertNotNull(database.packages().find(OTHER_PACK))
+        assertEquals(1, count("package_details", OTHER_PACK))
     }
 
-    /** Архивирование — не удаление: пачка на месте, и приёмы с движениями тоже (PLAN D3). */
+    /** Запись о коробке остаётся: за неё держится история, и ключом она не удаляется (D3). */
     @Test
-    fun archivingKeepsIntakesAndMovements() = runTest {
+    fun theRecordOfAPackageStays() = runTest {
         intakes.upsert(plannedIntake().confirm(pack().take(dose("2"), LATER).getOrThrow()).toStorageEntity())
-        intakes.upsert(unplannedIntake(id = OTHER_INTAKE).toStorageEntity())
-        movements.insert(
-            StockMovement.Receipt(movementId, pack().ref, tablets("20"), Instant.EPOCH, LATER)
-                .toMovementStorageEntity()
-        )
+        assertEquals(1, database.packages().delete(PACK))
 
-        val archived = pack().consume(dose("20"))
-        database.packages().upsertServerPart(archived.toPackageStorageEntity())
-
-        assertNotNull(intakes.find(INTAKE))
-        assertNotNull(intakes.find(OTHER_INTAKE))
-        assertEquals(1, movements.ofPackage(PACK).size)
-        assertEquals(
-            Package.Lifecycle.ARCHIVED,
-            requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY).lifecycle
-        )
+        assertEquals(1, count("package_records", PACK))
+        val refusal = rejectedByDatabase {
+            database.openHelper.writableDatabase
+                .execSQL("DELETE FROM package_records WHERE id = '$PACK'")
+        }
+        assertTrue("$refusal", refusal is SQLiteConstraintException)
     }
 
     /**
@@ -228,6 +227,13 @@ class HistoryDaoTest {
                 .execSQL("DELETE FROM course_records WHERE id = '$COURSE'")
         }
         assertTrue("$refusal", refusal is SQLiteConstraintException)
+    }
+
+    private fun count(table: String, packageId: Uuid): Int {
+        val column = if (table == "package_records") "id" else "package_id"
+        return database.openHelper.readableDatabase
+            .query("SELECT COUNT(*) FROM $table WHERE $column = '$packageId'")
+            .use { it.moveToFirst(); it.getInt(0) }
     }
 
     @Test

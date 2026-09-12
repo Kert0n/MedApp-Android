@@ -48,6 +48,8 @@ import java.math.BigDecimal
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+import com.kert0n.medapp.domain.course.Revision
+import com.kert0n.medapp.storage.pack.PackageAdjustment
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -82,7 +84,7 @@ class IntakeConfirmationTest {
         val transactions = database.transactions()
         val clock = Clock.fixed(now, ZoneOffset.UTC)
         val service = QueueService(transactions, database.queueStorage())
-        confirmation = IntakeConfirmation(intakes, courses, packages, transactions, service, CourseClosing(courses, service), clock)
+        confirmation = IntakeConfirmation(intakes, courses, packages, transactions, service, CourseClosing(courses, packages, service), clock)
         packages.add(pack(quantity = tablets("20")))
     }
 
@@ -120,6 +122,28 @@ class IntakeConfirmationTest {
         assertEquals(tablets("18"), requireNotNull(packages.find(PACK)).quantity)
         // Выделено было пять доз (10 таблеток), ушло две таблетки: осталось четыре дозы.
         assertEquals(Doses(4), requireNotNull(courses.findPlan(COURSE)).sources.single().allocatedDoses)
+        assertEquals(0, database.syncOperations().all().size)
+    }
+
+    /**
+     * Приём опустошил местную коробку: коробки больше нет, а кончившаяся коробка источником не
+     * бывает — курс теряет её тем же решением, что записало приём (PLAN D3, D5). Факт при этом
+     * читается: он держится за запись о коробке.
+     */
+    @Test
+    fun anIntakeThatEmptiesTheLocalPackageEndsItAndDetachesTheSource() = runTest {
+        activate()
+        // Пачка на две таблетки: одна доза — и она кончилась.
+        packages.adjust(PackageAdjustment.Recount(PACK, tablets("2"), Uuid.random()), at = FIRST_PLANNED_AT)
+
+        val confirmed = confirmation.confirm(INTAKE, PACK, dose("2"), FIRST_PLANNED_AT).getOrThrow()
+
+        assertEquals(IntakeAccounting.LOCAL_APPLIED, confirmed.accounting)
+        assertNull(packages.find(PACK))
+        val plan = requireNotNull(courses.findPlan(COURSE))
+        assertEquals(emptyList<Any>(), plan.sources)
+        assertEquals(Revision(2), plan.revision)
+        assertEquals(PACK, requireNotNull(intakes.find(INTAKE)).taken?.pkg?.id)
         assertEquals(0, database.syncOperations().all().size)
     }
 

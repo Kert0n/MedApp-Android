@@ -5,7 +5,6 @@ import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.pack.PackageProjection
 import com.kert0n.medapp.domain.medkit.MedKitProjection
 import com.kert0n.medapp.fixture.projected
-import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.value.DosageForm
 import com.kert0n.medapp.domain.value.Money
 import com.kert0n.medapp.domain.value.Quantity
@@ -42,7 +41,7 @@ class PresentationStateTest {
     private data class MedKitListState(val medKits: List<MedKitPresentationDTO>)
 
     @Test
-    fun stateFlowReceivesConsumptionDescriptionAndArchivingOfTheSamePackage() = runTest {
+    fun stateFlowReceivesConsumptionDescriptionAndTheEndOfTheSamePackage() = runTest {
         val original = pack(quantity = tablets("20"))
         val updates = MutableSharedFlow<List<PackageProjection>>()
         val state = updates.map { packages ->
@@ -54,7 +53,7 @@ class PresentationStateTest {
         runCurrent()
         assertEquals("20", state.value.packages.single().quantity.amount)
 
-        val consumed = original.consume(dose("1"))
+        val consumed = requireNotNull(original.consume(dose("1")))
         assertEquals(original, consumed) // Доменное тождество не меняем ради интерфейса.
         assertNotEquals(original.projected(), consumed.projected()) // Наружу уходит проекция, и она различает.
         updates.emit(listOf(consumed.projected()))
@@ -66,10 +65,11 @@ class PresentationStateTest {
         runCurrent()
         assertEquals("В поездку", state.value.packages.single().note)
 
-        updates.emit(listOf(edited.consume(dose("19")).projected()))
+        // Кончившаяся коробка перестаёт существовать — из списка она уходит целиком (PLAN D3).
+        assertNull(edited.consume(dose("19")))
+        updates.emit(emptyList())
         runCurrent()
-        assertEquals("0", state.value.packages.single().quantity.amount)
-        assertEquals(Package.Lifecycle.ARCHIVED, state.value.packages.single().lifecycle)
+        assertEquals(emptyList<Any>(), state.value.packages)
     }
 
     @Test

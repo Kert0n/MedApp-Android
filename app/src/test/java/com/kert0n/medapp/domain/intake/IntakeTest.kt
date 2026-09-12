@@ -55,9 +55,8 @@ class IntakeTest {
         assertEquals(FIRST_SCHEDULED_TIME, taken.slot.localTime)
         assertEquals(dose("2"), taken.plannedAmount)
         assertEquals(PACK, taken.plannedPackage?.id)
-        // А фактические пачка — с её аптечкой — и количество те, что назвал человек.
+        // А фактические пачка и количество те, что назвал человек.
         assertEquals(OTHER_PACK, taken.taken?.pkg?.id)
-        assertEquals(SHARED_KIT, taken.taken?.pkg?.medKit?.id)
         assertEquals(dose("1"), taken.taken?.amount)
     }
 
@@ -167,16 +166,12 @@ class IntakeTest {
     @Test
     fun takingIsCheckedAgainstThePackAsItIsNow() {
         // Акт «беру из этой пачки» проверяется в момент записи по пачке, какой её знает
-        // устройство: две таблетки из флакона, который меряют миллилитрами, не берутся; из
-        // архивной пачки — тоже. Причина — значение, текст возьмёт экран.
+        // устройство: две таблетки из флакона, который меряют миллилитрами, не берутся.
+        // Причина — значение, текст возьмёт экран.
         val syrup = pack(quantity = millilitres("100"))
         assertEquals(
             IntakeRejected.Reason.UNIT_MISMATCH,
             (syrup.take(dose("2"), LATER).exceptionOrNull() as IntakeRejected).reason
-        )
-        assertEquals(
-            IntakeRejected.Reason.PACKAGE_UNUSABLE,
-            (pack().archive().take(dose("2"), LATER).exceptionOrNull() as IntakeRejected).reason
         )
         // Годная пачка отдаёт факт с теми обстоятельствами, что назвали, и остаток не меняет.
         val taken = pack(quantity = tablets("10")).take(dose("2"), LATER).getOrThrow()
@@ -201,19 +196,4 @@ class IntakeTest {
         assertThrows(IllegalArgumentException::class.java) { dose("0") }
     }
 
-    /**
-     * Пачку удалили, а приём был: факт называет количество и время без неё. История лечения
-     * держится на записи эпизода и на самом приёме, а не на картонной коробке (PLAN D6).
-     *
-     * Красная проверка: потребовать пачку у факта — прошлое станет нечитаемым ровно тогда, когда
-     * человек выбросил аптечку.
-     */
-    @Test
-    fun aFactOutlivesThePackageItCameFrom() {
-        val forgotten = TakenDose(pkg = null, amount = dose("2"), at = LATER)
-
-        assertEquals(dose("2"), forgotten.amount)
-        assertEquals(LATER, forgotten.at)
-        assertNull(forgotten.pkg)
-    }
 }

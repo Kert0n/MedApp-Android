@@ -6,6 +6,8 @@ import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
 import com.kert0n.medapp.domain.course.Revision
+import com.kert0n.medapp.domain.pack.PackageRef
+import com.kert0n.medapp.domain.value.Vocabulary
 import java.time.Instant
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.Flow
@@ -185,4 +187,20 @@ interface CourseDao {
 
     @Query("DELETE FROM active_package_assignments WHERE course_id = :courseId")
     suspend fun releaseAssignmentsOf(courseId: Uuid)
+}
+
+/**
+ * Источник не переживает коробку: курс, державший пачку [pkg], теряет её доменным переходом —
+ * с ростом редакции и освобождением назначения, — а не молча каскадом схемы (PLAN D5, F5).
+ * Зовётся там, где коробки не стало без решения человека о курсе: кончилась, утрачен доступ,
+ * исчезла на сервере. `false` — пачку никакой курс не держал.
+ */
+suspend fun CourseDao.dropSource(pkg: PackageRef, vocabulary: Vocabulary, at: Instant): Boolean {
+    val courseId = courseHolding(pkg.id) ?: return false
+    val row = findPlan(courseId) ?: return false
+    val course = row.toPlan(vocabulary)
+    val detached = course.detach(pkg, at)
+    updateAllocations(detached.toStorageEntity(), detached.medicine.toSourceStorageEntities(detached.id), course.revision)
+    releasePackage(pkg.id)
+    return true
 }

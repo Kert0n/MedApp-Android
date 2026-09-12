@@ -8,6 +8,7 @@ import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.course
 import com.kert0n.medapp.fixture.courseRecord
 import com.kert0n.medapp.fixture.inMemoryDatabase
+import com.kert0n.medapp.fixture.save
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.rejectedByDatabase
 import com.kert0n.medapp.fixture.schedule
@@ -43,7 +44,7 @@ class CourseDaoTest {
         database = inMemoryDatabase()
         for (id in listOf(PACK, OTHER_PACK)) {
             val pkg = pack(id = id)
-            database.packages().save(pkg.toPackageStorageEntity(), pkg.toDetailsStorageEntity())
+            database.packages().save(pkg)
         }
     }
 

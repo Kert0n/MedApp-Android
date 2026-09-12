@@ -4,6 +4,9 @@ import androidx.room.Room
 import androidx.test.platform.app.InstrumentationRegistry
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.storage.medkit.toStorageEntity as toMedKitStorageEntity
+import com.kert0n.medapp.storage.pack.toDetailsStorageEntity as toPackageDetailsStorageEntity
+import com.kert0n.medapp.storage.pack.toStorageEntity as toPackageStorageEntity
+import com.kert0n.medapp.storage.pack.toStorageEntity as toRecordStorageEntity
 import com.kert0n.medapp.storage.value.toStorageEntity
 import kotlinx.coroutines.runBlocking
 
@@ -91,5 +94,18 @@ fun MedAppDatabase.transactions() = com.kert0n.medapp.storage.database.RoomTrans
 
 /** Порт очереди для работника — транзакции взятия и применения исхода. */
 fun MedAppDatabase.queueStorage() = com.kert0n.medapp.storage.server.QueueRoomStorage(
-    this, syncOperations(), packages(), intakes(), medKits(), vocabulary()
+    this, syncOperations(), packages(), intakes(), medKits(), courses(), stockMovements(), vocabulary()
+)
+
+/**
+ * Пачка целиком в базу: запись о коробке, живая строка и сведения — как их пишет репозиторий.
+ * Тестам DAO не нужно повторять сборку трёх строк, чтобы положить одну пачку.
+ */
+suspend fun com.kert0n.medapp.storage.pack.PackageDao.save(
+    pkg: com.kert0n.medapp.domain.pack.Package,
+    sync: com.kert0n.medapp.network.pack.PackageSyncState = com.kert0n.medapp.network.pack.PackageSyncState(pkg.id)
+) = save(
+    pkg.record.toRecordStorageEntity(),
+    pkg.toPackageStorageEntity(sync),
+    pkg.toPackageDetailsStorageEntity()
 )

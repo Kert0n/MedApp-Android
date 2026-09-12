@@ -15,6 +15,7 @@ import com.kert0n.medapp.storage.database.chunkedForQuery
 import com.kert0n.medapp.storage.pack.PackageDao
 import com.kert0n.medapp.storage.pack.toDetailsStorageEntity
 import com.kert0n.medapp.storage.pack.toStorageEntity as toPackageStorageEntity
+import com.kert0n.medapp.storage.pack.toStorageEntity as toRecordStorageEntity
 import com.kert0n.medapp.storage.value.VocabularyDao
 import com.kert0n.medapp.storage.value.toStorageAmount
 import java.time.Instant
@@ -73,10 +74,8 @@ class IntakeRoomRepository @Inject constructor(
         // Пачку читаем до ответа: списывать не из чего — значит и факта не записываем, иначе
         // приём разошёлся бы с остатком.
         val source = if (outcome.spendsLocally) {
-            // Записываемый приём называет пачку всегда: пустой она бывает только у прочитанного
-            // прошлого, у которого пачку успели удалить (PLAN D6).
-            val taken = requireNotNull(outcome.taken?.pkg) { "локальный расход называет свою пачку" }
-            packages.find(taken.id) ?: return@withTransaction false
+            val taken = requireNotNull(outcome.taken) { "локальный расход есть только у принятого" }
+            packages.find(taken.pkg.id) ?: return@withTransaction false
         } else {
             null
         }
@@ -99,12 +98,18 @@ class IntakeRoomRepository @Inject constructor(
         if (!applied) return@withTransaction false
 
         source?.let {
-            // Расход не трогает обвязку доставки: версия и картина броней остаются прежними (E3).
             val spent = it.toDomain(vocabulary.snapshot()).consume(requireNotNull(outcome.taken).amount)
-            packages.save(
-                spent.toPackageStorageEntity(it.pack.syncState()),
-                spent.toDetailsStorageEntity()
-            )
+            if (spent == null) {
+                // Коробка кончилась — строки после неё не остаётся; приём держится за запись (D3, D6).
+                packages.delete(it.pack.id)
+            } else {
+                // Расход не трогает обвязку доставки: версия и картина броней остаются прежними (E3).
+                packages.save(
+                    spent.record.toRecordStorageEntity(),
+                    spent.toPackageStorageEntity(it.pack.syncState()),
+                    spent.toDetailsStorageEntity()
+                )
+            }
         }
         outcome.reallocation?.let { (course, expected) ->
             courses.updateAllocations(

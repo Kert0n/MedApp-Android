@@ -34,7 +34,6 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -60,11 +59,8 @@ class MedKitRemovalTest {
             packages = database.packageRepository(),
             transactions = database.transactions()
         )
-        // Живая пачка и кончившаяся: уносят место целиком, а не только то, что можно взять в руки.
         database.packageRepository().add(pack(id = PACK, quantity = tablets("20")))
-        database.packageRepository().add(
-            pack(id = OTHER_PACK, quantity = tablets("1"), lifecycle = Package.Lifecycle.ARCHIVED)
-        )
+        database.packageRepository().add(pack(id = OTHER_PACK, quantity = tablets("1")))
         database.stockMovements().insert(
             StockMovement.Receipt(movementId, pack(id = PACK).ref, tablets("20"), Instant.EPOCH, LATER)
                 .toMovementStorageEntity()
@@ -95,11 +91,11 @@ class MedKitRemovalTest {
     }
 
     /**
-     * «Выбросил вместе с лекарствами» (ТЗ 4.1.1.2.3.1): пачек и их истории остатка не остаётся, а
-     * лечение — запись эпизода и сам приём — переживает; ссылка приёма на пачку пустеет.
+     * «Выбросил вместе с лекарствами» (ТЗ 4.1.1.2.3.1): коробок не остаётся, а история — запись
+     * эпизода, приём и движения — переживает: она держится за записи о коробках (PLAN D3, D6).
      *
-     * Красная проверка: вернуть приёму ключ `RESTRICT` — аптечку, из которой хоть раз принимали,
-     * выбросить станет нельзя, и случай краснеет.
+     * Красная проверка: посадить ключ приёма на живую строку — аптечку, из которой хоть раз
+     * принимали, выбросить станет нельзя, и случай краснеет.
      */
     @Test
     fun throwingTheMedKitOutWithItsDrugsKeepsTheTreatment() = runTest {
@@ -109,12 +105,12 @@ class MedKitRemovalTest {
         assertNull(database.medKits().find(HOME_KIT))
         assertNull(database.packageRepository().find(PACK))
         assertNull(database.packageRepository().find(OTHER_PACK))
-        assertTrue(database.stockMovements().ofPackage(PACK).isEmpty())
+        assertEquals(1, database.stockMovements().ofPackage(PACK).size)
 
         assertNotNull(database.courses().findRecord(COURSE))
         val intake = requireNotNull(database.intakes().find(INTAKE)).toDomain(VOCABULARY)
         assertEquals(dose("2"), intake.taken?.amount)
-        assertNull(intake.taken?.pkg)
+        assertEquals("Парацетамол", intake.taken?.pkg?.name)
     }
 
     /** Общая аптечка местным решением не убирается: она есть у других людей (PLAN C3, E5). */

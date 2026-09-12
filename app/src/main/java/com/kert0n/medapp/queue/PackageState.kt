@@ -12,7 +12,7 @@ sealed interface PackageState {
 
     data class Present(val snapshot: PackageSnapshot) : PackageState
 
-    /** Пачки на сервере больше нет: истина — ноль, локально она архивируется. */
+    /** Пачки на сервере больше нет: коробки у нас нет, и строки после неё не остаётся (D3). */
     data object Gone : PackageState
 
     /** Команда пачки не касается. */

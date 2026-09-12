@@ -37,7 +37,7 @@ sealed interface PackageAdjustment {
     ) : PackageAdjustment
 
     /**
-     * Выбросили названное количество по названной причине; уходящая в ноль пачка архивируется.
+     * Выбросили названное количество по названной причине; ушедшая в ноль коробка кончается.
      * В историю попадает не запрошенное, а ушедшее: в минус пачка не списывается.
      */
     data class Disposal(
@@ -76,11 +76,10 @@ sealed interface PackageAdjustment {
                 // В историю идёт то, что действительно ушло, — разница остатков до и после
                 // перехода: сколько уходит, когда выбросили больше, чем было, решает пачка.
                 val disposed = pack.dispose(amount)
+                val left = disposed?.quantity ?: Quantity.zero(pack.quantity.unit)
                 Applied(
                     disposed,
-                    StockMovement.Disposal(
-                        movementId, pack.ref, pack.quantity - disposed.quantity, reason, at, at, note
-                    )
+                    StockMovement.Disposal(movementId, pack.ref, pack.quantity - left, reason, at, at, note)
                 )
             }
             is Transfer -> Applied(pack.moveTo(target))
@@ -88,8 +87,9 @@ sealed interface PackageAdjustment {
     }
 
     /**
-     * Новое состояние пачки и запись о том, как оно получилось. Запись бывает не у всякого
+     * Новое состояние пачки и запись о том, как оно получилось. `null` вместо пачки — коробка
+     * кончилась, и строки после перехода не остаётся (PLAN D3); запись бывает не у всякого
      * перехода: перенос остаток не трогает, и в истории расхода ему места нет.
      */
-    data class Applied(val pack: Package, val movement: StockMovement? = null)
+    data class Applied(val pack: Package?, val movement: StockMovement? = null)
 }

@@ -45,8 +45,7 @@ fun pack(
     openedOn: LocalDate? = null,
     templateId: Uuid? = null,
     claims: Claims? = null,
-    lifecycle: Package.Lifecycle = Package.Lifecycle.ACTIVE,
-    access: Package.Access = Package.Access.AVAILABLE
+    addedAt: Instant = Instant.EPOCH
 ) = Package(
     id = id,
     medKit = medKit,
@@ -67,11 +66,9 @@ fun pack(
         openedOn = openedOn
     ),
     quantity = quantity,
-    addedAt = Instant.EPOCH,
+    addedAt = addedAt,
     templateId = templateId,
-    claims = claims,
-    lifecycle = lifecycle,
-    access = access
+    claims = claims
 )
 
 /** Проекция пачки без очереди и выделений: оценка равна подтверждённому остатку. */

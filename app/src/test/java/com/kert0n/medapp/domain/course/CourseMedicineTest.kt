@@ -1,6 +1,5 @@
 package com.kert0n.medapp.domain.course
 
-import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.doses
 import com.kert0n.medapp.fixture.LATER
@@ -60,20 +59,6 @@ class CourseMedicineTest {
         val once = draftWithDose().attach(home.ref, doses = 5.doses, at = LATER).getOrThrow()
         val again = once.attach(home.ref, doses = 1.doses, at = LATER)
         assertEquals(CourseRejected.Reason.ALREADY_ATTACHED, again.rejection())
-    }
-
-    @Test
-    fun unusablePackageIsNotASource() {
-        val archived = pack(form = TABLET_FORM, lifecycle = Package.Lifecycle.ARCHIVED)
-        val lost = pack(id = OTHER_PACK, form = TABLET_FORM, access = Package.Access.LOST)
-        assertEquals(
-            CourseRejected.Reason.PACKAGE_UNUSABLE,
-            draftWithDose().attach(archived.ref, doses = 1.doses, at = LATER).rejection()
-        )
-        assertEquals(
-            CourseRejected.Reason.PACKAGE_UNUSABLE,
-            draftWithDose().attach(lost.ref, doses = 1.doses, at = LATER).rejection()
-        )
     }
 
     @Test

@@ -6,7 +6,7 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.kert0n.medapp.domain.stock.StockMovement
-import com.kert0n.medapp.storage.pack.PackageStorageEntity
+import com.kert0n.medapp.storage.pack.PackageRecordStorageEntity
 import com.kert0n.medapp.storage.value.toStorageAmount
 import java.time.Instant
 import kotlin.uuid.Uuid
@@ -15,18 +15,17 @@ import kotlin.uuid.Uuid
  * Одна строка на движение остатка — запись о **пачке**: что с ней стало и когда (PLAN D7, F1).
  * Аптечки здесь нет: где коробка лежит, знает она сама, а «сколько истрачено» от места не зависит.
  *
- * Ключ на пачку — `CASCADE`: движение описывает её и без неё не значит ничего, поэтому удалённая
- * пачка уносит свою историю остатка с собой. История **лечения** от этого не страдает: она
- * держится на записи эпизода и на самих приёмах (PLAN D5, D6).
+ * Ключ — на запись о коробке, `RESTRICT`: движение переживает коробку и объясняет, куда она
+ * делась; удалить историю нечем (PLAN D3, F2).
  */
 @Entity(
     tableName = "stock_adjustments",
     foreignKeys = [
         ForeignKey(
-            entity = PackageStorageEntity::class,
+            entity = PackageRecordStorageEntity::class,
             parentColumns = ["id"],
             childColumns = ["package_id"],
-            onDelete = ForeignKey.CASCADE
+            onDelete = ForeignKey.RESTRICT
         )
     ],
     indices = [Index(value = ["package_id", "observed_at"])]

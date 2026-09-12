@@ -105,7 +105,7 @@ class PackageQueueStateTest {
         val stored = pack(quantity = tablets("20"))
         val recount = PackageSyncCommand.CorrectStock(PACK, tablets("30"))
         val state = PackageQueueState(stored, listOf(recount))
-        assertEquals(stored.correctTo(tablets("30")).quantity, state.amount)
+        assertEquals(tablets("30"), state.amount)
     }
 
     @Test

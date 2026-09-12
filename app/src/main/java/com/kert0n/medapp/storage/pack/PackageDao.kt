@@ -28,12 +28,21 @@ interface PackageDao {
     suspend fun find(id: Uuid): PackageStorageRow?
 
     /**
-     * Пачка целиком: обе её строки пишутся одной транзакцией, потому что упаковка без личных
-     * сведений — не половина пачки, а несуществующее состояние (PLAN F1, F5).
+     * Пачка целиком: запись о коробке, серверная часть и личные сведения пишутся одной
+     * транзакцией, потому что упаковка без любой из них — не половина пачки, а несуществующее
+     * состояние (PLAN F1, F5). Запись первой: живая строка держится за неё ключом, и снимок
+     * имени, единицы и формы в ней идёт за пачкой.
      */
     @Transaction
-    suspend fun save(pack: PackageStorageEntity, details: PackageDetailsStorageEntity) {
-        require(pack.id == details.packageId) { "строки одной пачки называют один идентификатор" }
+    suspend fun save(
+        record: PackageRecordStorageEntity,
+        pack: PackageStorageEntity,
+        details: PackageDetailsStorageEntity
+    ) {
+        require(pack.id == details.packageId && pack.id == record.id) {
+            "строки одной пачки называют один идентификатор"
+        }
+        upsertRecord(record)
         upsertServerPart(pack)
         upsertDetails(details)
     }
@@ -63,14 +72,29 @@ interface PackageDao {
     }
 
     /**
-     * Недостающая строка деталей создаётся моментом первого наблюдения — обязательное `addedAt`
-     * домена не бывает пустым (PLAN F1).
+     * Серверная часть снимка. Запись о коробке идёт за ней: недостающая — чужая пачка, увиденная
+     * впервые, — заводится моментом наблюдения, а имя, единица и форма переписываются всегда;
+     * личные сведения только создаются пустыми и не трогаются (PLAN E4, F1).
      */
     @Transaction
     suspend fun writeServerPart(pack: PackageStorageEntity, observedAt: Instant) {
+        insertRecordIfMissing(
+            PackageRecordStorageEntity(pack.id, pack.name, pack.quantityUnitId, pack.formId, observedAt)
+        )
+        describeRecord(pack.id, pack.name, pack.quantityUnitId, pack.formId)
         upsertServerPart(pack)
-        insertDetailsIfMissing(observedPackageDetails(pack.id, observedAt))
+        insertDetailsIfMissing(PackageDetailsStorageEntity(packageId = pack.id))
     }
+
+    @Upsert
+    suspend fun upsertRecord(record: PackageRecordStorageEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertRecordIfMissing(record: PackageRecordStorageEntity)
+
+    /** Снимок в записи идёт за живой пачкой; момент появления остаётся прежним. */
+    @Query("UPDATE package_records SET name = :name, unit_id = :unitId, form_id = :formId WHERE id = :id")
+    suspend fun describeRecord(id: Uuid, name: String, unitId: Uuid, formId: Uuid?)
 
     @Query("SELECT version, claims_version FROM packages WHERE id = :id")
     suspend fun versionsOf(id: Uuid): PackageVersionsStorageRow?
@@ -94,10 +118,10 @@ interface PackageDao {
     @Query(
         """
         SELECT p.* FROM packages p
+        JOIN package_records r ON r.id = p.id
         JOIN package_details d ON d.package_id = p.id
         LEFT JOIN active_package_assignments a ON a.package_id = p.id
-        WHERE (:includeArchived OR p.lifecycle = 'ACTIVE')
-          AND (:medKitId IS NULL OR p.med_kit_id = :medKitId)
+        WHERE (:medKitId IS NULL OR p.med_kit_id = :medKitId)
           AND (:text = '' OR p.name_search LIKE '%' || :text || '%')
           AND (
             :filter = 'NONE'
@@ -116,7 +140,7 @@ interface PackageDao {
           CASE WHEN d.expires_on IS NOT NULL AND d.expires_on < :today THEN 0 ELSE 1 END,
           CASE WHEN :sort = 'EXPIRY' THEN (d.expires_on IS NULL) END,
           CASE WHEN :sort = 'EXPIRY' THEN d.expires_on END,
-          CASE WHEN :sort = 'ADDED_AT' THEN -d.added_at END,
+          CASE WHEN :sort = 'ADDED_AT' THEN -r.added_at END,
           CASE WHEN :sort = 'QUANTITY' THEN p.quantity_unit_id END,
           CASE WHEN :sort = 'QUANTITY' THEN p.quantity_sort END,
           p.name_search
@@ -130,8 +154,7 @@ interface PackageDao {
         until: LocalDate?,
         category: String?,
         formId: Uuid?,
-        sort: String,
-        includeArchived: Boolean
+        sort: String
     ): List<PackageStorageRow>
 
     @Upsert
@@ -169,8 +192,9 @@ interface PackageDao {
     suspend fun allocationsOf(packageIds: List<Uuid>): List<PackageAllocationRow>
 
     /**
-     * Удаление уносит части пачки каскадом — сведения, брони, историю остатка и связи с курсами
-     * (PLAN F2). Ноль строк значит «пачки и так нет».
+     * Коробки больше нет: живая строка уходит и уносит свои части каскадом — сведения, брони,
+     * связи с курсами (PLAN F2). Запись о коробке и всё, что за неё держится, остаются. Ноль
+     * строк значит «пачки и так нет».
      */
     @Query("DELETE FROM packages WHERE id = :id")
     suspend fun delete(id: Uuid): Int

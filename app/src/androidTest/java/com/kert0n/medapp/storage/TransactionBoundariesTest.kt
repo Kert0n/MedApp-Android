@@ -4,7 +4,6 @@ import com.kert0n.medapp.domain.course.CourseDraft
 import com.kert0n.medapp.domain.course.CourseRecord
 import com.kert0n.medapp.domain.intake.IntakeStatus
 import com.kert0n.medapp.domain.intake.UnplannedIntake
-import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.stock.StockMovement
 import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.HOME_KIT
@@ -492,7 +491,7 @@ class TransactionBoundariesTest {
 
         val disposal = database.stockMovements().ofPackage(PACK).single().toDomain(VOCABULARY)
         assertEquals(tablets("20"), (disposal as StockMovement.Disposal).amount)
-        assertEquals(Package.Lifecycle.ARCHIVED, requireNotNull(packages.find(PACK)).lifecycle)
+        assertNull(packages.find(PACK))
     }
 
     /**
@@ -565,8 +564,9 @@ class TransactionBoundariesTest {
         assertEquals(tablets("15"), requireNotNull(packages.find(PACK)).quantity)
     }
 
+    /** Кончившаяся коробка строки не оставляет, а её след держится за запись и остаётся (D3, D7). */
     @Test
-    fun disposalToZeroArchivesAndKeepsTheTrace() = runTest {
+    fun disposalToZeroEndsThePackAndKeepsTheTrace() = runTest {
         packages.adjust(
             PackageAdjustment.Disposal(
                 PACK,
@@ -577,8 +577,7 @@ class TransactionBoundariesTest {
             at = LATER
         )
 
-        val archived = requireNotNull(packages.find(PACK))
-        assertEquals(Package.Lifecycle.ARCHIVED, archived.lifecycle)
+        assertNull(packages.find(PACK))
         assertEquals(1, database.stockMovements().ofPackage(PACK).size)
     }
 

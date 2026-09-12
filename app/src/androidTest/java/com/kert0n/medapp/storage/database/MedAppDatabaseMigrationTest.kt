@@ -4,15 +4,18 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import androidx.room.testing.MigrationTestHelper
 import androidx.test.platform.app.InstrumentationRegistry
+import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.HOME_KIT
+import com.kert0n.medapp.fixture.INTAKE
+import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.SHARED_KIT
 import com.kert0n.medapp.fixture.TABLETS_ID
+import com.kert0n.medapp.fixture.TABLET_FORM_ID
 import com.kert0n.medapp.fixture.fileDatabase
+import com.kert0n.medapp.fixture.save
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.tablets
-import com.kert0n.medapp.storage.pack.toDetailsStorageEntity
-import com.kert0n.medapp.storage.pack.toStorageEntity
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -23,9 +26,10 @@ import org.junit.Test
  * Схема переживает обновление приложения. Экспорт схемы — необходимое, но не достаточное:
  * проверка открывает базу объявленной версии и сверяет её со скомпилированной (PLAN F4).
  *
- * Переход 1→2 — колонка `outcome_unknown` у очереди (PLAN E3, F4). Переход 2→3 — движение стало
- * записью о пачке: колонки аптечек ушли вместе с переносами (D7). База прошлой версии переезжает
- * целиком, а не заводится заново.
+ * Переход 1→2 — колонка `outcome_unknown` у очереди (PLAN E3, F4). Переход 2→3 — коробка стала
+ * живой пачкой и вечной записью: у `packages` нет состояний, история держится за
+ * `package_records`, движение — запись о пачке без аптечек (D3, D7). База прошлой версии
+ * переезжает целиком, а не заводится заново.
  */
 class MedAppDatabaseMigrationTest {
 
@@ -66,19 +70,67 @@ class MedAppDatabaseMigrationTest {
     }
 
     /**
-     * Движение стало записью о пачке: колонки аптечек ушли, а переносы вместе с ними — они
-     * говорили только о местах (PLAN D7). Остальная история переезжает целиком.
+     * Версия 3 — коробка стала живой пачкой и вечной записью (PLAN D3, F1, F2). База версии 2 с
+     * данными во **всех** перестроенных таблицах переезжает целиком: живая пачка — со своими
+     * частями; кончившаяся — только записью, за которую держатся её приём и приход; переносы
+     * уходят — они говорили о местах (D7).
      */
     @Test
-    fun movementsOfVersionTwoLoseTheirMedKitsAndKeepTheirHistory() {
+    fun aDatabaseOfVersionTwoMovesToVersionThreeWhole() {
         val file = "migrate-2-3.db"
         val receipt = "00000000-0000-4000-8000-000000000101"
         val transfer = "00000000-0000-4000-8000-000000000102"
+        val oldReceipt = "00000000-0000-4000-8000-000000000103"
+        val operation = "00000000-0000-4000-8000-000000000104"
         helper.createDatabase(file, 2).use { v2 ->
+            v2.execSQL("INSERT INTO quantity_units (id, name) VALUES ('$TABLETS_ID', 'таблетки')")
+            v2.execSQL("INSERT INTO form_types (id, name) VALUES ('$TABLET_FORM_ID', 'таблетки')")
+            v2.execSQL(
+                "INSERT INTO med_kits (id, name, publication, participant_count, created_at) " +
+                    "VALUES ('$HOME_KIT', 'Домашняя', 'LOCAL', 1, 0)"
+            )
+            for ((id, lifecycle, quantity) in listOf(Triple(PACK, "ACTIVE", "20"), Triple(OTHER_PACK, "ARCHIVED", "0"))) {
+                v2.execSQL(
+                    "INSERT INTO packages (id, med_kit_id, name, name_search, quantity, quantity_sort, " +
+                        "quantity_unit_id, form_id, lifecycle, access) VALUES ('$id', '$HOME_KIT', " +
+                        "'Парацетамол', 'парацетамол', '$quantity', '$quantity', '$TABLETS_ID', " +
+                        "'$TABLET_FORM_ID', '$lifecycle', 'AVAILABLE')"
+                )
+                v2.execSQL("INSERT INTO package_details (package_id, added_at, note) VALUES ('$id', 5, 'в машине')")
+            }
+            v2.execSQL("INSERT INTO claims (package_id, total, mine) VALUES ('$PACK', '5', '2')")
+            v2.execSQL(
+                "INSERT INTO course_records (id, title, dose_amount, unit_id, form_id, total_doses, start, " +
+                    "days_mask, zone, started_at) VALUES ('$COURSE', 'Курс', '2', '$TABLETS_ID', " +
+                    "'$TABLET_FORM_ID', 10, '2026-09-01', 127, 'Europe/Moscow', 0)"
+            )
+            v2.execSQL(
+                "INSERT INTO courses (id, dose_amount, unit_id, form_id, total_doses, taken_off_plan, start, " +
+                    "days_mask, zone, revision, created_at, updated_at) VALUES ('$COURSE', '2', " +
+                    "'$TABLETS_ID', '$TABLET_FORM_ID', 10, 0, '2026-09-01', 127, 'Europe/Moscow', 1, 0, 0)"
+            )
+            v2.execSQL(
+                "INSERT INTO course_sources (course_id, package_id, position, allocated_doses) " +
+                    "VALUES ('$COURSE', '$PACK', 0, 5)"
+            )
+            v2.execSQL("INSERT INTO active_package_assignments (package_id, course_id) VALUES ('$PACK', '$COURSE')")
+            // Приём из кончившейся пачки: держится за неё и после того, как живой строки нет.
+            v2.execSQL(
+                "INSERT INTO intakes (id, unit_id, status, course_id, course_revision, scheduled_on, " +
+                    "scheduled_time, scheduled_at, planned_amount, planned_package_id, answered_at, " +
+                    "taken_package_id, taken_amount, accounting, operation_id) VALUES ('$INTAKE', " +
+                    "'$TABLETS_ID', 'TAKEN', '$COURSE', 1, '2026-09-01', 540, 0, '2', '$OTHER_PACK', 7, " +
+                    "'$OTHER_PACK', '2', 'LOCAL_APPLIED', '$operation')"
+            )
             v2.execSQL(
                 "INSERT INTO stock_adjustments " +
                     "(id, package_id, kind, unit_id, observed_at, occurred_at, amount, med_kit_id) " +
                     "VALUES ('$receipt', '$PACK', 'RECEIPT', '$TABLETS_ID', 10, 10, '20', '$HOME_KIT')"
+            )
+            v2.execSQL(
+                "INSERT INTO stock_adjustments " +
+                    "(id, package_id, kind, unit_id, observed_at, occurred_at, amount, med_kit_id) " +
+                    "VALUES ('$oldReceipt', '$OTHER_PACK', 'RECEIPT', '$TABLETS_ID', 1, 1, '2', '$HOME_KIT')"
             )
             v2.execSQL(
                 "INSERT INTO stock_adjustments " +
@@ -91,14 +143,31 @@ class MedAppDatabaseMigrationTest {
 
         val v3 = helper.runMigrationsAndValidate(file, 3, true, MedAppDatabase.MIGRATION_2_3)
 
-        val kinds = v3.query("SELECT id, kind FROM stock_adjustments ORDER BY observed_at")
-        val survived = buildList {
-            while (kinds.moveToNext()) add(kinds.getString(0) to kinds.getString(1))
+        fun rows(sql: String): List<List<String?>> = v3.query(sql).use { cursor ->
+            buildList { while (cursor.moveToNext()) add((0 until cursor.columnCount).map { cursor.getString(it) }) }
         }
-        kinds.close()
+        // Запись — о каждой коробке, с моментом появления из деталей.
+        assertEquals(
+            listOf(listOf(PACK.toString(), "Парацетамол", TABLETS_ID.toString(), TABLET_FORM_ID.toString(), "5"),
+                listOf(OTHER_PACK.toString(), "Парацетамол", TABLETS_ID.toString(), TABLET_FORM_ID.toString(), "5")),
+            rows("SELECT id, name, unit_id, form_id, added_at FROM package_records ORDER BY id")
+        )
+        // Живая строка — только у коробки, которая есть; с ней её части.
+        assertEquals(listOf(listOf(PACK.toString(), "20")), rows("SELECT id, quantity FROM packages"))
+        assertEquals(listOf(listOf(PACK.toString(), "в машине")), rows("SELECT package_id, note FROM package_details"))
+        assertEquals(listOf(listOf(PACK.toString(), "5", "2")), rows("SELECT package_id, total, mine FROM claims"))
+        assertEquals(listOf(listOf(COURSE.toString(), PACK.toString(), "0", "5")), rows("SELECT * FROM course_sources"))
+        assertEquals(listOf(listOf(PACK.toString(), COURSE.toString())), rows("SELECT * FROM active_package_assignments"))
+        // История держится за запись: приём из кончившейся коробки и её приход на месте.
+        assertEquals(
+            listOf(listOf(INTAKE.toString(), OTHER_PACK.toString(), OTHER_PACK.toString(), "2", "LOCAL_APPLIED", operation)),
+            rows("SELECT id, planned_package_id, taken_package_id, taken_amount, accounting, operation_id FROM intakes")
+        )
+        assertEquals(
+            listOf(listOf(oldReceipt, OTHER_PACK.toString(), "RECEIPT"), listOf(receipt, PACK.toString(), "RECEIPT")),
+            rows("SELECT id, package_id, kind FROM stock_adjustments ORDER BY observed_at")
+        )
         v3.close()
-
-        assertEquals(listOf(receipt to "RECEIPT"), survived)
     }
 
     /**
@@ -113,7 +182,7 @@ class MedAppDatabaseMigrationTest {
         // Засеянная база: пачка не пишется без аптечки и словаря, ключи это держат (F2).
         val written = fileDatabase(file)
         val paracetamol = pack(quantity = tablets("20"))
-        written.packages().save(paracetamol.toStorageEntity(), paracetamol.toDetailsStorageEntity())
+        written.packages().save(paracetamol)
         written.openHelper.writableDatabase.execSQL("PRAGMA user_version = 99")
         written.close()
 
