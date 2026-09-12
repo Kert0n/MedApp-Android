@@ -96,3 +96,18 @@ private fun DecimalFormat.parseFully(text: String): BigDecimal? {
     val parsed = parse(text, position) as? BigDecimal ?: return null
     return parsed.takeIf { position.index == text.length }
 }
+
+/**
+ * Цена так, как её пишут: столько знаков после точки, сколько у валюты, и её знак. Ноль копеек
+ * не отбрасывается — «249 ₽» и «249,00 ₽» человек читает как разную точность, а цена у нас
+ * точная.
+ *
+ * Неизвестная валюта не роняет экран: показывается код, как он записан.
+ */
+fun MoneyPresentationDTO.forHuman(): String {
+    val currency = runCatching { Currency.getInstance(currencyCode) }.getOrNull()
+        ?: return "$amount $currencyCode"
+    val written = runCatching { BigDecimal(amount).setScale(currency.defaultFractionDigits) }
+        .getOrNull()?.toPlainString() ?: amount
+    return "$written ${currency.symbol}"
+}

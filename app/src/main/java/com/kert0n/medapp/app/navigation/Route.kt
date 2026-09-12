@@ -45,4 +45,8 @@ sealed interface Route {
      */
     @Serializable
     data class PackageForm(val medKitId: Uuid? = null) : Route
+
+    /** Всё известное об одной упаковке (экран 6). */
+    @Serializable
+    data class PackageCard(val packageId: Uuid) : Route
 }

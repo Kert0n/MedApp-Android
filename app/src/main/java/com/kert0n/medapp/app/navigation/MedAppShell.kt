@@ -29,6 +29,7 @@ import androidx.navigation.toRoute
 import com.kert0n.medapp.feature.medkits.MedKitFormScreen
 import com.kert0n.medapp.feature.packs.MedKitContentsScreen
 import com.kert0n.medapp.feature.packs.PackageFormScreen
+import com.kert0n.medapp.feature.packs.PackageScreen
 import com.kert0n.medapp.feature.medkits.MedKitListScreen
 import com.kert0n.medapp.ui.EmptyState
 
@@ -96,13 +97,17 @@ private fun MedAppNavHost(navController: NavHostController, modifier: Modifier =
             MedKitContentsScreen(
                 medKitId = route.medKitId,
                 onBack = { navController.popBackStack() },
-                onOpen = { /* карточка упаковки — следующий коммит */ },
+                onOpen = { navController.navigate(Route.PackageCard(it)) },
                 onAdd = { navController.navigate(Route.PackageForm(route.medKitId)) }
             )
         }
         composable<Route.PackageForm>(typeMap = RouteTypes) { entry ->
             val route = entry.toRoute<Route.PackageForm>()
             PackageFormScreen(route.medKitId, onDone = { navController.popBackStack() })
+        }
+        composable<Route.PackageCard>(typeMap = RouteTypes) { entry ->
+            val route = entry.toRoute<Route.PackageCard>()
+            PackageScreen(route.packageId, onBack = { navController.popBackStack() })
         }
     }
 }
