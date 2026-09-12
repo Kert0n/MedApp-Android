@@ -333,7 +333,7 @@ class ContractProbe {
     }
 
     /**
-     * 409 у `sync` — устаревшая версия, и запрос **не применён** (PLAN B3, E3): остаток тот же, а
+     * 412 у `sync` — устаревшая версия, и запрос **не применён** (PLAN B3, E3): остаток тот же, а
      * тот же номер с той же дельтой и свежей версией сервер принимает. Внеплановый расход — тот же
      * `sync` без блока брони. На этом стоит переподготовка очереди под тем же `syncId`.
      */
@@ -347,7 +347,12 @@ class ContractProbe {
             operationId, PackageSyncState(pack.id, version = ResourceVersion(pack.version.number + 1)), null, null, Instant.EPOCH
         )
 
-        assertEquals(ApiFailure.Conflict, failure(owner.send(stale)))
+        assertEquals(ApiFailure.PreconditionFailed, failure(owner.send(stale)))
+        // Расход, не назвавший версию, сервер не применяет вовсе: 428, а не молча (PLAN B3).
+        assertEquals(
+            ApiFailure.PreconditionRequired,
+            failure(owner.synchronise(pack.id, Uuid.random(), PackageSyncNetworkDTO("1", packageVersion = null)))
+        )
         val untouched = success(owner.packageSnapshot(pack.id))
         assertEquals("10.000000", untouched.pack.amount)
         assertEquals(pack.version, untouched.pack.version)
