@@ -238,6 +238,21 @@ class SyncOperationDaoTest {
         assertEquals(true, readable(first).outcomeUnknown)
     }
 
+    /** Ближайший срок — среди незакрытых и ещё не наступивших: закрытые и наступившие ждать не заставляют. */
+    @Test
+    fun nextDueAtSeesOnlyUnclosedOperationsWithATermStillAhead() = runTest {
+        queue.enqueue(first, PackageSyncCommand.Delete(PACK), createdAt)
+        queue.enqueue(second, PackageSyncCommand.CorrectStock(PACK, tablets("10")), createdAt)
+        queue.enqueue(third, MedKitSyncCommand.Leave(SHARED_KIT), createdAt)
+        queue.settle(first, SyncOperationStatus.PENDING, "429", createdAt, attempted = 1, notBefore = createdAt.plusSeconds(30))
+        queue.settle(second, SyncOperationStatus.PENDING, "обрыв", createdAt, attempted = 1, notBefore = createdAt.plusSeconds(10))
+        queue.settle(third, SyncOperationStatus.APPLIED, null, createdAt, attempted = 1, notBefore = createdAt.plusSeconds(5))
+
+        assertEquals(createdAt.plusSeconds(10), queue.nextDueAt(createdAt))
+        assertEquals(createdAt.plusSeconds(30), queue.nextDueAt(createdAt.plusSeconds(10)))
+        assertEquals(null, queue.nextDueAt(createdAt.plusSeconds(30)))
+    }
+
     /** Незакрытые — те, чей исход ещё не установлен: свёртка остатка берёт именно их (PLAN E1). */
     @Test
     fun unclosedOperationsExcludeTheSettledOnes() = runTest {

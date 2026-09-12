@@ -64,6 +64,8 @@ class QueueRoomStorage @Inject constructor(
         queue.ready(now).map { it.toDomain(words) }
     }
 
+    override suspend fun nextDueAt(now: Instant): Instant? = queue.nextDueAt(now)
+
     override suspend fun medKit(id: Uuid): MedKitRef? = medKits.find(id)?.toRef()
 
     /**

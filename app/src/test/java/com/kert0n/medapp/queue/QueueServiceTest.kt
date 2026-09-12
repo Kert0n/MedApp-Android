@@ -22,6 +22,7 @@ class QueueServiceTest {
         val enqueued = mutableListOf<QueuedCommand>()
         var transactions = 0
         override fun changes(): kotlinx.coroutines.flow.Flow<Unit> = kotlinx.coroutines.flow.emptyFlow()
+        override suspend fun nextDueAt(now: Instant): Instant? = null
         override suspend fun ready(now: Instant): List<StoredSyncOperation> = emptyList()
         override suspend fun medKit(id: Uuid): com.kert0n.medapp.domain.medkit.MedKitRef? = null
         override suspend fun take(id: Uuid, fresh: com.kert0n.medapp.network.pack.PackageSnapshot?, at: Instant): Take? = null

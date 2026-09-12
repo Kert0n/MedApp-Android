@@ -100,6 +100,16 @@ interface SyncOperationDao {
     )
     suspend fun ready(now: Instant): List<SyncOperationStorageRow>
 
+    /**
+     * Ближайший срок среди незакрытых операций, который ещё не наступил; `null` — ждать нечего.
+     * Срок повтора живёт в базе, и спрашивают о нём базу, а не память прошлого прохода.
+     */
+    @Query(
+        "SELECT MIN(not_before) FROM sync_operations WHERE status IN ('PENDING', 'SENDING', 'ANSWERED') " +
+            "AND not_before > :now"
+    )
+    suspend fun nextDueAt(now: Instant): Instant?
+
     /** Замораживает запрос и берёт в отправку — только если операция ещё не закрыта. */
     @Query(
         "UPDATE sync_operations SET status = 'SENDING', " +
