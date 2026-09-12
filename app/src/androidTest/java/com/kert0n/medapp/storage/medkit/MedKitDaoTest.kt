@@ -1,10 +1,18 @@
 package com.kert0n.medapp.storage.medkit
 
+import android.database.sqlite.SQLiteConstraintException
 import com.kert0n.medapp.domain.medkit.MedKit
+import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.SHARED_KIT
 import com.kert0n.medapp.fixture.inMemoryDatabase
 import com.kert0n.medapp.fixture.medKit
+import com.kert0n.medapp.fixture.pack
+import com.kert0n.medapp.fixture.rejectedByDatabase
+import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.storage.database.MedAppDatabase
+import com.kert0n.medapp.storage.pack.toDetailsStorageEntity
+import com.kert0n.medapp.storage.pack.toStorageEntity
+import org.junit.Assert.assertTrue
 import java.time.Instant
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -70,5 +78,17 @@ class MedKitDaoTest {
         assertEquals("полка", stored.location)
         assertEquals(MedKit.Publication.PUBLISHED, stored.publication)
         assertEquals(2L, stored.participantCount)
+    }
+
+    /** Пачка не живёт без аптечки: аптечку с пачками база удалить не даёт (PLAN F2). */
+    @Test
+    fun aMedKitWithPackagesCannotBeDeleted() = runTest {
+        val pkg = pack(medKit = medKit(id = HOME_KIT).ref)
+        database.packages().save(pkg.toStorageEntity(PackageSyncState(pkg.id)), pkg.toDetailsStorageEntity())
+
+        val refusal = rejectedByDatabase { medKits.delete(HOME_KIT) }
+
+        assertTrue(refusal.toString(), refusal is SQLiteConstraintException)
+        assertEquals(HOME_KIT, requireNotNull(medKits.find(HOME_KIT)).id)
     }
 }

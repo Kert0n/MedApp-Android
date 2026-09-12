@@ -1,8 +1,11 @@
 package com.kert0n.medapp.storage.server
 
 import androidx.room.ColumnInfo
-import com.kert0n.medapp.network.server.PreparedRequest
+import com.kert0n.medapp.domain.value.QuantityUnit
+import com.kert0n.medapp.domain.value.Vocabulary
+import com.kert0n.medapp.queue.PreparedRequest
 import com.kert0n.medapp.network.server.ResourceVersion
+import com.kert0n.medapp.network.value.unitOrMiss
 import com.kert0n.medapp.storage.value.storedQuantity
 import com.kert0n.medapp.storage.value.toStorageAmount
 import java.time.Instant
@@ -30,20 +33,22 @@ class PreparedRequestStorageColumns(
     @ColumnInfo(name = "unit_id") val unitId: Uuid? = null,
     val at: Instant
 ) {
-    fun toDomain(): PreparedRequest = PreparedRequest(
+    fun toDomain(vocabulary: Vocabulary): PreparedRequest = PreparedRequest(
         method = method,
         path = path,
         query = Json.decodeFromString(queryFormat, query),
         body = body,
         drugVersion = drugVersion?.let(::ResourceVersion),
         claimsVersion = claimsVersion?.let(::ResourceVersion),
-        quantityBefore = quantityBefore?.let { storedQuantity(it, requireUnit()) },
-        mineBefore = mineBefore?.let { storedQuantity(it, requireUnit()) },
+        quantityBefore = quantityBefore?.let { storedQuantity(it, requireUnit(vocabulary)) },
+        mineBefore = mineBefore?.let { storedQuantity(it, requireUnit(vocabulary)) },
         preparedAt = at
     )
 
-    private fun requireUnit(): Uuid =
-        requireNotNull(unitId) { "предусловие по остатку записано вместе со своей единицей" }
+    private fun requireUnit(vocabulary: Vocabulary): QuantityUnit {
+        val id = requireNotNull(unitId) { "предусловие по остатку записано вместе со своей единицей" }
+        return vocabulary.unitOrMiss(id)
+    }
 }
 
 fun PreparedRequest.toStorageColumns(): PreparedRequestStorageColumns =
@@ -56,7 +61,7 @@ fun PreparedRequest.toStorageColumns(): PreparedRequestStorageColumns =
         claimsVersion = claimsVersion?.number,
         quantityBefore = quantityBefore?.toStorageAmount(),
         mineBefore = mineBefore?.toStorageAmount(),
-        unitId = unitId,
+        unitId = unit?.id,
         at = preparedAt
     )
 

@@ -2,12 +2,18 @@ package com.kert0n.medapp.storage.pack
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
+import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.network.server.ResourceVersion
+import com.kert0n.medapp.storage.medkit.MedKitStorageEntity
+import com.kert0n.medapp.storage.value.DosageFormStorageEntity
+import com.kert0n.medapp.storage.value.QuantityUnitStorageEntity
+import com.kert0n.medapp.storage.value.storedForm
 import com.kert0n.medapp.storage.value.toStorageAmount
 import com.kert0n.medapp.storage.value.toStorageSortKey
 import java.time.Instant
@@ -26,10 +32,34 @@ import kotlin.uuid.Uuid
  * получается без `CAST(… AS REAL)` (F3). `name_search` — название в нижнем регистре: `lower()`
  * и `COLLATE NOCASE` в SQLite знают только латиницу, и по-русски поиск без учёта регистра иначе
  * не работает.
+ *
+ * Пачка не живёт без аптечки и без единицы, в которой её считают: ключи `RESTRICT` держат это в
+ * схеме, а не в коде (PLAN F2). Аптечку с пачками база удалить не даст — сценарий сначала
+ * решает, куда им деться; словарь только растёт, и удалять из него нечего.
  */
 @Entity(
     tableName = "packages",
-    indices = [Index("med_kit_id"), Index("name_search")]
+    foreignKeys = [
+        ForeignKey(
+            entity = MedKitStorageEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["med_kit_id"],
+            onDelete = ForeignKey.RESTRICT
+        ),
+        ForeignKey(
+            entity = QuantityUnitStorageEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["quantity_unit_id"],
+            onDelete = ForeignKey.RESTRICT
+        ),
+        ForeignKey(
+            entity = DosageFormStorageEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["form_id"],
+            onDelete = ForeignKey.RESTRICT
+        )
+    ],
+    indices = [Index("med_kit_id"), Index("name_search"), Index("quantity_unit_id"), Index("form_id")]
 )
 class PackageStorageEntity(
     @PrimaryKey val id: Uuid,
@@ -50,9 +80,13 @@ class PackageStorageEntity(
     val access: Package.Access = Package.Access.AVAILABLE,
     @ColumnInfo(name = "synced_at") val syncedAt: Instant? = null
 ) {
-    fun sharedFacts(): PackageSharedFacts = PackageSharedFacts(
+    /** Аптечка пачки, прочитанная связью: её нет — строка пачки повреждена, ключ это держит (F2). */
+    fun medKitRow(read: MedKitStorageEntity?): MedKitStorageEntity =
+        requireNotNull(read) { "пачка лежит в аптечке, которой нет: $medKitId" }
+
+    fun sharedFacts(vocabulary: Vocabulary): PackageSharedFacts = PackageSharedFacts(
         name = name,
-        formId = formId,
+        form = formId?.let(vocabulary::storedForm),
         category = category,
         manufacturer = manufacturer,
         country = country,
@@ -71,13 +105,13 @@ fun Package.toStorageEntity(sync: PackageSyncState = PackageSyncState(id)): Pack
     require(sync.packageId == id) { "обвязка синхронизации принадлежит своей пачке" }
     return PackageStorageEntity(
         id = id,
-        medKitId = medKitId,
+        medKitId = medKit.id,
         name = facts.name,
         nameSearch = facts.name.lowercase(),
         quantity = quantity.toStorageAmount(),
         quantitySort = quantity.toStorageSortKey(),
-        quantityUnitId = quantity.unitId,
-        formId = facts.formId,
+        quantityUnitId = quantity.unit.id,
+        formId = facts.form?.id,
         category = facts.category,
         manufacturer = facts.manufacturer,
         country = facts.country,

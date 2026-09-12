@@ -8,9 +8,11 @@ import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.expiry
+import com.kert0n.medapp.fixture.millilitres
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.network.pack.PackageSyncState
+import com.kert0n.medapp.storage.pack.toStorageEntity
 import com.kert0n.medapp.network.server.ResourceVersion
 import java.math.BigDecimal
 import java.time.Instant
@@ -18,6 +20,11 @@ import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import com.kert0n.medapp.fixture.VOCABULARY
+import com.kert0n.medapp.fixture.TABLETS_ID
+import com.kert0n.medapp.fixture.medKit
+import com.kert0n.medapp.fixture.toStorageRow
+import com.kert0n.medapp.storage.medkit.toStorageEntity as toMedKitStorageEntity
 
 /**
  * Круговое преобразование упаковки: серверная часть и личные сведения хранятся порознь, а
@@ -28,7 +35,7 @@ class PackageStorageMapperTest {
     private val full: Package = pack(
         name = "Парацетамол",
         quantity = tablets("19.5"),
-        formId = TABLET_FORM,
+        form = TABLET_FORM,
         category = "Обезболивающие",
         manufacturer = "Завод",
         country = "Россия",
@@ -39,17 +46,16 @@ class PackageStorageMapperTest {
         price = Money(BigDecimal("199.90")),
         purchasedOn = LocalDate.of(2026, 1, 15),
         openedOn = LocalDate.of(2026, 2, 1),
-        templateId = TABLETS
+        templateId = TABLETS_ID
     )
 
-    private fun rowOf(pkg: Package, sync: PackageSyncState = PackageSyncState(pkg.id)) =
-        PackageStorageRow(pkg.toStorageEntity(sync), pkg.toDetailsStorageEntity())
+    private fun rowOf(pkg: Package, sync: PackageSyncState = PackageSyncState(pkg.id)) = pkg.toStorageRow(sync)
 
     @Test
     fun everyFactSurvivesTheRoundTrip() {
-        val restored = rowOf(full).toDomain()
+        val restored = rowOf(full).toDomain(VOCABULARY)
         assertEquals(full.id, restored.id)
-        assertEquals(full.medKitId, restored.medKitId)
+        assertEquals(full.medKit, restored.medKit)
         assertEquals(full.quantity, restored.quantity)
         assertEquals(full.addedAt, restored.addedAt)
         assertEquals(full.templateId, restored.templateId)
@@ -61,7 +67,7 @@ class PackageStorageMapperTest {
     @Test
     fun absentFactsStayAbsent() {
         val bare = pack(quantity = tablets("1"))
-        val restored = rowOf(bare).toDomain()
+        val restored = rowOf(bare).toDomain(VOCABULARY)
         assertEquals(bare.facts, restored.facts)
         assertNull(restored.facts.expiresOn)
         assertNull(restored.facts.price)
@@ -69,11 +75,32 @@ class PackageStorageMapperTest {
         assertNull(restored.templateId)
     }
 
+    /**
+     * Единицу пачки сменил сосед на сервере, а подсказка дозы осталась в старой: она потеряла
+     * смысл и не восстанавливается — чтение пачки от чужой правки не ломается.
+     */
+    @Test
+    fun aHintInAForeignUnitIsNotRestored() {
+        val row = rowOf(full)
+        val relabelled = PackageStorageRow(
+            pack = pack(quantity = millilitres("100")).toStorageEntity(PackageSyncState(PACK)),
+            details = row.details,
+            claims = row.claims,
+            medKit = row.medKit
+        )
+
+        val restored = relabelled.toDomain(VOCABULARY)
+
+        assertEquals(millilitres("100"), restored.quantity)
+        assertNull(restored.facts.defaultIntakeAmount)
+        assertEquals(full.facts.note, restored.facts.note)
+    }
+
     @Test
     fun archivedEmptyPackageIsRestorable() {
         val archived = pack(quantity = tablets("0"), lifecycle = Package.Lifecycle.ARCHIVED)
-        assertEquals(archived.quantity, rowOf(archived).toDomain().quantity)
-        assertEquals(Package.Lifecycle.ARCHIVED, rowOf(archived).toDomain().lifecycle)
+        assertEquals(archived.quantity, rowOf(archived).toDomain(VOCABULARY).quantity)
+        assertEquals(Package.Lifecycle.ARCHIVED, rowOf(archived).toDomain(VOCABULARY).lifecycle)
     }
 
     /** Обвязка доставки едет в колонках, а не в пачке: домен её обратно не получает. */
@@ -87,12 +114,16 @@ class PackageStorageMapperTest {
         )
         val stored = full.toStorageEntity(sync)
         assertEquals(sync, stored.syncState())
-        assertEquals(full.facts, PackageStorageRow(stored, full.toDetailsStorageEntity()).toDomain().facts)
+        assertEquals(
+            full.facts,
+            PackageStorageRow(stored, full.toDetailsStorageEntity(), medKit = medKit().toMedKitStorageEntity())
+                .toDomain(VOCABULARY).facts
+        )
     }
 
     @Test
     fun sharedFactsAreTheServerPartAndNothingElse() {
-        assertEquals(full.facts.shared, full.toStorageEntity().sharedFacts())
+        assertEquals(full.facts.shared, full.toStorageEntity().sharedFacts(VOCABULARY))
     }
 
     @Test

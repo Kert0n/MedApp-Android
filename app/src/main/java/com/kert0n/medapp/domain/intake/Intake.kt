@@ -1,5 +1,6 @@
 package com.kert0n.medapp.domain.intake
 
+import com.kert0n.medapp.domain.value.QuantityUnit
 import kotlin.uuid.Uuid
 
 /**
@@ -13,11 +14,14 @@ sealed interface Intake {
     val id: Uuid
 
     /** Единица НА МОМЕНТ СОБЫТИЯ: смена единицы прошлые отчёты не переписывает. */
-    val unitId: Uuid
+    val unit: QuantityUnit
 
     /** Производное от ответа: отдельного поля, способного с ним разойтись, нет. */
     val status: IntakeStatus
 
     /** Что фактически принято. `null` — приёма не было (PLAN D6). */
     val taken: TakenDose?
+
+    /** Как приём видит экран: величина, наружу уходит она, а не сущность. */
+    fun projection(): IntakeProjection
 }

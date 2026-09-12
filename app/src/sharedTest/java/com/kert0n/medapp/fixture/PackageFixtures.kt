@@ -2,11 +2,13 @@ package com.kert0n.medapp.fixture
 
 import com.kert0n.medapp.domain.pack.PackageAvailability
 import com.kert0n.medapp.domain.pack.Claims
-import com.kert0n.medapp.domain.pack.EffectiveAmount
+import com.kert0n.medapp.domain.medkit.MedKitRef
 import com.kert0n.medapp.domain.pack.ExpiryDate
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageFacts
+import com.kert0n.medapp.domain.pack.PackageProjection
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
+import com.kert0n.medapp.domain.value.DosageForm
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Money
 import com.kert0n.medapp.domain.value.Quantity
@@ -27,10 +29,10 @@ val OTHER_PACK: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000022")
  */
 fun pack(
     id: Uuid = PACK,
-    medKitId: Uuid = HOME_KIT,
+    medKit: MedKitRef = medKit(id = HOME_KIT).ref,
     name: String = "Парацетамол",
     quantity: Quantity = tablets("20"),
-    formId: Uuid? = null,
+    form: DosageForm? = null,
     category: String? = null,
     manufacturer: String? = null,
     country: String? = null,
@@ -47,11 +49,11 @@ fun pack(
     access: Package.Access = Package.Access.AVAILABLE
 ) = Package(
     id = id,
-    medKitId = medKitId,
+    medKit = medKit,
     facts = PackageFacts(
         shared = PackageSharedFacts(
             name = name,
-            formId = formId,
+            form = form,
             category = category,
             manufacturer = manufacturer,
             country = country,
@@ -72,32 +74,35 @@ fun pack(
     access = access
 )
 
+/** Проекция пачки без очереди и выделений: оценка равна подтверждённому остатку. */
+fun Package.projected(hasUnconfirmedChanges: Boolean = false): PackageProjection =
+    projection(PackageAvailability(this, effective = quantity), hasUnconfirmedChanges)
+
 /** Сведения, взятые у пачки: круговой тест начинается с того, что уже сохранено. */
 fun factsOf(pkg: Package): PackageFacts = pkg.facts
 
 /** Правка одного общего поля: композиция читается в тесте как «та же пачка, другое название». */
 fun PackageFacts.withShared(
     name: String = shared.name,
-    formId: Uuid? = shared.formId,
+    form: DosageForm? = shared.form,
     category: String? = shared.category,
     manufacturer: String? = shared.manufacturer,
     country: String? = shared.country,
     description: String? = shared.description
 ): PackageFacts = copy(
-    shared = PackageSharedFacts(name, formId, category, manufacturer, country, description)
+    shared = PackageSharedFacts(name, form, category, manufacturer, country, description)
 )
 
-/** Доступность пачки для тестов, которым нужны её числа; [known] = false — нужна сверка. */
+/** Доступность пачки для тестов, которым нужны её числа: оценка равна остатку пачки. */
 fun packAvailability(
     id: Uuid = PACK,
     quantity: Quantity = tablets("20"),
     claims: Claims? = null,
     expiresOn: ExpiryDate? = null,
-    known: Boolean = true,
-    myAllocation: Quantity = Quantity.zero(quantity.unitId)
+    myAllocation: Quantity = Quantity.zero(quantity.unit)
 ): PackageAvailability = PackageAvailability(
     pkg = pack(id = id, quantity = quantity, claims = claims, expiresOn = expiresOn),
-    amount = if (known) EffectiveAmount.Known(quantity) else EffectiveAmount.Unknown,
+    effective = quantity,
     myAllocation = myAllocation
 )
 

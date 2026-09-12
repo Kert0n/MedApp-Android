@@ -8,7 +8,6 @@ import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -24,7 +23,7 @@ class PackageAvailabilityTest {
     /** Пачка без броней с известным количеством [amount]. */
     private fun known(stored: String, amount: String = stored) = PackageAvailability(
         pkg = pack(quantity = tablets(stored)),
-        amount = EffectiveAmount.Known(tablets(amount))
+        effective = tablets(amount)
     )
 
     @Test
@@ -33,7 +32,7 @@ class PackageAvailabilityTest {
         // уменьшилось до 7. Оценка 17 уже посчитана слоем данных.
         val found = PackageAvailability(
             pkg = pack(quantity = tablets("20"), claims = Claims(BigDecimal("15"), BigDecimal("10"))),
-            amount = EffectiveAmount.Known(tablets("17")),
+            effective = tablets("17"),
             myAllocation = tablets("7")
         )
         assertEquals(tablets("17"), found.effective)
@@ -47,7 +46,7 @@ class PackageAvailabilityTest {
         // Броней сервера нет, но из двадцати таблеток пятнадцать отданы курсу: свободно пять.
         val local = PackageAvailability(
             pkg = pack(quantity = tablets("20")),
-            amount = EffectiveAmount.Known(tablets("20")),
+            effective = tablets("20"),
             myAllocation = tablets("15")
         )
         assertEquals(tablets("0"), local.reservedByOthers)
@@ -64,13 +63,12 @@ class PackageAvailabilityTest {
     fun aPackageOutOfReachSuppliesNothing() {
         val lost = PackageAvailability(
             pkg = pack(quantity = tablets("20"), claims = Claims(BigDecimal("5"), BigDecimal("0"))).loseAccess(),
-            amount = EffectiveAmount.Known(tablets("20"))
+            effective = tablets("20")
         )
 
         assertEquals(tablets("20"), lost.effective)
         assertEquals(tablets("0"), lost.availableToMe)
         assertEquals(tablets("0"), lost.freeForAnyone)
-        assertFalse("утрата доступа — это не «нужна сверка»", lost.requiresRecount)
     }
 
     /** Выброшенная и израсходованная пачка — тот же случай: из неё больше не берут. */
@@ -78,7 +76,7 @@ class PackageAvailabilityTest {
     fun anArchivedPackageSuppliesNothing() {
         val archived = PackageAvailability(
             pkg = pack(quantity = tablets("20")).archive(),
-            amount = EffectiveAmount.Known(tablets("20"))
+            effective = tablets("20")
         )
 
         assertEquals(tablets("0"), archived.freeForAnyone)
@@ -107,7 +105,7 @@ class PackageAvailabilityTest {
         // доступного значило бы отнять у себя собственные таблетки (замечание PR 6).
         val mine = PackageAvailability(
             pkg = pack(quantity = tablets("20"), claims = Claims(BigDecimal("15"), BigDecimal("10"))),
-            amount = EffectiveAmount.Known(tablets("20")),
+            effective = tablets("20"),
             myAllocation = tablets("10")
         )
         assertEquals(tablets("5"), mine.reservedByOthers)
@@ -121,7 +119,7 @@ class PackageAvailabilityTest {
         // команда брони приведёт сервер в согласие. Домен на это число не смотрит.
         val unexplained = PackageAvailability(
             pkg = pack(quantity = tablets("20"), claims = Claims(BigDecimal("10"), BigDecimal("10"))),
-            amount = EffectiveAmount.Known(tablets("20"))
+            effective = tablets("20")
         )
         assertEquals(tablets("0"), unexplained.reservedByOthers)
         assertEquals(tablets("20"), unexplained.availableToMe)
@@ -129,22 +127,10 @@ class PackageAvailabilityTest {
     }
 
     @Test
-    fun recountRequiredMeansNoNumbersAtAll() {
-        val unsure = PackageAvailability(
-            pkg = pack(quantity = tablets("20")),
-            amount = EffectiveAmount.Unknown
-        )
-        assertNull(unsure.effective)
-        assertNull(unsure.availableToMe)
-        assertNull(unsure.freeForAnyone)
-        assertTrue(unsure.requiresRecount)
-    }
-
-    @Test
     fun expiryIsAskedByDateAndOnlyMarks() {
         val expiring = PackageAvailability(
             pkg = pack(quantity = tablets("20"), expiresOn = ExpiryDate(today.plusDays(2))),
-            amount = EffectiveAmount.Known(tablets("20"))
+            effective = tablets("20")
         )
         assertFalse(expiring.isExpiredOn(today))
         assertTrue(expiring.expiresSoonOn(today))
@@ -158,7 +144,7 @@ class PackageAvailabilityTest {
         // Сумма броней может превышать остаток: показываем ноль, а не долг.
         val over = PackageAvailability(
             pkg = pack(quantity = tablets("2"), claims = Claims(BigDecimal("30"), null)),
-            amount = EffectiveAmount.Known(tablets("2"))
+            effective = tablets("2")
         )
         assertEquals(tablets("0"), over.availableToMe)
         assertEquals(tablets("0"), over.freeForAnyone)
@@ -169,13 +155,13 @@ class PackageAvailabilityTest {
         assertThrows(IllegalArgumentException::class.java) {
             PackageAvailability(
                 pkg = pack(quantity = tablets("20")),
-                amount = EffectiveAmount.Known(millilitres("20"))
+                effective = millilitres("20")
             )
         }
         assertThrows(IllegalArgumentException::class.java) {
             PackageAvailability(
                 pkg = pack(quantity = tablets("20")),
-                amount = EffectiveAmount.Known(tablets("20")),
+                effective = tablets("20"),
                 myAllocation = millilitres("5")
             )
         }

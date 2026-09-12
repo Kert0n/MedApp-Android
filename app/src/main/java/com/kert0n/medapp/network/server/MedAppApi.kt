@@ -5,7 +5,7 @@ import com.kert0n.medapp.network.account.AccessTokenNetworkDTO
 import com.kert0n.medapp.network.account.AccessTokenThrottled
 import com.kert0n.medapp.network.account.AccessTokenUnavailable
 import com.kert0n.medapp.network.account.AccountCredentials
-import com.kert0n.medapp.network.account.AccountRegisteredNetworkDTO
+import com.kert0n.medapp.network.account.AccountPostNetworkDTO
 import com.kert0n.medapp.network.account.AccountSnapshotNetworkDTO
 import com.kert0n.medapp.network.medkit.InvitationNetworkDTO
 import com.kert0n.medapp.network.medkit.MedKitCreatedNetworkDTO
@@ -16,7 +16,6 @@ import com.kert0n.medapp.network.medkit.MembershipPostNetworkDTO
 import com.kert0n.medapp.network.pack.ClaimNetworkDTO
 import com.kert0n.medapp.network.pack.ClaimPatchNetworkDTO
 import com.kert0n.medapp.network.pack.ClaimPostNetworkDTO
-import com.kert0n.medapp.network.pack.PackageConsumeNetworkDTO
 import com.kert0n.medapp.network.pack.PackagePatchNetworkDTO
 import com.kert0n.medapp.network.pack.PackagePostNetworkDTO
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
@@ -37,7 +36,11 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import io.ktor.client.network.sockets.ConnectTimeoutException
 import java.io.IOException
+import java.net.ConnectException
+import java.net.UnknownHostException
+import javax.net.ssl.SSLHandshakeException
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.uuid.Uuid
@@ -57,82 +60,86 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
 
     // Учётная запись
 
-    /** Повторять нельзя: повтор даст вторую учётку. */
-    suspend fun register(registrationToken: String): ApiResult<AccountRegisteredNetworkDTO> =
-        call(HttpMethod.Post, REGISTER_PATH, HttpStatusCode.OK, required(AccountRegisteredNetworkDTO.serializer())) {
+    /**
+     * Учётные данные придумывает клиент, поэтому повтор безопасен: второй учётки он не заводит, а
+     * отвечает `409` по занятому логину (PLAN B1). Тела в ответе нет.
+     */
+    suspend fun register(account: AccountCredentials, registrationToken: String): ApiResult<Unit> =
+        call(HttpMethod.Post, MedAppRoutes.REGISTER, HttpStatusCode.Created, none) {
             header(REGISTRATION_TOKEN_HEADER, registrationToken)
+            json(AccountPostNetworkDTO(account.login, account.password))
         }
 
     /** Состояния сервера не меняет: неудача значит «пропуска нет», а не «исход неизвестен». */
     suspend fun token(credentials: AccountCredentials): ApiResult<AccessTokenNetworkDTO> =
         call(
             HttpMethod.Post,
-            TOKEN_PATH,
+            MedAppRoutes.TOKEN,
             HttpStatusCode.OK,
             required(AccessTokenNetworkDTO.serializer()),
             command = false
         ) {
-            basicAuth(credentials.login.toString(), credentials.key)
+            basicAuth(credentials.login.toString(), credentials.password)
         }
 
     // Снимок и словари
 
     suspend fun snapshot(): ApiResult<AccountSnapshotNetworkDTO> =
-        call(HttpMethod.Get, "/v1/users/me", HttpStatusCode.OK, required(AccountSnapshotNetworkDTO.serializer()))
+        call(HttpMethod.Get, MedAppRoutes.ME, HttpStatusCode.OK, required(AccountSnapshotNetworkDTO.serializer()))
 
     suspend fun medKits(): ApiResult<List<MedKitSummaryNetworkDTO>> =
-        call(HttpMethod.Get, "/v1/med-kits", HttpStatusCode.OK, required(ListSerializer(MedKitSummaryNetworkDTO.serializer())))
+        call(HttpMethod.Get, MedAppRoutes.MED_KITS, HttpStatusCode.OK, required(ListSerializer(MedKitSummaryNetworkDTO.serializer())))
 
     suspend fun medKit(medKitId: Uuid): ApiResult<MedKitNetworkDTO> =
-        call(HttpMethod.Get, medKitPath(medKitId), HttpStatusCode.OK, required(MedKitNetworkDTO.serializer()))
+        call(HttpMethod.Get, MedAppRoutes.medKit(medKitId), HttpStatusCode.OK, required(MedKitNetworkDTO.serializer()))
 
     suspend fun quantityUnits(): ApiResult<List<VocabularyEntryNetworkDTO>> =
-        call(HttpMethod.Get, "/v1/quantity-units", HttpStatusCode.OK, required(ListSerializer(VocabularyEntryNetworkDTO.serializer())))
+        call(HttpMethod.Get, MedAppRoutes.QUANTITY_UNITS, HttpStatusCode.OK, required(ListSerializer(VocabularyEntryNetworkDTO.serializer())))
 
     suspend fun formTypes(): ApiResult<List<VocabularyEntryNetworkDTO>> =
-        call(HttpMethod.Get, "/v1/form-types", HttpStatusCode.OK, required(ListSerializer(VocabularyEntryNetworkDTO.serializer())))
+        call(HttpMethod.Get, MedAppRoutes.FORM_TYPES, HttpStatusCode.OK, required(ListSerializer(VocabularyEntryNetworkDTO.serializer())))
 
     // Аптечки
 
     suspend fun createMedKit(medKit: MedKitPostNetworkDTO): ApiResult<MedKitCreatedNetworkDTO> =
-        call(HttpMethod.Post, "/v1/med-kits", HttpStatusCode.Created, required(MedKitCreatedNetworkDTO.serializer())) {
+        call(HttpMethod.Post, MedAppRoutes.MED_KITS, HttpStatusCode.Created, required(MedKitCreatedNetworkDTO.serializer())) {
             json(medKit)
         }
 
     /** Удаляет аптечку у всех; [transferTo] переносит содержимое в другую аптечку вызывающего. */
     suspend fun deleteMedKit(medKitId: Uuid, transferTo: Uuid? = null): ApiResult<Unit> =
-        call(HttpMethod.Delete, medKitPath(medKitId), HttpStatusCode.NoContent, none) {
+        call(HttpMethod.Delete, MedAppRoutes.medKit(medKitId), HttpStatusCode.NoContent, none) {
             transferTo?.let { parameter("targetMedKitId", it.toString()) }
         }
 
     suspend fun createInvitation(medKitId: Uuid): ApiResult<InvitationNetworkDTO> =
-        call(HttpMethod.Post, "/v1/med-kits/$medKitId/invitations", HttpStatusCode.Created, required(InvitationNetworkDTO.serializer()))
+        call(HttpMethod.Post, MedAppRoutes.invitations(medKitId), HttpStatusCode.Created, required(InvitationNetworkDTO.serializer()))
 
     suspend fun joinMedKit(membership: MembershipPostNetworkDTO): ApiResult<MedKitNetworkDTO> =
-        call(HttpMethod.Post, "/v1/med-kit-memberships", HttpStatusCode.Created, required(MedKitNetworkDTO.serializer())) {
+        call(HttpMethod.Post, MedAppRoutes.MEMBERSHIPS, HttpStatusCode.Created, required(MedKitNetworkDTO.serializer())) {
             json(membership)
         }
 
     suspend fun leaveMedKit(medKitId: Uuid): ApiResult<Unit> =
-        call(HttpMethod.Delete, "/v1/med-kit-memberships/$medKitId", HttpStatusCode.NoContent, none)
+        call(HttpMethod.Delete, MedAppRoutes.membership(medKitId), HttpStatusCode.NoContent, none)
 
     // Упаковки
 
     suspend fun createPackage(medKitId: Uuid, pack: PackagePostNetworkDTO): ApiResult<PackageSnapshotNetworkDTO> =
-        call(HttpMethod.Post, "/v1/med-kits/$medKitId/drugs", HttpStatusCode.Created, required(PackageSnapshotNetworkDTO.serializer())) {
+        call(HttpMethod.Post, MedAppRoutes.packagesOf(medKitId), HttpStatusCode.Created, required(PackageSnapshotNetworkDTO.serializer())) {
             json(pack)
         }
 
     suspend fun packageSnapshot(packageId: Uuid): ApiResult<PackageSnapshotNetworkDTO> =
-        call(HttpMethod.Get, packagePath(packageId), HttpStatusCode.OK, required(PackageSnapshotNetworkDTO.serializer()))
+        call(HttpMethod.Get, MedAppRoutes.pack(packageId), HttpStatusCode.OK, required(PackageSnapshotNetworkDTO.serializer()))
 
     suspend fun patchPackage(packageId: Uuid, patch: PackagePatchNetworkDTO): ApiResult<PackageSnapshotNetworkDTO> =
-        call(HttpMethod.Patch, packagePath(packageId), HttpStatusCode.OK, required(PackageSnapshotNetworkDTO.serializer())) {
+        call(HttpMethod.Patch, MedAppRoutes.pack(packageId), HttpStatusCode.OK, required(PackageSnapshotNetworkDTO.serializer())) {
             json(patch)
         }
 
     suspend fun deletePackage(packageId: Uuid, version: ResourceVersion?): ApiResult<Unit> =
-        call(HttpMethod.Delete, packagePath(packageId), HttpStatusCode.NoContent, none) {
+        call(HttpMethod.Delete, MedAppRoutes.pack(packageId), HttpStatusCode.NoContent, none) {
             version(version)
         }
 
@@ -141,14 +148,8 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
         targetMedKitId: Uuid,
         version: ResourceVersion?
     ): ApiResult<PackageSnapshotNetworkDTO> =
-        call(HttpMethod.Put, "/v1/med-kits/$targetMedKitId/drugs/$packageId", HttpStatusCode.OK, required(PackageSnapshotNetworkDTO.serializer())) {
+        call(HttpMethod.Put, MedAppRoutes.packageIn(targetMedKitId, packageId), HttpStatusCode.OK, required(PackageSnapshotNetworkDTO.serializer())) {
             version(version)
-        }
-
-    /** `null` в успехе — пачка кончилась и уничтожена: сервер ответил нулём байтов. */
-    suspend fun consume(packageId: Uuid, intake: PackageConsumeNetworkDTO): ApiResult<PackageSnapshotNetworkDTO?> =
-        call(HttpMethod.Post, "/v1/drugs/$packageId/intakes", HttpStatusCode.OK, optional(PackageSnapshotNetworkDTO.serializer())) {
-            json(intake)
         }
 
     /** `null` в успехе — пачка кончилась и уничтожена; повтор безопасен с тем же [syncId]. */
@@ -157,30 +158,30 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
         syncId: Uuid,
         changes: PackageSyncNetworkDTO
     ): ApiResult<PackageSnapshotNetworkDTO?> =
-        call(HttpMethod.Put, "/v1/drugs/$packageId/sync/$syncId", HttpStatusCode.OK, optional(PackageSnapshotNetworkDTO.serializer())) {
+        call(HttpMethod.Put, MedAppRoutes.sync(packageId, syncId), HttpStatusCode.OK, optional(PackageSnapshotNetworkDTO.serializer())) {
             json(changes)
         }
 
     // Брони
 
     suspend fun claims(): ApiResult<List<ClaimNetworkDTO>> =
-        call(HttpMethod.Get, CLAIMS_PATH, HttpStatusCode.OK, required(ListSerializer(ClaimNetworkDTO.serializer())))
+        call(HttpMethod.Get, MedAppRoutes.CLAIMS, HttpStatusCode.OK, required(ListSerializer(ClaimNetworkDTO.serializer())))
 
     suspend fun claim(packageId: Uuid): ApiResult<ClaimNetworkDTO> =
-        call(HttpMethod.Get, claimPath(packageId), HttpStatusCode.OK, required(ClaimNetworkDTO.serializer()))
+        call(HttpMethod.Get, MedAppRoutes.claim(packageId), HttpStatusCode.OK, required(ClaimNetworkDTO.serializer()))
 
     suspend fun createClaim(claim: ClaimPostNetworkDTO): ApiResult<ClaimNetworkDTO> =
-        call(HttpMethod.Post, CLAIMS_PATH, HttpStatusCode.Created, required(ClaimNetworkDTO.serializer())) {
+        call(HttpMethod.Post, MedAppRoutes.CLAIMS, HttpStatusCode.Created, required(ClaimNetworkDTO.serializer())) {
             json(claim)
         }
 
     suspend fun patchClaim(packageId: Uuid, claim: ClaimPatchNetworkDTO): ApiResult<ClaimNetworkDTO> =
-        call(HttpMethod.Patch, claimPath(packageId), HttpStatusCode.OK, required(ClaimNetworkDTO.serializer())) {
+        call(HttpMethod.Patch, MedAppRoutes.claim(packageId), HttpStatusCode.OK, required(ClaimNetworkDTO.serializer())) {
             json(claim)
         }
 
     suspend fun deleteClaim(packageId: Uuid, version: ResourceVersion?): ApiResult<Unit> =
-        call(HttpMethod.Delete, claimPath(packageId), HttpStatusCode.NoContent, none) {
+        call(HttpMethod.Delete, MedAppRoutes.claim(packageId), HttpStatusCode.NoContent, none) {
             version(version)
         }
 
@@ -189,14 +190,43 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
     suspend fun searchTemplates(query: String, limit: Int): ApiResult<List<PackageTemplateNetworkDTO>> {
         require(query.length in 1..TEMPLATE_QUERY_MAX) { "запрос справочника — от 1 до $TEMPLATE_QUERY_MAX символов" }
         require(limit in 1..TEMPLATE_LIMIT_MAX) { "справочник отдаёт от 1 до $TEMPLATE_LIMIT_MAX карточек" }
-        return call(HttpMethod.Get, "/v1/drug-templates", HttpStatusCode.OK, required(ListSerializer(PackageTemplateNetworkDTO.serializer()))) {
+        return call(HttpMethod.Get, MedAppRoutes.TEMPLATES, HttpStatusCode.OK, required(ListSerializer(PackageTemplateNetworkDTO.serializer()))) {
             parameter("query", query)
             parameter("limit", limit)
         }
     }
 
     suspend fun template(templateId: Uuid): ApiResult<PackageTemplateNetworkDTO> =
-        call(HttpMethod.Get, "/v1/drug-templates/$templateId", HttpStatusCode.OK, required(PackageTemplateNetworkDTO.serializer()))
+        call(HttpMethod.Get, MedAppRoutes.template(templateId), HttpStatusCode.OK, required(PackageTemplateNetworkDTO.serializer()))
+
+    // Очередь
+
+    /**
+     * Готовый изменяющий запрос как есть — примитивами: метод, путь, параметры и тело собрала
+     * очередь, и здесь они не пересобираются (PLAN E2). Успех — любой 2xx со статусом и телом
+     * строкой: какая форма за ним стоит и какой статус ожидался, знает та команда, что запрос
+     * готовила, — сеть про очередь не знает.
+     */
+    suspend fun send(method: String, path: String, query: Map<String, String>, body: String?): ApiResult<RawResponse> = try {
+        val response = http.request(path) {
+            this.method = HttpMethod.parse(method)
+            query.forEach { (name, value) -> parameter(name, value) }
+            body?.let {
+                contentType(ContentType.Application.Json)
+                setBody(it)
+            }
+        }
+        when {
+            response.status.isSuccess() -> ApiResult.Success(RawResponse(response.status.value, response.bodyAsText()))
+            else -> ApiResult.Failure(refusal(response, command = true, path = path))
+        }
+    } catch (cause: AccessTokenThrottled) {
+        ApiResult.Failure(ApiFailure.TooManyRequests(cause.retryAfter))
+    } catch (_: AccessTokenUnavailable) {
+        ApiResult.Failure(ApiFailure.Unavailable)
+    } catch (broken: IOException) {
+        ApiResult.Failure(broken.asFailure(command = true))
+    }
 
     // Исполнение
 
@@ -228,9 +258,21 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
             ApiResult.Failure(ApiFailure.TooManyRequests(cause.retryAfter))
         } catch (_: AccessTokenUnavailable) {
             ApiResult.Failure(ApiFailure.Unavailable)
-        } catch (_: IOException) {
-            ApiResult.Failure(if (command) ApiFailure.OutcomeUnknown else ApiFailure.Unavailable)
+        } catch (broken: IOException) {
+            ApiResult.Failure(broken.asFailure(command))
         }
+    }
+
+    /**
+     * Обрыв до сервера — адрес не разрешился, соединение не установилось, рукопожатие TLS не
+     * прошло — не потерянный ответ: запрос никуда не ушёл, и у команды нет неизвестного исхода,
+     * есть отсутствие связи. Обрыв после — исход неизвестен (PLAN E3).
+     */
+    private fun IOException.asFailure(command: Boolean): ApiFailure = when {
+        !command -> ApiFailure.Unavailable
+        this is UnknownHostException || this is ConnectException || this is java.net.NoRouteToHostException ||
+            this is ConnectTimeoutException || this is SSLHandshakeException -> ApiFailure.Unavailable
+        else -> ApiFailure.OutcomeUnknown
     }
 
     /** Отказ сервера — решение по коду ответа (PLAN B5); тело добавляет только `errors[]` при 400. */
@@ -241,7 +283,7 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
             )
             401 -> ApiFailure.Unauthorized
             403 ->
-                if (path == REGISTER_PATH) ApiFailure.RegistrationRefused
+                if (path == MedAppRoutes.REGISTER) ApiFailure.RegistrationRefused
                 else ApiFailure.Protocol("403 вне регистрации")
             404 -> ApiFailure.NotFound
             409 -> ApiFailure.Conflict
@@ -291,20 +333,7 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
         version?.let { parameter("version", it.number) }
     }
 
-    /**
-     * Пути ресурсов, у которых несколько операций: чтение, правка и удаление одного ресурса
-     * называют его одним путём.
-     */
     private companion object {
-        const val REGISTER_PATH = "/v1/auth/register"
-        const val CLAIMS_PATH = "/v1/reservations"
-
-        fun medKitPath(medKitId: Uuid) = "/v1/med-kits/$medKitId"
-
-        fun packagePath(packageId: Uuid) = "/v1/drugs/$packageId"
-
-        fun claimPath(packageId: Uuid) = "$CLAIMS_PATH/$packageId"
-
         const val TEMPLATE_QUERY_MAX = 200
         const val TEMPLATE_LIMIT_MAX = 50
     }

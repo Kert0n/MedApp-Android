@@ -20,7 +20,9 @@ class SecretMaskingLogger(private val delegate: Logger) : Logger {
 
     private companion object {
         const val MASK = "***"
-        val SECRET_FIELD = Regex(""""(key|accessToken)"\s*:\s*"[^"]*"""")
+        // `password` уезжает в теле запроса регистрации, `key` — ключ приглашения в ответе.
+        // Значение читается со экранированием: кавычка внутри секрета не обрывает его на середине.
+        val SECRET_FIELD = Regex(""""(password|key|accessToken)"\s*:\s*"(?:\\.|[^"\\])*"""")
         val CREDENTIAL_SCHEME = Regex("""\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+""")
     }
 }

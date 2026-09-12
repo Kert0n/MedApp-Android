@@ -4,6 +4,7 @@ import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.domain.value.Money
 
 import com.kert0n.medapp.fixture.CAPSULE_FORM
+import com.kert0n.medapp.fixture.CAPSULE_FORM_ID
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.factsOf
@@ -26,7 +27,7 @@ class PackagePatchNetworkMapperTest {
 
     private fun onServer(note: String? = null) = pack(
         name = "Парацетамол",
-        formId = TABLET_FORM,
+        form = TABLET_FORM,
         category = "жаропонижающие",
         description = "по одной при температуре",
         note = note
@@ -78,7 +79,7 @@ class PackagePatchNetworkMapperTest {
     fun clearingTheFormOfAServerPackIsReportedInsteadOfSentAsNull() {
         // `null` на проводе значит «не менять», а `""` не является UUID: молча выдать
         // неудалённую серверную форму за очищенную нельзя.
-        val patch = factsOf(onServer).withShared(formId = null).toPatchNetworkMapping(onServer, synced)
+        val patch = factsOf(onServer).withShared(form = null).toPatchNetworkMapping(onServer, synced)
         assertTrue(patch.formIdClearUnsupported)
         assertNull(patch.dto?.formId)
     }
@@ -86,16 +87,16 @@ class PackagePatchNetworkMapperTest {
     @Test
     fun clearingTheFormOfAPackNotYetOnTheServerIsFine() {
         // Ограничение — протокольное, поэтому зависит от предусловия, а не от самой пачки.
-        val patch = factsOf(onServer).withShared(formId = null)
+        val patch = factsOf(onServer).withShared(form = null)
             .toPatchNetworkMapping(onServer, notSynced)
         assertFalse(patch.formIdClearUnsupported)
     }
 
     @Test
     fun changingTheFormToAnotherOneTravels() {
-        val patch = factsOf(onServer).withShared(formId = CAPSULE_FORM)
+        val patch = factsOf(onServer).withShared(form = CAPSULE_FORM)
             .toPatchNetworkMapping(onServer, synced)
-        assertEquals(CAPSULE_FORM, requireNotNull(patch.dto).formId)
+        assertEquals(CAPSULE_FORM_ID, requireNotNull(patch.dto).formId)
         assertFalse(patch.formIdClearUnsupported)
     }
 

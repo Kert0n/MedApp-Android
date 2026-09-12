@@ -7,10 +7,10 @@ import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.availability
-import com.kert0n.medapp.fixture.doses
 import com.kert0n.medapp.fixture.plannedIntake
 import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
+import com.kert0n.medapp.domain.value.doses
 import java.time.LocalTime
 import kotlin.uuid.Uuid
 import org.junit.Assert.assertEquals
@@ -22,11 +22,12 @@ class CourseSpendOrderTest {
     private val availability = availability(PACK to tablets("20"), OTHER_PACK to tablets("12"))
 
     /** Пять ближайших доз — столько пунктов сценарий и отдаст на раскладку. */
-    private val ahead = doses(5)
+    private val ahead = 5.doses
 
+    /** Порядок расхода — пачками; тест сравнивает по их номерам, чтобы читаться. */
     private fun order(vararg allocations: Pair<Uuid, Int>) =
         activeCourse(sources = allocations.map { source(it.first, it.second) })
-            .spendOrder(ahead, availability)
+            .spendOrder(ahead, availability).map { it?.id }
 
     @Test
     fun packsAreSpentTopDown() {
@@ -63,7 +64,7 @@ class CourseSpendOrderTest {
         // По одной таблетке в двух пачках при дозе в две: обеспеченных доз ноль, а не одна.
         val singles = availability(PACK to tablets("1"), OTHER_PACK to tablets("1"))
         val found = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 5)))
-            .spendOrder(ahead, singles)
+            .spendOrder(ahead, singles).map { it?.id }
         assertEquals(List(5) { null }, found)
     }
 
@@ -72,17 +73,8 @@ class CourseSpendOrderTest {
         // Выделено пять доз, а свободно четыре таблетки — две дозы: дальше идёт вторая пачка.
         val shrunk = availability(PACK to tablets("4"), OTHER_PACK to tablets("12"))
         val found = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 5)))
-            .spendOrder(ahead, shrunk)
+            .spendOrder(ahead, shrunk).map { it?.id }
         assertEquals(listOf(PACK, PACK, OTHER_PACK, OTHER_PACK, OTHER_PACK), found)
-    }
-
-    @Test
-    fun unknownAvailabilityIsNotSpentEither() {
-        // Исход операции по первой пачке не установлен: до сверки она не выдаётся за источник,
-        // и расход идёт со второй.
-        val found = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 2)))
-            .spendOrder(ahead, availability(OTHER_PACK to tablets("12")))
-        assertEquals(listOf(OTHER_PACK, OTHER_PACK, null, null, null), found)
     }
 
     @Test
@@ -90,7 +82,7 @@ class CourseSpendOrderTest {
         // Третья пачка того же лекарства лежит рядом и доступна, но в препарат не встаёт сама.
         val elsewhere = Uuid.parse("00000000-0000-4000-8000-000000000023")
         val found = activeCourse(sources = listOf(source(PACK, 2)))
-            .spendOrder(ahead, availability(PACK to tablets("20"), elsewhere to tablets("50")))
+            .spendOrder(ahead, availability(PACK to tablets("20"), elsewhere to tablets("50"))).map { it?.id }
         assertEquals(listOf(PACK, PACK, null, null, null), found)
     }
 
@@ -99,14 +91,10 @@ class CourseSpendOrderTest {
         // Одно правило, два ответа: сколько доз обеспечено и из чего они возьмутся. Пока это было
         // написано порознь, разойтись они могли молча.
         val course = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 4)))
-        val remaining = course.schedule.occurrences(
-            from = course.schedule.start.atStartOfDay(course.schedule.zone).toInstant(),
-            until = course.schedule.endInclusive.plusDays(1)
-                .atStartOfDay(course.schedule.zone).toInstant()
-        )
-        val covered = course.coverage(remaining, availability).coveredDoses
-        val supplied = course.spendOrder(doses(remaining.size), availability).count { it != null }
-        assertEquals(covered, doses(supplied))
+        val remaining = course.remainingOccurrences(CourseProgress.none)
+        val covered = course.coverage(CourseProgress.none, availability).coveredDoses
+        val supplied = course.spendOrder(remaining.size.doses, availability).count { it != null }
+        assertEquals(covered, supplied.doses)
     }
 
     @Test
@@ -122,7 +110,7 @@ class CourseSpendOrderTest {
             )
         }
         val course = activeCourse(sources = listOf(source(PACK, 2)))
-        val assigned = plan.zip(course.spendOrder(doses(plan.size), availability)).toMap()
-        assertEquals(listOf(PACK, PACK, null, null, null), plan.map { assigned[it] })
+        val assigned = plan.zip(course.spendOrder(plan.size.doses, availability)).toMap()
+        assertEquals(listOf(PACK, PACK, null, null, null), plan.map { assigned[it]?.id })
     }
 }

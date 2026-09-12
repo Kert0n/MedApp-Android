@@ -1,6 +1,7 @@
 package com.kert0n.medapp.presentation.value
 
 import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.presentation.ParsedInput
 import java.math.BigDecimal
 
@@ -13,7 +14,10 @@ enum class QuantityPresentationError {
     NOT_A_DECIMAL,
     TOO_MANY_FRACTION_DIGITS,
     TOO_MANY_INTEGER_DIGITS,
-    OUT_OF_DOMAIN_RANGE
+    OUT_OF_DOMAIN_RANGE,
+
+    /** Единицы нет в снимке словаря: он старее, чем тот, кто её назвал (PLAN D1). */
+    UNKNOWN_UNIT
 }
 
 /** Шаблон — сам контракт B2: сервер отвергнет знак и экспоненту ровно так же. */
@@ -25,13 +29,19 @@ private val DECIMAL_INPUT = Regex("""^\d+(\.\d+)?$""")
  * Домен требует готовую величину и не знает, что на клавиатуре бывает запятая, что у поля есть
  * предельная длина и что вставленную из буфера простыню надо отсечь до разбора. Всё это — свойства
  * ввода, и живут они здесь.
+ *
+ * Единицу даёт [vocabulary] по номеру: экран держал её имя, а домену нужен объект словаря, и
+ * подсовывать вместо него собранный из полей экрана нельзя — тождество единицы принадлежит
+ * словарю. Промах — `UNKNOWN_UNIT`: снимок старее, чем тот, кто единицу назвал (PLAN D1).
  */
-fun QuantityPresentationDTO.toDomain(): ParsedInput<Quantity, QuantityPresentationError> {
+fun QuantityPresentationDTO.toDomain(vocabulary: Vocabulary): ParsedInput<Quantity, QuantityPresentationError> {
     val text = amount.trim().replace(',', '.')
     reject(text)?.let { return ParsedInput.Rejected(it) }
+    val known = vocabulary.unit(unit.id)
+        ?: return ParsedInput.Rejected(QuantityPresentationError.UNKNOWN_UNIT)
     // Последнее слово за величиной: её нынешние пределы здесь известны, но менять их вправе домен,
     // и тогда отказ должен остаться отказом, а не исключением наружу.
-    return runCatching { Quantity(BigDecimal(text), unitId) }
+    return runCatching { Quantity(BigDecimal(text), known) }
         .fold(
             onSuccess = { ParsedInput.Parsed(it) },
             onFailure = {

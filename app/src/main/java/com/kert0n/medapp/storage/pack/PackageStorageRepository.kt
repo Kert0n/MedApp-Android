@@ -2,37 +2,34 @@ package com.kert0n.medapp.storage.pack
 
 import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.pack.Package
-import com.kert0n.medapp.domain.pack.PackageAvailability
+import com.kert0n.medapp.domain.pack.PackageProjection
 import com.kert0n.medapp.domain.pack.PackageFacts
+import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.storage.course.CourseReallocation
-import com.kert0n.medapp.storage.server.QueuedCommand
 import java.time.Instant
 import java.time.LocalDate
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.Flow
 
 /**
- * Хранение упаковок. Отдаёт домен, а не строки, и собирает пачку из трёх её таблиц —
- * серверной части, личных сведений и картины броней (PLAN F1, H1).
+ * Хранение упаковок. Собирает пачку из трёх её таблиц — серверной части, личных сведений и
+ * картины броней (PLAN F1, H1). Потоки несут проекции — величины для экрана, собранные одним
+ * чтением в одной транзакции: пачка вместе с доступностью — оценкой количества, чужими бронями
+ * и занятым активным курсом (PLAN D4). Сущность отдаёт [find], и действительна она в
+ * транзакции сценария, который её читал.
  *
  * Оценку количества считает очередь: репозиторий берёт незакрытые команды по номеру и сворачивает
- * их существующим `PackageQueueState`, а домену отдаёт готовый `EffectiveAmount` (PLAN E1).
+ * их существующим `PackageQueueState`, а домену отдаёт готовое число (PLAN E1).
  */
 interface PackageStorageRepository {
 
-    fun observe(id: Uuid): Flow<Package?>
+    fun observe(id: Uuid): Flow<PackageProjection?>
 
     suspend fun find(id: Uuid): Package?
 
-    /**
-     * Доступность одной пачки: оценка количества, чужие брони и занятое активным курсом.
-     * Своего выделения у пачки вне курса нет, поэтому оно берётся из назначения (PLAN D4).
-     */
-    fun observeAvailability(id: Uuid): Flow<PackageAvailability?>
-
     /** Список экрана: `today` приходит аргументом, потому что база системных часов не читает. */
-    fun list(query: PackageQuery, today: LocalDate): Flow<List<Package>>
+    fun list(query: PackageQuery, today: LocalDate): Flow<List<PackageProjection>>
 
     /**
      * Заведение пачки: своей — без обвязки синхронизации, чужой — вместе со снимком сервера.
@@ -56,15 +53,27 @@ interface PackageStorageRepository {
      */
     suspend fun loseAccess(packageId: Uuid): Boolean
 
-    /** Снимок переписывает серверную часть целиком и не касается личных сведений (PLAN E4). */
-    suspend fun applyServerSnapshot(pkg: Package, sync: PackageSyncState, observedAt: Instant)
+    /**
+     * Снимок переписывает серверную часть целиком и не касается личных сведений (PLAN E4).
+     * Половины применяются порознь, каждая по своей версии: запоздалая свежую не откатывает, и
+     * версия картины броней никогда не расходится с самой картиной (PLAN B3, E1).
+     */
+    suspend fun applySnapshot(snapshot: PackageSnapshot, observedAt: Instant): SnapshotApplied
+
+    /**
+     * Обвязка синхронизации пачки для экрана состояния синхронизации (PLAN H3 №28): версии и
+     * момент последней сверки. Своим методом, а не полем проекции — они принадлежат доставке, а
+     * не пачке, и остальным экранам не нужны. `null` — пачки больше нет.
+     */
+    fun observeSyncState(id: Uuid): Flow<PackageSyncState?>
 
     /** `null` снимает картину броней: аптечка не опубликована либо доступ утрачен. */
     suspend fun saveClaims(packageId: Uuid, claims: Claims?)
 
     /**
      * Пересчёт, утилизация и перенос: движение и новое состояние пачки ложатся одной транзакцией
-     * вместе с пересчитанными выделениями [reallocation] и исходящей командой [command] (PLAN F5).
+     * вместе с пересчитанными выделениями [reallocation] (PLAN F5). Команду серверу, если она
+     * нужна, ставит служба очереди в той же транзакции — репозиторий про очередь не знает.
      *
      * Переход применяется к нынешнему состоянию пачки, прочитанному в той же транзакции, поэтому
      * «было» в истории — настоящее «было». Обвязка синхронизации при этом не трогается: версии и
@@ -76,7 +85,6 @@ interface PackageStorageRepository {
     suspend fun adjust(
         adjustment: PackageAdjustment,
         reallocation: CourseReallocation? = null,
-        command: QueuedCommand? = null,
         at: Instant
     ): Boolean
 }

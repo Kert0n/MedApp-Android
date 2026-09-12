@@ -7,8 +7,11 @@ import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.contentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
@@ -41,17 +44,33 @@ class SecretMaskingLoggerTest {
     private val log get() = lines.joinToString("\n")
 
     @Test
-    fun registrationKeyAndTokenNeverReachTheLog() = runTest {
-        val body = """{"login":"00000000-0000-4000-8000-000000000071","key":"k3y-shown-only-once"}"""
+    fun registrationPasswordAndTokenNeverReachTheLog() = runTest {
+        val body = """{"login":"00000000-0000-4000-8000-000000000071","password":"k3y-shown-only-once"}"""
 
         val response = client(body).post("/v1/auth/register") {
             header(REGISTRATION_TOKEN_HEADER, "registration-secret")
+            contentType(ContentType.Application.Json)
+            setBody(body)
         }
 
         assertEquals(body, response.bodyAsText())
         assertFalse(log.contains("k3y-shown-only-once"))
         assertFalse(log.contains("registration-secret"))
         assertTrue(log.contains("00000000-0000-4000-8000-000000000071"))
+    }
+
+    /** Кавычка внутри секрета не обрывает маску: иначе хвост пароля уехал бы в лог. */
+    @Test
+    fun anEscapedQuoteInsideTheSecretDoesNotEndTheMask() = runTest {
+        val body = """{"login":"00000000-0000-4000-8000-000000000071","password":"be\"fore-and\\after"}"""
+
+        client(body).post("/v1/auth/register") {
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+
+        assertFalse(log.contains("fore-and"))
+        assertFalse(log.contains("after"))
     }
 
     @Test

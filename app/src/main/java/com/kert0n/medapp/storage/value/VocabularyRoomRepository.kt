@@ -2,6 +2,7 @@ package com.kert0n.medapp.storage.value
 
 import com.kert0n.medapp.domain.value.DosageForm
 import com.kert0n.medapp.domain.value.QuantityUnit
+import com.kert0n.medapp.domain.value.Vocabulary
 import javax.inject.Inject
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -15,6 +16,8 @@ class VocabularyRoomRepository @Inject constructor(
 
     override fun observeForms(): Flow<List<DosageForm>> =
         vocabulary.observeForms().map { rows -> rows.map { it.toDomain() } }
+
+    override suspend fun snapshot(): Vocabulary = vocabulary.snapshot()
 
     override suspend fun save(units: List<QuantityUnit>, forms: List<DosageForm>) =
         vocabulary.save(units.map { it.toStorageEntity() }, forms.map { it.toStorageEntity() })

@@ -23,6 +23,11 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import com.kert0n.medapp.fixture.VOCABULARY
+import com.kert0n.medapp.domain.value.doses
+import com.kert0n.medapp.fixture.LATER
+import com.kert0n.medapp.fixture.availability
+import com.kert0n.medapp.fixture.tablets
 
 /**
  * Курс и его источники хранят порядок, а времена не заводятся дважды. Черновик и живой план —
@@ -54,7 +59,7 @@ class CourseDaoTest {
 
         val row = requireNotNull(courses.findPlan(COURSE))
         assertTrue(row.isDraft)
-        assertEquals("спросить у врача", row.toDraft().note)
+        assertEquals("спросить у врача", row.toDraft(VOCABULARY).note)
     }
 
     @Test
@@ -66,8 +71,8 @@ class CourseDaoTest {
             plan.medicine.toSourceStorageEntities(COURSE)
         )
 
-        val restored = requireNotNull(courses.findPlan(COURSE)).toPlan()
-        assertEquals(listOf(PACK, OTHER_PACK), restored.sources.map { it.packageId })
+        val restored = requireNotNull(courses.findPlan(COURSE)).toPlan(VOCABULARY)
+        assertEquals(listOf(PACK, OTHER_PACK), restored.sources.map { it.pkg.id })
         assertEquals(plan.sources, restored.sources)
     }
 
@@ -127,9 +132,9 @@ class CourseDaoTest {
             second.medicine.toSourceStorageEntities(COURSE)
         )
 
-        val restored = requireNotNull(courses.findPlan(COURSE)).toPlan()
+        val restored = requireNotNull(courses.findPlan(COURSE)).toPlan(VOCABULARY)
         assertEquals(listOf(LocalTime.of(12, 0)), restored.schedule.times)
-        assertEquals(listOf(OTHER_PACK), restored.sources.map { it.packageId })
+        assertEquals(listOf(OTHER_PACK), restored.sources.map { it.pkg.id })
     }
 
     /**
@@ -154,9 +159,62 @@ class CourseDaoTest {
         courses.deletePlan(COURSE)
 
         assertNull(courses.findPlan(COURSE))
-        val restored = requireNotNull(courses.findRecord(COURSE)).toDomain()
+        val restored = requireNotNull(courses.findRecord(COURSE)).toDomain(VOCABULARY)
         assertEquals(record.prescription, restored.prescription)
         assertEquals(plan.schedule.times, restored.prescription.schedule.times)
+    }
+
+    /**
+     * Число доз правится у плана и в снимке записи одной транзакцией: назначение лежит в двух
+     * строках, и разойтись им нельзя (PLAN F5). Запись условна по редакции.
+     */
+    @Test
+    fun totalDosesAreRevisedInThePlanAndInTheRecordTogether() = runTest {
+        val plan = activeCourse()
+        courses.saveCourse(plan.toStorageEntity(), plan.schedule.toTimeStorageEntities(COURSE), emptyList())
+        courses.upsertRecord(courseRecord(prescription = plan.prescription).toStorageEntity())
+        val shortened = plan.setTotalDoses(3.doses, LATER)
+
+        assertTrue(
+            courses.updateTotalDoses(COURSE, 3, expected = plan.revision, revision = shortened.revision, updatedAt = LATER)
+        )
+        assertEquals(3.doses, requireNotNull(courses.findPlan(COURSE)).toPlan(VOCABULARY).totalDoses)
+        assertEquals(shortened.revision, requireNotNull(courses.findPlan(COURSE)).toPlan(VOCABULARY).revision)
+        assertEquals(
+            3.doses,
+            requireNotNull(courses.findRecord(COURSE)).toDomain(VOCABULARY).prescription.totalDoses
+        )
+
+        // Правка из устаревшей редакции не ложится ни в план, ни в запись.
+        assertEquals(
+            false,
+            courses.updateTotalDoses(COURSE, 5, expected = plan.revision, revision = shortened.revision.next(), updatedAt = LATER)
+        )
+        assertEquals(3.doses, requireNotNull(courses.findRecord(COURSE)).toDomain(VOCABULARY).prescription.totalDoses)
+    }
+
+    /** Доза мимо плана ложится вместе с пересчитанными выделениями, условно по редакции. */
+    @Test
+    fun dosesTakenOffPlanAreWrittenWithTheReallocation() = runTest {
+        val plan = activeCourse(sources = listOf(source(PACK, 5)))
+        courses.saveCourse(
+            plan.toStorageEntity(),
+            plan.schedule.toTimeStorageEntities(COURSE),
+            plan.medicine.toSourceStorageEntities(COURSE)
+        )
+        val corrected = plan.setTakenOffPlan(2.doses, availability(PACK to tablets("20")), LATER)
+
+        assertTrue(
+            courses.updateAllocations(
+                corrected.toStorageEntity(),
+                corrected.medicine.toSourceStorageEntities(COURSE),
+                expected = plan.revision
+            )
+        )
+        val restored = requireNotNull(courses.findPlan(COURSE)).toPlan(VOCABULARY)
+        assertEquals(2.doses, restored.takenOffPlan)
+        assertEquals(listOf(3.doses), restored.sources.map { it.allocatedDoses })
+        assertEquals(corrected.revision, restored.revision)
     }
 
     /** Источник не переживает удаления пачки молча: `RESTRICT` не даёт остаться без пачки. */

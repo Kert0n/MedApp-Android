@@ -27,7 +27,7 @@ class PackageFactsTest {
         val facts = PackageFacts(
             shared = PackageSharedFacts(
                 name = "Парацетамол",
-                formId = TABLET_FORM,
+                form = TABLET_FORM,
                 category = "жаропонижающие",
                 manufacturer = "Дарница",
                 country = "Украина",

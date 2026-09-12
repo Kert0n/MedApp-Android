@@ -1,8 +1,10 @@
 package com.kert0n.medapp.storage.intake
 
+import com.kert0n.medapp.domain.course.ScheduledOccurrence
 import com.kert0n.medapp.domain.intake.CourseIntake
 import com.kert0n.medapp.domain.intake.Intake
-import com.kert0n.medapp.network.intake.IntakeSyncState
+import com.kert0n.medapp.domain.intake.IntakeProjection
+import com.kert0n.medapp.queue.intake.IntakeSyncState
 import java.time.Instant
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.Flow
@@ -13,7 +15,11 @@ import kotlinx.coroutines.flow.Flow
  */
 interface IntakeStorageRepository {
 
-    fun observeOfCourse(courseId: Uuid): Flow<List<Intake>>
+    /** Поток несёт проекции — величины для экрана; сущности отдают `find`/`ofCourse` в транзакции сценария. */
+    fun observeOfCourse(courseId: Uuid): Flow<List<IntakeProjection>>
+
+    /** Пункты курса одним чтением — из них сценарий собирает прогресс внутри своей транзакции. */
+    suspend fun ofCourse(courseId: Uuid): List<Intake>
 
     suspend fun find(id: Uuid): Intake?
 
@@ -34,8 +40,16 @@ interface IntakeStorageRepository {
     suspend fun plannedBefore(until: Instant): List<CourseIntake>
 
     /**
-     * Ответ на приём целиком: условный переход статуса, локальный остаток либо команда расхода,
-     * движение, пересчитанные выделения курса и учёт — одной транзакцией (PLAN F5).
+     * Убирает плановые пункты курса, которых нет среди [keep] — оставшихся по прогрессу
+     * (PLAN D5): поздний ответ по пропущенному сдвинул конец назад, и последний
+     * материализованный пункт стал лишним. Он не факт — отвеченные пункты не трогаются никогда.
+     * Возвращает число убранных.
+     */
+    suspend fun prunePlanned(courseId: Uuid, keep: Set<ScheduledOccurrence>): Int
+
+    /**
+     * Ответ на приём целиком: условный переход статуса, локальный остаток, пересчитанные
+     * выделения курса и учёт — одной транзакцией (PLAN F5); команду расхода ставит служба очереди.
      *
      * `false` означает, что приём уже записан: условный переход не нашёл ожидаемого статуса либо
      * внеплановый приём с тем же тождеством уже заведён, и повтор ничего не списал.

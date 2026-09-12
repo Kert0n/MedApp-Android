@@ -1,10 +1,10 @@
 package com.kert0n.medapp.domain.pack
 
-import com.kert0n.medapp.domain.value.Money
+import com.kert0n.medapp.domain.value.DosageForm
 import com.kert0n.medapp.domain.value.Dose
+import com.kert0n.medapp.domain.value.Money
 import com.kert0n.medapp.domain.value.requireOptionalText
 import java.time.LocalDate
-import kotlin.uuid.Uuid
 
 /**
  * Что человек знает про упаковку и правит одним редактором. [shared] уезжает на сервер, остальное
@@ -26,7 +26,7 @@ data class PackageFacts(
     }
 
     val name: String get() = shared.name
-    val formId: Uuid? get() = shared.formId
+    val form: DosageForm? get() = shared.form
     val category: String? get() = shared.category
     val manufacturer: String? get() = shared.manufacturer
     val country: String? get() = shared.country

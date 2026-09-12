@@ -4,8 +4,12 @@ import android.util.Log
 import com.kert0n.medapp.BuildConfig
 import com.kert0n.medapp.network.account.AccessTokens
 import io.ktor.client.plugins.logging.Logger
+import com.kert0n.medapp.network.server.MedAppApi
+import com.kert0n.medapp.queue.QueueHttpTransport
 import com.kert0n.medapp.network.server.crptHttpClient
 import com.kert0n.medapp.network.server.medAppHttpClient
+import com.kert0n.medapp.queue.QueueTransport
+import java.time.Clock
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -67,4 +71,15 @@ object NetworkModule {
     @Singleton
     @CrptHttp
     fun crptHttp(): HttpClient = crptHttpClient(OkHttp.create(), BuildConfig.CRPT_BASE_URL)
+
+    /** Очередь ходит к серверу тем же клиентом: пропуск, лог и таймауты у неё те же. */
+    @Provides
+    @Singleton
+    fun queueTransport(api: MedAppApi): QueueTransport =
+        QueueHttpTransport(api)
+
+    /** Часы очереди — системные; тесты подставляют свои. */
+    @Provides
+    @Singleton
+    fun clock(): Clock = Clock.systemUTC()
 }

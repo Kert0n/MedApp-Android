@@ -1,6 +1,7 @@
 package com.kert0n.medapp.storage.stock
 
 import com.kert0n.medapp.domain.stock.StockMovement
+import com.kert0n.medapp.storage.value.VocabularyDao
 import java.time.Instant
 import javax.inject.Inject
 import kotlin.uuid.Uuid
@@ -8,18 +9,24 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 class StockMovementRoomRepository @Inject constructor(
-    private val movements: StockMovementDao
+    private val movements: StockMovementDao,
+    private val vocabulary: VocabularyDao
 ) : StockMovementStorageRepository {
 
     override suspend fun record(movement: StockMovement) =
         movements.insert(movement.toStorageEntity())
 
     override fun observeOfPackage(packageId: Uuid): Flow<List<StockMovement>> =
-        movements.observeOfPackage(packageId).map { rows -> rows.map { it.toDomain() } }
+        movements.observeOfPackage(packageId).map { rows -> rows.toDomain() }
 
     override suspend fun ofPackage(packageId: Uuid): List<StockMovement> =
-        movements.ofPackage(packageId).map { it.toDomain() }
+        movements.ofPackage(packageId).toDomain()
 
     override suspend fun observedBetween(from: Instant, until: Instant): List<StockMovement> =
-        movements.observedBetween(from, until).map { it.toDomain() }
+        movements.observedBetween(from, until).toDomain()
+
+    private suspend fun List<StockMovementStorageRow>.toDomain(): List<StockMovement> {
+        val words = vocabulary.snapshot()
+        return map { it.toDomain(words) }
+    }
 }

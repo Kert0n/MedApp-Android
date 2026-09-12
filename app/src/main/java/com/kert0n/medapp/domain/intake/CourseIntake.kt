@@ -1,18 +1,20 @@
 package com.kert0n.medapp.domain.intake
 
 import com.kert0n.medapp.domain.course.Revision
-import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.pack.PackageRef
 import com.kert0n.medapp.domain.course.ScheduledOccurrence
 import com.kert0n.medapp.domain.value.Dose
+import com.kert0n.medapp.domain.value.QuantityUnit
 import java.time.Instant
 import kotlin.uuid.Uuid
 
 /**
- * Пункт курса вместе с ответом на него. План — [slot], [plannedAmount], [plannedPackageId] — ответ
+ * Пункт курса вместе с ответом на него. План — [slot], [plannedAmount], [plannedPackage] — ответ
  * не переписывает, переходы меняют только [answer]. [slot] вместе с [courseRevision] — тождество
- * пункта при повторной материализации (PLAN F4). [plannedPackageId] — пачка, из которой пункт
+ * пункта при повторной материализации (PLAN F4). [plannedPackage] — пачка, из которой пункт
  * обеспечен, `null` у необеспеченного; фактическая пачка подтверждённого лежит в [TakenDose] и
- * может быть другой пачкой курса (D6).
+ * может быть другой пачкой курса (D6). [courseId] — тождество эпизода, а не ссылка на вещь:
+ * запись эпизода вечна, и приём называет её номером, как называют его самого.
  */
 class CourseIntake(
     override val id: Uuid,
@@ -20,13 +22,13 @@ class CourseIntake(
     val courseRevision: Revision,
     val slot: ScheduledOccurrence,
     val plannedAmount: Dose,
-    val plannedPackageId: Uuid? = null,
+    val plannedPackage: PackageRef? = null,
     val answer: IntakeAnswer? = null
 ) : Intake {
 
     init {
         val taken = taken
-        require(taken == null || taken.amount.unitId == unitId) {
+        require(taken == null || taken.amount.unit == unit) {
             "фактическое количество измеряется единицей приёма"
         }
     }
@@ -35,13 +37,12 @@ class CourseIntake(
      * Единица НА МОМЕНТ СОБЫТИЯ, и берётся она у плановой дозы: второе поле с той же единицей
      * могло бы с ней разойтись.
      */
-    override val unitId: Uuid get() = plannedAmount.unitId
+    override val unit: QuantityUnit get() = plannedAmount.unit
 
     override val status: IntakeStatus
         get() = when (answer) {
             null -> IntakeStatus.PLANNED
             is IntakeAnswer.Taken -> IntakeStatus.TAKEN
-            is IntakeAnswer.Skipped -> IntakeStatus.SKIPPED
             is IntakeAnswer.Missed -> IntakeStatus.MISSED
             is IntakeAnswer.Cancelled -> IntakeStatus.CANCELLED
         }
@@ -51,28 +52,40 @@ class CourseIntake(
     /** Когда наступает пункт. */
     val plannedAt: Instant get() = slot.at
 
+    override fun projection(): IntakeProjection.Scheduled = IntakeProjection.Scheduled(
+        id = id,
+        courseId = courseId,
+        courseRevision = courseRevision,
+        slot = slot,
+        plannedAmount = plannedAmount,
+        plannedPackage = plannedPackage,
+        answer = answer,
+        status = status,
+        taken = taken
+    )
+
     /** Обеспечен ли пункт: источник с целой дозой под него найден (PLAN D5). */
-    val isSupplied: Boolean get() = plannedPackageId != null
+    val isSupplied: Boolean get() = plannedPackage != null
 
     /**
-     * Подтверждение: фактические количество и пачка могут отличаться от плана, расход равен факту
-     * (PLAN D5). Принимается сама пачка — аптечку и единицу события она приносит с собой. Подтверждается неотвеченный или пропущенный по времени пункт; повторное
-     * подтверждение — второй факт со своим идентификатором, и здесь оно отвергается (E2).
+     * Подтверждение состоявшимся фактом: фактические количество и пачка могут отличаться от
+     * плана, расход равен факту (PLAN D5). Факт собирает акт [Package.take] — там и проверка, что
+     * из пачки можно взять; здесь проверяется только, что факт измерен единицей этого пункта.
+     * Подтверждается неотвеченный или непринятый пункт — отказ и неответ подтверждаются одинаково;
+     * повторное подтверждение — второй факт со своим идентификатором, и здесь оно отвергается (E2).
      */
-    fun confirm(pkg: Package, amount: Dose, at: Instant): CourseIntake {
+    fun confirm(taken: TakenDose): CourseIntake {
         check(answer == null || answer is IntakeAnswer.Missed) {
             "подтверждается неотвеченный приём, а не $status"
         }
-        return answered(IntakeAnswer.Taken(TakenDose(pkg, amount, at)))
+        return answered(IntakeAnswer.Taken(taken))
     }
 
     /**
-     * Человек отказался: расхода нет, потребность уменьшается. Повторный пропуск ничего не меняет;
-     * отмены пропуска в первой версии нет.
+     * Не принято — отказался или не ответил до конца дня курса в его зоне (C1). Один переход на
+     * оба случая: расхода нет, потребность не уменьшается, а доза уезжает вперёд. Повтор ничего
+     * не меняет; подтвердить ещё можно.
      */
-    fun skip(at: Instant): CourseIntake = respond(IntakeAnswer.Skipped(at))
-
-    /** Ответа не было до конца календарного дня курса в его зоне (C1); подтвердить ещё можно. */
     fun miss(at: Instant): CourseIntake = respond(IntakeAnswer.Missed(at))
 
     /** Плановый пункт отменён вместе с курсом. Состоявшиеся приёмы этим не затрагиваются. */
@@ -91,7 +104,7 @@ class CourseIntake(
         courseRevision = courseRevision,
         slot = slot,
         plannedAmount = plannedAmount,
-        plannedPackageId = plannedPackageId,
+        plannedPackage = plannedPackage,
         answer = answer
     )
 

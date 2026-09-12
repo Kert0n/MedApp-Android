@@ -36,6 +36,7 @@ object DatabaseModule {
     fun medAppDatabase(@ApplicationContext context: Context): MedAppDatabase =
         Room.databaseBuilder(context, MedAppDatabase::class.java, MedAppDatabase.NAME)
             .addCallback(BundledVocabulary.fromAssets(context.assets))
+            .addMigrations(*MedAppDatabase.MIGRATIONS)
             .build()
 
     @Provides

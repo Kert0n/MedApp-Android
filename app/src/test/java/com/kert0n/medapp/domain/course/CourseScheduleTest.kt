@@ -9,6 +9,7 @@ import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Test
+import org.junit.Assert.assertTrue
 
 /**
  * Расписание — календарное намерение со своей зоной. Проверяются инварианты D5 и подсчёт
@@ -26,13 +27,11 @@ class CourseScheduleTest {
     }
 
     @Test
-    fun oneDayScheduleIsAllowed() {
-        assertEquals(1, schedule(start = monday, endInclusive = monday).occurrenceCount())
-    }
-
-    @Test(expected = IllegalArgumentException::class)
-    fun endBeforeStartIsRejected() {
-        schedule(start = monday, endInclusive = monday.minusDays(1))
+    fun scheduleHasNoEndOfItsOwn() {
+        // Конец лечения — следствие числа доз, и календарь его не знает: два расписания с одним
+        // началом, днями и временами — одно расписание.
+        assertEquals(schedule(start = monday), schedule(start = monday))
+        assertNotEquals(schedule(start = monday), schedule(start = monday.plusDays(1)))
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -67,46 +66,45 @@ class CourseScheduleTest {
     }
 
     @Test
-    fun everyDayScheduleCountsDaysTimesTimes() {
-        val week = schedule(
-            start = monday,
-            endInclusive = monday.plusDays(6),
-            times = listOf(LocalTime.of(9, 0), LocalTime.of(21, 0))
-        )
-        assertEquals(14, week.occurrenceCount())
+    fun fourteenDosesTwiceADayTakeAWeek() {
+        val twiceADay = schedule(start = monday, times = listOf(LocalTime.of(9, 0), LocalTime.of(21, 0)))
+        val found = twiceADay.next(twiceADay.beginning, 14)
+        assertEquals(14, found.size)
+        assertEquals(monday.plusDays(6), found.last().localDate)
+        assertEquals(LocalTime.of(21, 0), found.last().localTime)
     }
 
     @Test
-    fun twoWeekdaysOverTwoFullWeeks() {
-        val fortnight = schedule(
+    fun eightDosesOnTwoWeekdaysTakeTwoWeeks() {
+        val twoWeekdays = schedule(
             start = monday,
-            endInclusive = monday.plusDays(13),
             daysOfWeek = setOf(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY),
             times = listOf(LocalTime.of(9, 0), LocalTime.of(21, 0))
         )
-        assertEquals(8, fortnight.occurrenceCount())
+        assertEquals(monday.plusDays(9), twoWeekdays.next(twoWeekdays.beginning, 8).last().localDate)
     }
 
     @Test
-    fun tailOfAnIncompleteWeekIsCounted() {
-        // Полторы недели: понедельники приходятся на первый и восьмой день.
-        val nineDays = schedule(
-            start = monday,
-            endInclusive = monday.plusDays(8),
-            daysOfWeek = setOf(DayOfWeek.MONDAY)
+    fun twoMondayDosesLandOnTheFirstAndEighthDay() {
+        val mondays = schedule(start = monday, daysOfWeek = setOf(DayOfWeek.MONDAY))
+        assertEquals(
+            listOf(monday, monday.plusDays(7)),
+            mondays.next(mondays.beginning, 2).map { it.localDate }
         )
-        assertEquals(2, nineDays.occurrenceCount())
     }
 
     @Test
-    fun tailThatMissesTheChosenDayAddsNothing() {
-        // Девять дней от понедельника, но приём по пятницам: вторая пятница ещё не наступила.
-        val nineDays = schedule(
-            start = monday,
-            endInclusive = monday.plusDays(8),
-            daysOfWeek = setOf(DayOfWeek.FRIDAY)
-        )
-        assertEquals(1, nineDays.occurrenceCount())
+    fun countingStartsFromTheGivenMomentNotFromTheStart() {
+        // С середины недели семь доз ложатся на семь следующих дней: пропущенное не исчезает,
+        // а сдвигает конец.
+        val week = schedule(start = monday)
+        val thursday = monday.plusDays(3).atStartOfDay(MOSCOW).toInstant()
+        assertEquals(monday.plusDays(9), week.next(thursday, 7).last().localDate)
+    }
+
+    @Test
+    fun nothingIsNeededWhenNothingRemains() {
+        assertTrue(schedule().next(schedule().beginning, 0).isEmpty())
     }
 
     @Test

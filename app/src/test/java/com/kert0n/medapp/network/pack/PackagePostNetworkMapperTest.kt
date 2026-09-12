@@ -13,6 +13,8 @@ import com.kert0n.medapp.fixture.pack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
+import com.kert0n.medapp.fixture.TABLETS_ID
+import com.kert0n.medapp.fixture.TABLET_FORM_ID
 
 /**
  * Домен → тело создания пачки. Здесь и заканчивается граница данных: всё, чего нет в
@@ -22,7 +24,7 @@ class PackagePostNetworkMapperTest {
 
     private fun onServer(note: String? = null) = pack(
         name = "Парацетамол",
-        formId = TABLET_FORM,
+        form = TABLET_FORM,
         category = "жаропонижающие",
         description = "по одной при температуре",
         note = note
@@ -59,7 +61,7 @@ class PackagePostNetworkMapperTest {
     fun creationCarriesTheServerHalfOnly() {
         val dto = onServer(note = "в машине").toPostNetworkDTO()
         assertEquals("Парацетамол", dto.name)
-        assertEquals(TABLET_FORM, dto.formId)
+        assertEquals(TABLET_FORM_ID, dto.formId)
     }
 
     @Test
@@ -68,7 +70,7 @@ class PackagePostNetworkMapperTest {
         // потому что именно это принимает сервер.
         val dto = onServer().toPostNetworkDTO()
         assertEquals("20", dto.amount)
-        assertEquals(TABLETS, dto.unitId)
+        assertEquals(TABLETS_ID, dto.unitId)
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -77,7 +79,7 @@ class PackagePostNetworkMapperTest {
             id = PACK,
             name = "Парацетамол",
             amount = "1E+3",
-            unitId = TABLETS,
+            unitId = TABLETS_ID,
             formId = null,
             category = null,
             manufacturer = null,
@@ -92,7 +94,7 @@ class PackagePostNetworkMapperTest {
             id = PACK,
             name = "Парацетамол",
             amount = "20",
-            unitId = TABLETS,
+            unitId = TABLETS_ID,
             formId = null,
             category = null,
             manufacturer = null,

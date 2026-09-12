@@ -4,6 +4,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.kert0n.medapp.domain.medkit.MedKit
+import com.kert0n.medapp.domain.medkit.MedKitRef
 import java.time.Instant
 import kotlin.uuid.Uuid
 
@@ -31,6 +32,9 @@ class MedKitStorageEntity(
         participantCount = participantCount,
         createdAt = createdAt
     )
+
+    /** Ссылка для чужого агрегата: пачке и движению от аптечки нужны тождество и публикация. */
+    fun toRef(): MedKitRef = MedKitRef(id, publication)
 }
 
 fun MedKit.toStorageEntity(syncedAt: Instant? = null): MedKitStorageEntity = MedKitStorageEntity(

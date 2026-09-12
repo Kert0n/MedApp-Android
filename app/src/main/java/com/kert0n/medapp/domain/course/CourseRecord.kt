@@ -1,5 +1,6 @@
 package com.kert0n.medapp.domain.course
 
+import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.requireOptionalText
 import com.kert0n.medapp.domain.value.requireText
 import java.time.Instant
@@ -12,8 +13,9 @@ import kotlin.uuid.Uuid
  *
  * Сущность, тождество — [id] **эпизода**, общее с планом: ссылка приёма на него не повисает и
  * после того, как план уничтожен, а значит «что принималось по этому поводу» отвечается ею одной.
- * [prescription] — снимок: пока план жив, оно то же самое в обоих и разойтись не может, потому
- * что менять его нечем. Состав пачек уходит с планом: из какой пачки приняли, записано в приёме.
+ * [prescription] — снимок: пока план жив, оно то же самое в обоих; единственное, что в нём
+ * правится, — число доз, и переписывает его та же транзакция, что и у плана (PLAN F5). Состав
+ * пачек уходит с планом: из какой пачки приняли, записано в приёме.
  */
 class CourseRecord(
     val id: Uuid,
@@ -41,9 +43,21 @@ class CourseRecord(
     /** Лечение идёт: план для него ещё существует. */
     val isOpen: Boolean get() = outcome == null
 
+    /** Как запись видит экран и аналитика: величина, наружу уходит она, а не сущность. */
+    fun projection(): CourseRecordProjection =
+        CourseRecordProjection(id, title, note, prescription, startedAt, outcome, closedAt)
+
     /** Название и заметка правятся всегда: это не изменение назначенного лечения (PLAN D5). */
     fun rename(title: String, note: String?): CourseRecord =
         CourseRecord(id, title, note, prescription, startedAt, outcome, closedAt)
+
+    /** Снимок назначения идёт за планом: число доз поправили — запись говорит то же самое. */
+    fun withTotalDoses(totalDoses: Doses): CourseRecord {
+        check(isOpen) { "у законченного лечения число доз не правится" }
+        return CourseRecord(
+            id, title, note, prescription.withTotalDoses(totalDoses), startedAt, outcome, closedAt
+        )
+    }
 
     /**
      * Лечение закончилось — календарём или решением человека. План после этого уничтожается, а

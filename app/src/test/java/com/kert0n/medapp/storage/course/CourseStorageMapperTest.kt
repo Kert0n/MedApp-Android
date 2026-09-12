@@ -22,6 +22,15 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.kert0n.medapp.fixture.VOCABULARY
+import com.kert0n.medapp.fixture.dose
+import com.kert0n.medapp.domain.course.CourseProgress
+import com.kert0n.medapp.domain.value.doses
+import com.kert0n.medapp.fixture.LATER
+import com.kert0n.medapp.fixture.availability
+import com.kert0n.medapp.fixture.tablets
+import com.kert0n.medapp.domain.pack.PackageRef
+import com.kert0n.medapp.fixture.toStorageRow
 
 /**
  * Курс, его времена и его источники собираются обратно тем же самым, а черновик и живой план
@@ -29,7 +38,13 @@ import org.junit.Test
  */
 class CourseStorageMapperTest {
 
-    private fun rowOf(entity: CourseStorageEntity, times: List<LocalTime>, sources: List<CourseSourceStorageEntity> = emptyList()) =
+    /** Строки источников с пачками — так их собрала бы база связью. */
+    private fun rowsOf(sources: List<CourseSourceStorageEntity>, packs: List<PackageRef>) =
+        sources.map { source ->
+            CourseSourceStorageRow(source, packs.single { it.id == source.packageId }.toStorageRow())
+        }
+
+    private fun rowOf(entity: CourseStorageEntity, times: List<LocalTime>, sources: List<CourseSourceStorageRow> = emptyList()) =
         CourseStorageRow(
             course = entity,
             times = times.map { CourseTimeStorageEntity(entity.id, it) },
@@ -38,24 +53,26 @@ class CourseStorageMapperTest {
 
     @Test
     fun draftKeepsItsNameNoteAndUnfinishedPrescription() {
-        val draft = course(note = "спросить у врача", doseAmount = BigDecimal("2"), unitId = TABLETS)
+        val draft = course(note = "спросить у врача", dose = dose("2"), form = TABLET_FORM, totalDoses = 5)
         val row = rowOf(draft.toStorageEntity(), times = emptyList())
 
         assertTrue(row.isDraft)
-        val restored = row.toDraft()
+        val restored = row.toDraft(VOCABULARY)
         assertEquals(draft.title, restored.title)
         assertEquals(draft.note, restored.note)
-        assertEquals(draft.doseAmount, restored.doseAmount)
         assertEquals(draft.dose, restored.dose)
+        assertEquals(draft.form, restored.form)
+        assertEquals(draft.totalDoses, restored.totalDoses)
         assertNull(restored.schedule)
         assertEquals(draft.revision, restored.revision)
     }
 
     @Test
     fun draftWithoutDoseComesBackWithoutIt() {
-        val restored = rowOf(course().toStorageEntity(), times = emptyList()).toDraft()
-        assertNull(restored.doseAmount)
+        val restored = rowOf(course().toStorageEntity(), times = emptyList()).toDraft(VOCABULARY)
         assertNull(restored.dose)
+        assertNull(restored.form)
+        assertNull(restored.totalDoses)
         assertTrue(restored.medicine.isEmpty)
     }
 
@@ -86,14 +103,14 @@ class CourseStorageMapperTest {
         val restored = rowOf(
             plan.toStorageEntity(),
             weekdays.times,
-            plan.medicine.toSourceStorageEntities(COURSE)
-        ).toPlan()
+            rowsOf(plan.medicine.toSourceStorageEntities(COURSE), plan.sources.map { it.pkg })
+        ).toPlan(VOCABULARY)
 
         assertEquals(plan.dose, restored.dose)
         assertEquals(plan.schedule, restored.schedule)
         assertEquals(plan.sources, restored.sources)
-        assertEquals(TABLET_FORM, restored.formId)
-        assertEquals(TABLETS, restored.unitId)
+        assertEquals(TABLET_FORM, restored.form)
+        assertEquals(TABLETS, restored.unit)
         assertEquals(plan.revision, restored.revision)
         assertEquals(plan.createdAt, restored.createdAt)
         assertEquals(plan.updatedAt, restored.updatedAt)
@@ -104,9 +121,10 @@ class CourseStorageMapperTest {
     fun sourcesComeBackInTheOrderOfTheirPositions() {
         val plan = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 4)))
         val shuffled = plan.medicine.toSourceStorageEntities(COURSE).reversed()
+        val packs = plan.sources.map { it.pkg }
 
-        val restored = rowOf(plan.toStorageEntity(), plan.schedule.times, shuffled).toPlan()
-        assertEquals(listOf(PACK, OTHER_PACK), restored.sources.map { it.packageId })
+        val restored = rowOf(plan.toStorageEntity(), plan.schedule.times, rowsOf(shuffled, packs)).toPlan(VOCABULARY)
+        assertEquals(listOf(PACK, OTHER_PACK), restored.sources.map { it.pkg.id })
         assertEquals(plan.sources, restored.sources)
     }
 
@@ -117,8 +135,8 @@ class CourseStorageMapperTest {
         val restored = rowOf(
             plan.toStorageEntity(),
             listOf(LocalTime.of(21, 0), LocalTime.of(9, 0)),
-            plan.medicine.toSourceStorageEntities(COURSE)
-        ).toPlan()
+            rowsOf(plan.medicine.toSourceStorageEntities(COURSE), plan.sources.map { it.pkg })
+        ).toPlan(VOCABULARY)
         assertEquals(evening.times, restored.schedule.times)
     }
 
@@ -128,7 +146,7 @@ class CourseStorageMapperTest {
         val restored = CourseRecordStorageRow(
             record.toStorageEntity(),
             record.prescription.schedule.times.map { CourseTimeStorageEntity(COURSE, it) }
-        ).toDomain()
+        ).toDomain(VOCABULARY)
 
         assertEquals(record.title, restored.title)
         assertEquals(record.note, restored.note)
@@ -143,7 +161,7 @@ class CourseStorageMapperTest {
         val restored = CourseRecordStorageRow(
             closed.toStorageEntity(),
             closed.prescription.schedule.times.map { CourseTimeStorageEntity(COURSE, it) }
-        ).toDomain()
+        ).toDomain(VOCABULARY)
 
         assertEquals(CourseRecord.Outcome.CANCELLED, restored.outcome)
         assertEquals(closed.closedAt, restored.closedAt)
@@ -162,8 +180,23 @@ class CourseStorageMapperTest {
         assertEquals(storedPlan.doseAmount, storedRecord.doseAmount)
         assertEquals(storedPlan.unitId, storedRecord.unitId)
         assertEquals(storedPlan.start, storedRecord.start)
-        assertEquals(storedPlan.endInclusive, storedRecord.endInclusive)
+        assertEquals(storedPlan.totalDoses, storedRecord.totalDoses)
+        assertEquals(storedPlan.formId, storedRecord.formId)
         assertEquals(storedPlan.daysOfWeek, storedRecord.daysOfWeek)
         assertEquals(storedPlan.zone, storedRecord.zone)
+    }
+
+    @Test
+    fun dosesTakenOffPlanSurviveTheRoundTrip() {
+        val corrected = activeCourse(sources = listOf(source(PACK, 5)))
+            .setTakenOffPlan(2.doses, availability(PACK to tablets("20")), LATER)
+        val restored = rowOf(
+            corrected.toStorageEntity(),
+            times = corrected.schedule.times,
+            sources = rowsOf(corrected.medicine.toSourceStorageEntities(corrected.id), corrected.sources.map { it.pkg })
+        ).toPlan(VOCABULARY)
+        assertEquals(2.doses, restored.takenOffPlan)
+        assertEquals(listOf(3.doses), restored.sources.map { it.allocatedDoses })
+        assertEquals(5.doses, restored.remainingDoses(CourseProgress.none))
     }
 }

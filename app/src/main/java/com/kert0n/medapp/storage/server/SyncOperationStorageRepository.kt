@@ -1,8 +1,9 @@
 package com.kert0n.medapp.storage.server
 
-import com.kert0n.medapp.network.server.SyncCommand
-import com.kert0n.medapp.network.server.SyncOperation
-import com.kert0n.medapp.network.server.SyncOperationStatus
+import com.kert0n.medapp.queue.SyncCommand
+import com.kert0n.medapp.queue.SyncOperation
+import com.kert0n.medapp.queue.StoredSyncOperation
+import com.kert0n.medapp.queue.SyncOperationStatus
 import java.time.Instant
 import kotlin.uuid.Uuid
 
@@ -34,9 +35,8 @@ interface SyncOperationStorageRepository {
 
     /**
      * Операции, которые нечем прочитать: чужая версия payload после обновления приложения,
-     * неизвестный вид команды, повреждённые параметры подготовленного запроса. Их переводят в
-     * `CONFLICT` решением человека, а не молча пропускают, и причина едет вместе с каждой
-     * (PLAN F4).
+     * неизвестный вид команды, повреждённые параметры подготовленного запроса. Работник их
+     * пропускает, а экран показывает с причиной — молча они не теряются (PLAN F4).
      */
     suspend fun unreadable(): List<StoredSyncOperation.Unreadable>
 }

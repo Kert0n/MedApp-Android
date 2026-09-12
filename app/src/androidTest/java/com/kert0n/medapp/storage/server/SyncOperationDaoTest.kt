@@ -6,17 +6,19 @@ import com.kert0n.medapp.fixture.INTAKE
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.SHARED_KIT
+import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.inMemoryDatabase
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.rejectedByDatabase
 import com.kert0n.medapp.fixture.tablets
-import com.kert0n.medapp.network.medkit.MedKitSyncCommand
-import com.kert0n.medapp.network.pack.PackageSyncCommand
-import com.kert0n.medapp.network.server.PreparedRequest
+import com.kert0n.medapp.queue.medkit.MedKitSyncCommand
+import com.kert0n.medapp.queue.pack.PackageSyncCommand
+import com.kert0n.medapp.queue.PreparedRequest
 import com.kert0n.medapp.network.server.ResourceVersion
-import com.kert0n.medapp.network.server.SyncOperation
-import com.kert0n.medapp.network.server.SyncOperationStatus
+import com.kert0n.medapp.queue.SyncOperation
+import com.kert0n.medapp.queue.StoredSyncOperation
+import com.kert0n.medapp.queue.SyncOperationStatus
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import java.time.Instant
 import kotlin.uuid.Uuid
@@ -33,6 +35,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import com.kert0n.medapp.fixture.VOCABULARY
 
 /**
  * Очередь и её зависимости лежат в базе: номер выдаёт она, порядок по одной пачке строится
@@ -182,13 +185,72 @@ class SyncOperationDaoTest {
         queue.enqueue(first, PackageSyncCommand.Delete(PACK), createdAt)
         val at = createdAt.plusSeconds(30)
 
-        queue.settle(first, SyncOperationStatus.NEEDS_RECOUNT, "нет ответа", at, attempted = 1)
+        queue.settle(first, SyncOperationStatus.PENDING, "нет ответа", at, attempted = 1)
 
         val stored = requireNotNull(queue.find(first)).operation
-        assertEquals(SyncOperationStatus.NEEDS_RECOUNT, stored.status)
+        assertEquals(SyncOperationStatus.PENDING, stored.status)
         assertEquals("нет ответа", stored.lastError)
         assertEquals(at, stored.lastTriedAt)
         assertEquals(1, stored.attempts)
+    }
+
+    /**
+     * Факт «исход неизвестен» принадлежит запросу: прилипает при потерянном ответе, ставится
+     * сам, когда операцию застали в отправке (процесс умер в полёте), и умирает вместе с запросом
+     * при переподготовке (PLAN E3).
+     */
+    @Test
+    fun unknownOutcomeSticksToTheRequestAndDiesWithIt() = runTest {
+        queue.enqueue(first, PackageSyncCommand.Consume(PACK, dose("1"), INTAKE), createdAt)
+        val frozen = queue.freeze(
+            first, "PUT", "/drugs/$PACK/sync/$first", "{}", null, 3L, null, "20", null, TABLETS.id, createdAt
+        )
+        assertEquals(1, frozen)
+
+        // 429 — сервер не применял: факта нет.
+        queue.settle(first, SyncOperationStatus.PENDING, "429", createdAt, attempted = 1, outcomeUnknown = 0)
+        assertEquals(false, readable(first).outcomeUnknown)
+
+        // Потерянный ответ — факт есть, и следующий известный исход его не стирает.
+        queue.markSending(first)
+        queue.settle(first, SyncOperationStatus.PENDING, "ответ потерян", createdAt, attempted = 1, outcomeUnknown = 1)
+        queue.markSending(first)
+        queue.settle(first, SyncOperationStatus.PENDING, "429", createdAt, attempted = 1, outcomeUnknown = 0)
+        assertEquals(true, readable(first).outcomeUnknown)
+
+        // Переподготовка сбрасывает запрос — и факт вместе с ним; счёт попыток остаётся у операции.
+        queue.markSending(first)
+        queue.reprepare(first, "устарело", createdAt, notBefore = null)
+        val reprepared = readable(first)
+        assertEquals(false, reprepared.outcomeUnknown)
+        assertEquals(3, reprepared.attempts)
+    }
+
+    /** Операция, застигнутая в отправке, — полёт, о котором никто не рассказал: исход неизвестен. */
+    @Test
+    fun anOperationFoundSendingIsTakenWithAnUnknownOutcome() = runTest {
+        queue.enqueue(first, PackageSyncCommand.Consume(PACK, dose("1"), INTAKE), createdAt)
+        queue.freeze(first, "PUT", "/drugs/$PACK/sync/$first", "{}", null, 3L, null, "20", null, TABLETS.id, createdAt)
+        assertEquals(false, readable(first).outcomeUnknown)
+
+        queue.markSending(first)
+
+        assertEquals(true, readable(first).outcomeUnknown)
+    }
+
+    /** Ближайший срок — среди незакрытых и ещё не наступивших: закрытые и наступившие ждать не заставляют. */
+    @Test
+    fun nextDueAtSeesOnlyUnclosedOperationsWithATermStillAhead() = runTest {
+        queue.enqueue(first, PackageSyncCommand.Delete(PACK), createdAt)
+        queue.enqueue(second, PackageSyncCommand.CorrectStock(PACK, tablets("10")), createdAt)
+        queue.enqueue(third, MedKitSyncCommand.Leave(SHARED_KIT), createdAt)
+        queue.settle(first, SyncOperationStatus.PENDING, "429", createdAt, attempted = 1, notBefore = createdAt.plusSeconds(30))
+        queue.settle(second, SyncOperationStatus.PENDING, "обрыв", createdAt, attempted = 1, notBefore = createdAt.plusSeconds(10))
+        queue.settle(third, SyncOperationStatus.APPLIED, null, createdAt, attempted = 1, notBefore = createdAt.plusSeconds(5))
+
+        assertEquals(createdAt.plusSeconds(10), queue.nextDueAt(createdAt))
+        assertEquals(createdAt.plusSeconds(30), queue.nextDueAt(createdAt.plusSeconds(10)))
+        assertEquals(null, queue.nextDueAt(createdAt.plusSeconds(30)))
     }
 
     /** Незакрытые — те, чей исход ещё не установлен: свёртка остатка берёт именно их (PLAN E1). */
@@ -196,15 +258,15 @@ class SyncOperationDaoTest {
     fun unclosedOperationsExcludeTheSettledOnes() = runTest {
         queue.enqueue(first, PackageSyncCommand.CorrectStock(PACK, tablets("10")), createdAt)
         queue.enqueue(second, PackageSyncCommand.Consume(PACK, dose("1"), INTAKE), createdAt)
-        queue.settle(first, SyncOperationStatus.DONE)
+        queue.settle(first, SyncOperationStatus.APPLIED)
 
-        val unclosed = queue.unclosedOfPackage(PACK)
+        val unclosed = queue.unclosedOfPackages(listOf(PACK))
         assertEquals(listOf(second), unclosed.map { it.operation.id })
     }
 
     /**
-     * Строка с чужой версией payload не собирается в операцию и не роняет очередь: вызывающий
-     * переведёт её в `CONFLICT` (PLAN F4).
+     * Строка с чужой версией payload не собирается в операцию и не роняет очередь: работник
+     * её пропустит и назовёт (PLAN F4).
      */
     @Test
     fun operationWithForeignPayloadVersionReadsAsUnreadable() = runTest {
@@ -225,7 +287,7 @@ class SyncOperationDaoTest {
         )
 
         val stale = unreadable(first)
-        assertTrue(stale.reason, stale.reason.contains("версии"))
+        assertTrue(stale.reason.text, stale.reason.text.contains("версии"))
         assertEquals(1, queue.all().size)
     }
 
@@ -245,12 +307,12 @@ class SyncOperationDaoTest {
         val damaged = unreadable(first)
 
         assertEquals(first, damaged.id)
-        assertEquals(listOf(damaged), queue.all().mapNotNull { it.toDomain() as? StoredSyncOperation.Unreadable })
+        assertEquals(listOf(damaged), queue.all().mapNotNull { it.toDomain(VOCABULARY) as? StoredSyncOperation.Unreadable })
     }
 
     private suspend fun readable(id: Uuid): SyncOperation =
-        (requireNotNull(queue.find(id)).toDomain() as StoredSyncOperation.Readable).operation
+        (requireNotNull(queue.find(id)).toDomain(VOCABULARY) as StoredSyncOperation.Readable).operation
 
     private suspend fun unreadable(id: Uuid): StoredSyncOperation.Unreadable =
-        requireNotNull(queue.find(id)).toDomain() as StoredSyncOperation.Unreadable
+        requireNotNull(queue.find(id)).toDomain(VOCABULARY) as StoredSyncOperation.Unreadable
 }

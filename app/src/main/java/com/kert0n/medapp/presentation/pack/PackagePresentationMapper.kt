@@ -1,24 +1,26 @@
 package com.kert0n.medapp.presentation.pack
 
-import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.pack.PackageProjection
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.presentation.value.MoneyPresentationDTO
 import com.kert0n.medapp.presentation.value.QuantityPresentationDTO
+import com.kert0n.medapp.presentation.value.toPresentationDTO as toVocabularyPresentationDTO
 import java.time.Instant
 
 /**
- * Применяется до stateIn/distinctUntilChanged: после них изменения сущности уже потеряны.
+ * Строит состояние экрана из доменной проекции: как та собрана — из каких таблиц и с какой
+ * очередью, — представление не знает (PLAN H1).
  *
  * [syncedAt] приходит аргументом, а не из пачки: момент последней сверки принадлежит обвязке
  * синхронизации слоя данных, и домен его не хранит.
  */
-fun Package.toPresentationDTO(syncedAt: Instant? = null): PackagePresentationDTO =
+fun PackageProjection.toPresentationDTO(syncedAt: Instant? = null): PackagePresentationDTO =
     PackagePresentationDTO(
         id = id,
-        medKitId = medKitId,
+        medKitId = medKit.id,
         name = facts.name,
         quantity = quantity.toPresentationDTO(),
-        formId = facts.formId,
+        form = facts.form?.toVocabularyPresentationDTO(),
         category = facts.category,
         manufacturer = facts.manufacturer,
         country = facts.country,
@@ -41,9 +43,13 @@ fun Package.toPresentationDTO(syncedAt: Instant? = null): PackagePresentationDTO
         },
         lifecycle = lifecycle,
         access = access,
+        effective = availability.effective.toPresentationDTO(),
+        availableToMe = availability.availableToMe.toPresentationDTO(),
+        freeForAnyone = availability.freeForAnyone.toPresentationDTO(),
+        hasUnconfirmedChanges = hasUnconfirmedChanges,
         syncedAt = syncedAt
     )
 
 /** Строки нормализованы: 1 и 1.000000 дают одинаковое состояние экрана. */
 private fun Quantity.toPresentationDTO() =
-    QuantityPresentationDTO(amount.stripTrailingZeros().toPlainString(), unitId)
+    QuantityPresentationDTO(amount.stripTrailingZeros().toPlainString(), unit.toVocabularyPresentationDTO())

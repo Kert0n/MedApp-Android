@@ -14,6 +14,9 @@ import kotlin.uuid.Uuid
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import com.kert0n.medapp.fixture.VOCABULARY
+import com.kert0n.medapp.fixture.pack
+import com.kert0n.medapp.fixture.toStorageRow
 
 /**
  * Все шесть видов движения записываются одной таблицей и читаются обратно теми же самыми:
@@ -25,21 +28,25 @@ class StockMovementStorageMapperTest {
     private val occurred: Instant = Instant.EPOCH
     private val observed: Instant = LATER
 
+    private val paracetamol = pack(id = PACK)
+    private val home = medKit(id = HOME_KIT)
+    private val shared = medKit(id = SHARED_KIT, name = "Общая")
+
     private val everyKind: List<StockMovement> = listOf(
-        StockMovement.Receipt(id, PACK, tablets("20"), HOME_KIT, occurred, observed, "куплено"),
-        StockMovement.Recount(id, PACK, tablets("20"), tablets("18.5"), HOME_KIT, occurred, observed),
+        StockMovement.Receipt(id, paracetamol.ref, tablets("20"), home.ref, occurred, observed, "куплено"),
+        StockMovement.Recount(id, paracetamol.ref, tablets("20"), tablets("18.5"), home.ref, occurred, observed),
         StockMovement.Disposal(
-            id, PACK, tablets("3"), StockMovement.Disposal.Reason.EXPIRED, HOME_KIT, occurred, observed
+            id, paracetamol.ref, tablets("3"), StockMovement.Disposal.Reason.EXPIRED, home.ref, occurred, observed
         ),
-        StockMovement.Transfer(id, PACK, tablets("5"), HOME_KIT, SHARED_KIT, occurred, observed),
-        StockMovement.RemoteChange(id, PACK, BigDecimal("-2.5"), TABLETS, SHARED_KIT, observed),
-        StockMovement.AccessLoss(id, PACK, tablets("7"), SHARED_KIT, observed)
+        StockMovement.Transfer(id, paracetamol.ref, tablets("5"), home.ref, shared.ref, occurred, observed),
+        StockMovement.RemoteChange(id, paracetamol.ref, BigDecimal("-2.5"), TABLETS, shared.ref, observed),
+        StockMovement.AccessLoss(id, paracetamol.ref, tablets("7"), shared.ref, observed)
     )
 
     @Test
     fun everyKindSurvivesTheRoundTrip() {
         for (movement in everyKind) {
-            assertEquals(movement, movement.toStorageEntity().toDomain())
+            assertEquals(movement, movement.toStorageRow().toDomain(VOCABULARY))
         }
     }
 
@@ -61,9 +68,9 @@ class StockMovementStorageMapperTest {
         assertEquals(SHARED_KIT, stored.targetMedKitId)
         assertNull(stored.medKitId)
 
-        val restored = stored.toDomain()
-        assertEquals(BigDecimal("-5"), restored.deltaIn(medKit(id = HOME_KIT)))
-        assertEquals(BigDecimal("5"), restored.deltaIn(medKit(id = SHARED_KIT)))
+        val restored = transfer.toStorageRow().toDomain(VOCABULARY)
+        assertEquals(BigDecimal("-5"), restored.deltaIn(medKit(id = HOME_KIT).ref))
+        assertEquals(BigDecimal("5"), restored.deltaIn(medKit(id = SHARED_KIT).ref))
     }
 
     /** У чужого изменения и утраты доступа момента события нет: мы знаем только, когда узнали. */
@@ -85,6 +92,6 @@ class StockMovementStorageMapperTest {
         assertEquals("20", stored.beforeAmount)
         assertEquals("18.5", stored.afterAmount)
         assertNull(stored.delta)
-        assertEquals(BigDecimal("-1.5"), stored.toDomain().deltaIn(medKit(id = HOME_KIT)))
+        assertEquals(BigDecimal("-1.5"), recount.toStorageRow().toDomain(VOCABULARY).deltaIn(medKit(id = HOME_KIT).ref))
     }
 }

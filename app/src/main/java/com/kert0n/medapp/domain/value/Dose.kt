@@ -1,7 +1,5 @@
 package com.kert0n.medapp.domain.value
 
-import kotlin.uuid.Uuid
-
 /**
  * Доза — сколько лекарства принимают за раз. Величина, и нулём она не бывает: нулевая доза это не
  * лечение, а деление на ноль в обеспечении. Правило живёт на самой величине, поэтому его
@@ -17,7 +15,7 @@ value class Dose(val quantity: Quantity) {
         require(!quantity.isZero) { "доза не бывает нулевой" }
     }
 
-    val unitId: Uuid get() = quantity.unitId
+    val unit: QuantityUnit get() = quantity.unit
 
     /** Сколько это в единицах пачки: доза, взятая названное число раз. */
     operator fun times(doses: Doses): Quantity = quantity * doses

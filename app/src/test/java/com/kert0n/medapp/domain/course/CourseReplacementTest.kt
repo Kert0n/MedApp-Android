@@ -10,12 +10,12 @@ import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.course
 import com.kert0n.medapp.fixture.courseRecord
 import com.kert0n.medapp.fixture.dose
-import com.kert0n.medapp.fixture.doses
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.plannedIntake
 import com.kert0n.medapp.fixture.schedule
 import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
+import com.kert0n.medapp.domain.value.doses
 import java.math.BigDecimal
 import java.time.LocalTime
 import kotlin.uuid.Uuid
@@ -40,7 +40,7 @@ class CourseReplacementTest {
     private val oldRecord = courseRecord(startedAt = EARLIER)
 
     private val takenYesterday = plannedIntake(courseRevision = old.revision.number)
-        .confirm(pack(), dose("2"), EARLIER)
+        .confirm(pack().take(dose("2"), EARLIER).getOrThrow())
 
     private val plannedTomorrow = plannedIntake(
         id = Uuid.parse("00000000-0000-4000-8000-000000000071"),
@@ -53,12 +53,14 @@ class CourseReplacementTest {
         val replacement = course(
             id = newCourseId,
             title = oldRecord.title,
-            doseAmount = BigDecimal("3"),
+            dose = dose("3"),
+            form = TABLET_FORM,
+            totalDoses = 10,
             createdAt = LATER,
             updatedAt = LATER
         )
             .setSchedule(schedule(times = listOf(LocalTime.of(9, 0), LocalTime.of(21, 0))), LATER)
-            .attach(pack(id = PACK, formId = TABLET_FORM, quantity = tablets("20")), doses(5), LATER)
+            .attach(pack(id = PACK, form = TABLET_FORM, quantity = tablets("20")).ref, 5.doses, LATER)
             .getOrThrow()
             .activate(LATER)
             .getOrThrow()

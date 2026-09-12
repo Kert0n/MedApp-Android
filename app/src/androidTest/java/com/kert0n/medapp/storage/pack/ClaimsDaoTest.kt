@@ -16,6 +16,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
+import com.kert0n.medapp.fixture.VOCABULARY
 
 /**
  * Брони хранятся своей строкой и со своей версией: картину двигают чужие действия, а версия —
@@ -41,7 +42,7 @@ class ClaimsDaoTest {
 
     @Test
     fun packageWithoutClaimsRowKnowsNothingAboutThem() = runTest {
-        assertNull(requireNotNull(packages.find(PACK)).toDomain().claims)
+        assertNull(requireNotNull(packages.find(PACK)).toDomain(VOCABULARY).claims)
     }
 
     @Test
@@ -49,7 +50,7 @@ class ClaimsDaoTest {
         val claims = Claims(total = BigDecimal("7.5"), mine = BigDecimal("2.5"))
         packages.upsertClaims(claims.toStorageEntity(PACK))
 
-        val restored = requireNotNull(requireNotNull(packages.find(PACK)).toDomain().claims)
+        val restored = requireNotNull(requireNotNull(packages.find(PACK)).toDomain(VOCABULARY).claims)
         assertEquals(claims, restored)
         assertEquals(BigDecimal("5.0"), restored.reservedByOthers)
     }
@@ -57,7 +58,7 @@ class ClaimsDaoTest {
     @Test
     fun claimingNothingIsNotTheSameAsClaimingZero() = runTest {
         packages.upsertClaims(Claims(total = BigDecimal("4")).toStorageEntity(PACK))
-        assertNull(requireNotNull(requireNotNull(packages.find(PACK)).toDomain().claims).mine)
+        assertNull(requireNotNull(requireNotNull(packages.find(PACK)).toDomain(VOCABULARY).claims).mine)
     }
 
     /** Версия картины — предусловие: она едет в колонках пачки, а не в строке броней. */
@@ -82,7 +83,7 @@ class ClaimsDaoTest {
         packages.upsertServerPart(lost.toStorageEntity())
         packages.deleteClaims(PACK)
 
-        val restored = requireNotNull(packages.find(PACK)).toDomain()
+        val restored = requireNotNull(packages.find(PACK)).toDomain(VOCABULARY)
         assertNull(restored.claims)
         assertEquals(lost.access, restored.access)
     }

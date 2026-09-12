@@ -48,7 +48,7 @@ fun CourseMedicine.toSourceStorageEntities(courseId: Uuid): List<CourseSourceSto
     sources.mapIndexed { position, source ->
         CourseSourceStorageEntity(
             courseId = courseId,
-            packageId = source.packageId,
+            packageId = source.pkg.id,
             position = position,
             allocatedDoses = source.allocatedDoses.count
         )

@@ -35,7 +35,7 @@ class PackageStateTransitionsTest {
 
     @Test(expected = IllegalStateException::class)
     fun inaccessiblePackIsNotMoved() {
-        pack(access = Package.Access.LOST).moveTo(medKit(id = SHARED_KIT, name = "Общая"))
+        pack(access = Package.Access.LOST).moveTo(medKit(id = SHARED_KIT, name = "Общая").ref)
     }
 
     @Test
@@ -70,19 +70,19 @@ class PackageStateTransitionsTest {
         val moved = pack(quantity = tablets("20"))
         val described = moved.describe(factsOf(moved).withShared(name = "другое"))
         assertEquals(tablets("20"), described.quantity)
-        assertEquals(HOME_KIT, described.medKitId)
+        assertEquals(HOME_KIT, described.medKit.id)
     }
 
     @Test
     fun movingChangesOnlyTheKit() {
-        val moved = pack(claims = Claims(BigDecimal("5"))).moveTo(medKit(id = SHARED_KIT, name = "Общая"))
-        assertEquals(SHARED_KIT, moved.medKitId)
+        val moved = pack(claims = Claims(BigDecimal("5"))).moveTo(medKit(id = SHARED_KIT, name = "Общая").ref)
+        assertEquals(SHARED_KIT, moved.medKit.id)
         assertEquals(BigDecimal("5"), moved.claims?.total)
     }
 
     @Test(expected = IllegalArgumentException::class)
     fun movingIntoTheSameKitIsRefused() {
-        pack(medKitId = HOME_KIT).moveTo(medKit(id = HOME_KIT))
+        pack(medKit = medKit(id = HOME_KIT).ref).moveTo(medKit(id = HOME_KIT).ref)
     }
 
     @Test

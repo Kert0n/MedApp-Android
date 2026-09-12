@@ -7,10 +7,8 @@ import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.plannedIntake
 import com.kert0n.medapp.domain.intake.IntakeStatus
-import com.kert0n.medapp.network.intake.IntakeAccounting
-import com.kert0n.medapp.network.intake.IntakeSyncState
-import com.kert0n.medapp.network.pack.PackageSyncCommand
-import com.kert0n.medapp.storage.server.QueuedCommand
+import com.kert0n.medapp.queue.intake.IntakeAccounting
+import com.kert0n.medapp.queue.intake.IntakeSyncState
 import kotlin.uuid.Uuid
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -24,47 +22,35 @@ class IntakeOutcomeTest {
 
     private val operation: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000091")
 
-    private fun confirmed() = plannedIntake().confirm(pack(), dose("2"), LATER)
+    private fun confirmed() = plannedIntake().confirm(pack().take(dose("2"), LATER).getOrThrow())
 
-    private fun outcome(sync: IntakeSyncState, command: QueuedCommand? = null) = IntakeOutcome(
+    private fun outcome(sync: IntakeSyncState) = IntakeOutcome(
         intake = confirmed(),
         expected = setOf(IntakeStatus.PLANNED),
-        sync = sync,
-        command = command
+        sync = sync
     )
 
-    private fun consume() = QueuedCommand(operation, PackageSyncCommand.Consume(PACK, dose("2"), INTAKE))
-
+    /** Уехавший командой расход локальный остаток не трогает; локальный — трогает. */
     @Test
-    fun aPendingSpendIsQueuedTogetherWithTheIntake() {
-        val sync = IntakeSyncState(INTAKE, IntakeAccounting.PENDING, operationId = operation)
-        val queued = consume()
-
-        assertEquals(queued, outcome(sync, queued).command)
+    fun onlyALocallyAppliedSpendTouchesTheLocalAmount() {
+        assertEquals(false, outcome(IntakeSyncState(INTAKE, IntakeAccounting.PENDING, operationId = operation)).spendsLocally)
+        assertEquals(true, outcome(IntakeSyncState(INTAKE, IntakeAccounting.LOCAL_APPLIED)).spendsLocally)
     }
 
-    /** Иначе приём остался бы ожидающим расход, которого в очереди нет. */
+    /** Условный переход называет, откуда идёт, и не идёт в тот же статус. */
     @Test
-    fun aPendingSpendWithoutItsCommandIsRefused() {
-        val sync = IntakeSyncState(INTAKE, IntakeAccounting.PENDING, operationId = operation)
-
-        assertThrows(IllegalArgumentException::class.java) { outcome(sync) }
+    fun theTransitionNamesItsOriginAndIsNotATransitionToItself() {
+        assertThrows(IllegalArgumentException::class.java) {
+            IntakeOutcome(confirmed(), expected = emptySet(), sync = IntakeSyncState(INTAKE, IntakeAccounting.LOCAL_APPLIED))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            IntakeOutcome(confirmed(), expected = setOf(IntakeStatus.TAKEN), sync = IntakeSyncState(INTAKE, IntakeAccounting.LOCAL_APPLIED))
+        }
     }
 
-    /** Приём называет ту операцию, которая ставится вместе с ним, а не какую-то другую. */
+    /** Момент ответа — из домена, а не из часов хранения. */
     @Test
-    fun anIntakeNamingAnotherOperationIsRefused() {
-        val sync = IntakeSyncState(INTAKE, IntakeAccounting.PENDING, operationId = operation)
-        val other = QueuedCommand(Uuid.random(), PackageSyncCommand.Consume(PACK, dose("2"), INTAKE))
-
-        assertThrows(IllegalArgumentException::class.java) { outcome(sync, other) }
-    }
-
-    /** Локальный расход в очередь не едет: он уже записан вместе с фактом. */
-    @Test
-    fun aLocallyAppliedSpendNeedsNoCommand() {
-        val sync = IntakeSyncState(INTAKE, IntakeAccounting.LOCAL_APPLIED)
-
-        assertEquals(null, outcome(sync).command)
+    fun answeredAtComesFromTheAnswer() {
+        assertEquals(LATER, outcome(IntakeSyncState(INTAKE, IntakeAccounting.LOCAL_APPLIED)).answeredAt)
     }
 }

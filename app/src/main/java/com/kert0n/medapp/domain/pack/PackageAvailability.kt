@@ -12,6 +12,10 @@ import kotlin.uuid.Uuid
  * значение. Производные — геттеры, поэтому «свободно 5» при нулевом остатке не записать. Строится
  * из пачки: чужие брони берутся у её картины броней, моё выделение приносят курсы.
  *
+ * [effective] — число, которое считает очередь: подтверждённый остаток с незакрытыми командами
+ * поверх (E1). Число есть всегда: истина по количеству — сервер, а до ответа устройство знает
+ * то, что само отправило.
+ *
  * Допуск пачки к обеспечению [suppliesStock] едет сюда вместе с ней: последнее известное
  * количество утраченной или выброшенной пачки остаётся видимым, но доступным запасом она быть
  * перестаёт. Иначе снятие броней вместе с доступом делало бы «свободно» даже больше.
@@ -19,7 +23,7 @@ import kotlin.uuid.Uuid
 data class PackageAvailability(
     val packageId: Uuid,
     val expiresOn: ExpiryDate?,
-    val amount: EffectiveAmount,
+    val effective: Quantity,
     val reservedByOthers: Quantity,
     val myAllocation: Quantity,
     val suppliesStock: Boolean = true
@@ -27,47 +31,38 @@ data class PackageAvailability(
 
     constructor(
         pkg: Package,
-        amount: EffectiveAmount,
-        myAllocation: Quantity = Quantity.zero(pkg.quantity.unitId)
+        effective: Quantity,
+        myAllocation: Quantity = Quantity.zero(pkg.quantity.unit)
     ) : this(
         packageId = pkg.id,
         expiresOn = pkg.facts.expiresOn,
-        amount = amount,
-        reservedByOthers = pkg.claims?.let { Quantity(it.reservedByOthers, pkg.quantity.unitId) }
-            ?: Quantity.zero(pkg.quantity.unitId),
+        effective = effective,
+        reservedByOthers = pkg.claims?.let { Quantity(it.reservedByOthers, pkg.quantity.unit) }
+            ?: Quantity.zero(pkg.quantity.unit),
         myAllocation = myAllocation,
         suppliesStock = pkg.suppliesStock
     )
 
     init {
-        val unitId = reservedByOthers.unitId
-        require(myAllocation.unitId == unitId) { "выделение измеряется единицей пачки" }
-        require(amount !is EffectiveAmount.Known || amount.quantity.unitId == unitId) {
-            "оценка количества измеряется единицей пачки"
-        }
+        val unit = effective.unit
+        require(reservedByOthers.unit == unit) { "чужие брони измеряются единицей пачки" }
+        require(myAllocation.unit == unit) { "выделение измеряется единицей пачки" }
     }
-
-    /** `null` — количество неизвестно до сверки. */
-    val effective: Quantity? get() = amount.quantityOrNull
 
     /**
      * Сколько могу взять я: вычитается только чужое, свою бронь я заявил сам. Из пачки, которая
-     * запаса не обеспечивает, взять нельзя нисколько, и это известный ноль, а не «неизвестно»:
-     * утраченный доступ и неизвестный остаток требуют разных действий.
+     * запаса не обеспечивает, взять нельзя нисколько.
      */
-    val availableToMe: Quantity?
-        get() = when {
-            !suppliesStock -> Quantity.zero(reservedByOthers.unitId)
-            else -> effective?.minusOrZero(reservedByOthers)
-        }
+    val availableToMe: Quantity
+        get() =
+            if (suppliesStock) effective.minusOrZero(reservedByOthers)
+            else Quantity.zero(effective.unit)
 
     /**
      * Свободно любому: доступное мне без моего выделения. Считается не от суммы броней: моя
      * серверная бронь отстаёт от локального выделения на то, что ещё не уехало (D4).
      */
-    val freeForAnyone: Quantity? get() = availableToMe?.minusOrZero(myAllocation)
-
-    val requiresRecount: Boolean get() = amount == EffectiveAmount.Unknown
+    val freeForAnyone: Quantity get() = availableToMe.minusOrZero(myAllocation)
 
     /**
      * Что останется к концу [date] в зоне отчёта, если до этого момента из пачки уйдёт [spent].
@@ -83,7 +78,7 @@ data class PackageAvailability(
         date: LocalDate,
         reportZone: ZoneId,
         now: Instant,
-        spent: Quantity = Quantity.zero(reservedByOthers.unitId)
+        spent: Quantity = Quantity.zero(effective.unit)
     ): PackageForecast {
         // `atZone().toLocalDate()`: `LocalDate.ofInstant` требует API 34 при нижней границе 29.
         val todayThere = now.atZone(reportZone).toLocalDate()
@@ -94,10 +89,7 @@ data class PackageAvailability(
         return PackageForecast(
             packageId = packageId,
             at = date.plusDays(1).atStartOfDay(reportZone).toInstant(),
-            amount = when (val base = amount) {
-                EffectiveAmount.Unknown -> base
-                is EffectiveAmount.Known -> EffectiveAmount.Known(base.quantity.minusOrZero(spent))
-            },
+            remaining = effective.minusOrZero(spent),
             reservedByOthers = reservedByOthers,
             // Просрочка помечается на дату отчёта: к третьему месяцу годной пачка быть перестанет.
             expired = isExpiredOn(date)

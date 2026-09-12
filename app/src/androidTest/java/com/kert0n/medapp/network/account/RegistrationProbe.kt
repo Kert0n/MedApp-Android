@@ -3,6 +3,7 @@ package com.kert0n.medapp.network.account
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.test.platform.app.InstrumentationRegistry
 import com.kert0n.medapp.BuildConfig
+import com.kert0n.medapp.network.server.ApiFailure
 import com.kert0n.medapp.network.server.ApiResult
 import com.kert0n.medapp.network.server.MedAppApi
 import com.kert0n.medapp.network.server.medAppHttpClient
@@ -56,11 +57,19 @@ class RegistrationProbe {
             val registration = AccountRegistration(api, credentials, BuildConfig.REGISTRATION_TOKEN)
 
             assertEquals(AccountRegistration.Outcome.Ready, registration.ensure())
-            assertTrue("выданный ключ сохранён", credentials.read() is StoredAccount.Present)
+            val stored = credentials.read()
+            assertTrue("придуманная учётка сохранена и подтверждена", stored is StoredAccount.Present)
             assertEquals(AccountRegistration.Outcome.Ready, registration.ensure())
 
             val snapshot = api.snapshot()
             assertTrue("сохранённая учётка принята сервером: $snapshot", snapshot is ApiResult.Success)
+
+            // Потерянный ответ: повтор теми же данными второй учётки не заводит, а логин занят —
+            // нами, и это показывает пропуск по тем же данным (PLAN B1).
+            val account = (stored as StoredAccount.Present).credentials
+            val repeated = api.register(account, BuildConfig.REGISTRATION_TOKEN)
+            assertEquals(ApiResult.Failure(ApiFailure.Conflict), repeated)
+            assertTrue("учётка наша: пропуск выдан", api.token(account) is ApiResult.Success)
         } finally {
             scope.cancel()
             file.delete()

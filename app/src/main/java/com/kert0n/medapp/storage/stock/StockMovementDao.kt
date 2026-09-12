@@ -3,6 +3,7 @@ package com.kert0n.medapp.storage.stock
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Transaction
 import java.time.Instant
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.Flow
@@ -17,15 +18,18 @@ interface StockMovementDao {
     @Insert
     suspend fun insert(movement: StockMovementStorageEntity)
 
+    @Transaction
     @Query("SELECT * FROM stock_adjustments WHERE package_id = :packageId ORDER BY observed_at")
-    fun observeOfPackage(packageId: Uuid): Flow<List<StockMovementStorageEntity>>
+    fun observeOfPackage(packageId: Uuid): Flow<List<StockMovementStorageRow>>
 
+    @Transaction
     @Query(
         "SELECT * FROM stock_adjustments WHERE observed_at >= :from AND observed_at < :until " +
             "ORDER BY observed_at"
     )
-    suspend fun observedBetween(from: Instant, until: Instant): List<StockMovementStorageEntity>
+    suspend fun observedBetween(from: Instant, until: Instant): List<StockMovementStorageRow>
 
+    @Transaction
     @Query("SELECT * FROM stock_adjustments WHERE package_id = :packageId ORDER BY observed_at")
-    suspend fun ofPackage(packageId: Uuid): List<StockMovementStorageEntity>
+    suspend fun ofPackage(packageId: Uuid): List<StockMovementStorageRow>
 }

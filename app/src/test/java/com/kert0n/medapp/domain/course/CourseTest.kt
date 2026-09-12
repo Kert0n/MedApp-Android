@@ -3,7 +3,10 @@ package com.kert0n.medapp.domain.course
 import com.kert0n.medapp.domain.course.Revision
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.domain.value.doses
 import com.kert0n.medapp.fixture.COURSE
+import com.kert0n.medapp.fixture.OTHER_PACK
+import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.courseRecord
 import com.kert0n.medapp.fixture.LATER
@@ -11,14 +14,18 @@ import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.course
 import com.kert0n.medapp.fixture.dose
-import com.kert0n.medapp.fixture.doses
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.schedule
+import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
 import java.math.BigDecimal
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
+import com.kert0n.medapp.fixture.prescribedDraft
+import org.junit.Assert.assertTrue
+import com.kert0n.medapp.fixture.prescription
 
 /**
  * Курс начинается заметкой: черновик с одним названием — законное сохранённое состояние, а не
@@ -30,19 +37,18 @@ class CourseTest {
     fun draftWithNothingButATitleIsALegitimateCourse() {
         val draft = course()
         assertNull(draft.note)
-        assertNull(draft.doseAmount)
         assertNull(draft.dose)
+        assertNull(draft.form)
+        assertNull(draft.totalDoses)
     }
 
     @Test
-    fun doseIsAValueOnlyWhenTheUnitIsKnownToo() {
-        // Единицу фиксирует первый источник, дозу задаёт человек, и порядок бывает любым.
-        assertNull(course(doseAmount = BigDecimal("2")).dose)
-        assertNull(course(unitId = TABLETS).dose)
-        assertEquals(
-            Dose(Quantity(BigDecimal("2"), TABLETS)),
-            course(doseAmount = BigDecimal("2"), unitId = TABLETS).dose
-        )
+    fun doseIsAValueWithItsUnitFromTheVocabularyNotFromAPack() {
+        // Единицу человек выбирает из словаря вместе с числом: пачки для этого не нужно.
+        val dosed = course(dose = dose("2"))
+        assertEquals(Dose(Quantity(BigDecimal("2"), TABLETS)), dosed.dose)
+        assertEquals(TABLETS, dosed.unit)
+        assertTrue(dosed.medicine.isEmpty)
     }
 
     @Test
@@ -74,10 +80,20 @@ class CourseTest {
 
     @Test
     fun settingTheDraftDoseRaisesTheRevision() {
-        val dosed = course().setDose(BigDecimal("2"), at = LATER)
-        assertEquals(BigDecimal("2"), dosed.doseAmount)
+        val dosed = course().setDose(dose("2"), at = LATER).getOrThrow()
+        assertEquals(dose("2"), dosed.dose)
         assertEquals(Revision(1), dosed.revision)
         assertEquals(LATER, dosed.updatedAt)
+    }
+
+    @Test
+    fun settingTheDraftFormAndTotalRaisesTheRevision() {
+        val formed = course().setForm(TABLET_FORM, at = LATER).getOrThrow()
+        assertEquals(TABLET_FORM, formed.form)
+        assertEquals(Revision(1), formed.revision)
+        val counted = formed.setTotalDoses(10.doses, at = LATER)
+        assertEquals(10.doses, counted.totalDoses)
+        assertEquals(Revision(2), counted.revision)
     }
 
     @Test
@@ -93,10 +109,12 @@ class CourseTest {
     fun activationCarriesTheDoseAndScheduleOverUnchanged() {
         // Менять их после активации нечем: переходов `setDose` и `setSchedule` у назначенного
         // курса нет вовсе. Изменившееся лечение — отмена прежнего курса и новый (PLAN D5).
-        val draft = course(doseAmount = BigDecimal("2"), schedule = schedule())
-            .attach(pack(formId = TABLET_FORM), doses(1), LATER).getOrThrow()
+        val draft = prescribedDraft(schedule = schedule(), totalDoses = 7)
+            .attach(pack(form = TABLET_FORM).ref, 1.doses, LATER).getOrThrow()
         val started = draft.activate(LATER).getOrThrow()
         assertEquals(dose("2"), started.course.dose)
+        assertEquals(TABLET_FORM, started.course.form)
+        assertEquals(7.doses, started.course.totalDoses)
         assertEquals(schedule(), started.course.schedule)
         // Запись эпизода несёт то же назначение: расходиться им нечем — менять его нельзя.
         assertEquals(started.course.prescription, started.record.prescription)
@@ -104,7 +122,22 @@ class CourseTest {
 
     @Test(expected = IllegalArgumentException::class)
     fun zeroDoseIsNotTreatment() {
-        course(doseAmount = BigDecimal.ZERO)
+        course(dose = dose("0"))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun zeroTotalDosesIsNotTreatmentEither() {
+        // Правило живёт на назначении: собрать его с нулём доз нельзя ни одним путём.
+        prescription(totalDoses = 0)
+    }
+
+    @Test
+    fun draftWithZeroTotalDosesIsNotActivated() {
+        val zero = prescribedDraft(schedule = schedule(), totalDoses = 0)
+        assertEquals(
+            CourseRejected.Reason.TOTAL_DOSES_MISSING,
+            (zero.activate(LATER).exceptionOrNull() as CourseRejected).reason
+        )
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -116,7 +149,7 @@ class CourseTest {
 
     @Test(expected = IllegalArgumentException::class)
     fun negativeDoseIsRejected() {
-        course(doseAmount = BigDecimal("-1"))
+        course(dose = dose("-1"))
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -136,5 +169,17 @@ class CourseTest {
     @Test(expected = IllegalArgumentException::class)
     fun noteOverTheLimitIsRejected() {
         course(note = "я".repeat(CourseRecord.NOTE_MAX_LENGTH + 1))
+    }
+
+    /**
+     * Состав препарата знает курс: пункт курса принимают из его пачки, любая другая — внеплановый
+     * факт (PLAN D5). Спрашивают об этом курс, а не перебирают источники на стороне.
+     */
+    @Test
+    fun courseTellsItsOwnSourcesFromStrangers() {
+        val treatment = activeCourse(sources = listOf(source(PACK, 5)))
+
+        assertTrue(treatment.isSource(pack(id = PACK).ref))
+        assertFalse(treatment.isSource(pack(id = OTHER_PACK).ref))
     }
 }

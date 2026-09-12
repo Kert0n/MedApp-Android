@@ -27,7 +27,6 @@ import java.time.ZoneId
 import kotlin.uuid.Uuid
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -46,14 +45,12 @@ class PackageForecastTest {
         id: Uuid = PACK,
         quantity: String = "20",
         claims: Claims? = null,
-        known: Boolean = true,
         expiresOn: ExpiryDate? = null
     ) = packAvailability(
         id = id,
         quantity = tablets(quantity),
         claims = claims,
-        expiresOn = expiresOn,
-        known = known
+        expiresOn = expiresOn
     )
 
     private val course = activeCourse(schedule = week, sources = listOf(source(PACK, 7)))
@@ -88,8 +85,8 @@ class PackageForecastTest {
                 course.schedule.occurrences(from, until)
                     .count { Triple(course.id, it.localDate, it.localTime) !in answered }
             )
-            for ((packageId, amount) in course.spending(ahead, availability)) {
-                spent[packageId] = spent[packageId]?.plus(amount) ?: amount
+            for ((pkg, amount) in course.spending(ahead, availability)) {
+                spent[pkg.id] = spent[pkg.id]?.plus(amount) ?: amount
             }
         }
         return packages.map { it.forecastOn(date, reportZone, now, spent[it.packageId] ?: tablets("0")) }
@@ -108,7 +105,7 @@ class PackageForecastTest {
     fun anAnsweredIntakeEarlierTodayDoesNot() {
         // А отвеченный — исчезает: его расход уже в остатке либо его не было.
         val noon = today.atTime(12, 0).atZone(MOSCOW).toInstant()
-        val taken = plannedIntake().confirm(pack(), dose("2"), noon)
+        val taken = plannedIntake().confirm(pack().take(dose("2"), noon).getOrThrow())
         val forecast = remainingOn(date = today, now = noon, resolved = listOf(taken))
         assertEquals(tablets("20"), forecast.single().remaining)
     }
@@ -131,7 +128,7 @@ class PackageForecastTest {
     fun answeredIntakesAreNotCountedTwice() {
         // Расход подтверждённого приёма уже в остатке: вычесть его снова значило бы списать
         // вчерашнюю таблетку второй раз.
-        val taken = plannedIntake().confirm(pack(), dose("2"), LATER)
+        val taken = plannedIntake().confirm(pack().take(dose("2"), LATER).getOrThrow())
         val forecast = remainingOn(
             date = today.plusDays(2),
             packages = listOf(stockOf()),
@@ -142,13 +139,13 @@ class PackageForecastTest {
     }
 
     @Test
-    fun skippedIntakeSpendsNothing() {
-        val skipped = plannedIntake().skip(LATER)
+    fun missedIntakeSpendsNothing() {
+        val missed = plannedIntake().miss(LATER)
         val forecast = remainingOn(
             date = today.plusDays(2),
             packages = listOf(stockOf()),
             courses = listOf(course),
-            resolved = listOf(skipped)
+            resolved = listOf(missed)
         )
         assertEquals(tablets("16"), forecast.single().remaining)
     }
@@ -184,38 +181,6 @@ class PackageForecastTest {
     }
 
     @Test
-    fun unresolvedOperationLeavesNoInventedRemainder() {
-        // При требуемой сверке выдуманный остаток не рисуется: ноль и «неизвестно» — разные
-        // ответы (PLAN D4).
-        val forecast = remainingOn(
-            date = today.plusDays(2),
-            packages = listOf(stockOf(known = false)),
-            courses = listOf(course),
-            resolved = emptyList()
-        )
-        assertNull(forecast.single().remaining)
-        assertTrue(forecast.single().requiresRecount)
-        assertEquals(EffectiveAmount.Unknown, forecast.single().amount)
-    }
-
-    @Test
-    fun unknownPackIsNotSpentAndSpendingMovesToTheNext() {
-        // Первая пачка ждёт сверки: расход идёт со второй, а у первой прогноз остаётся неизвестным.
-        val twoSources = activeCourse(
-            schedule = week,
-            sources = listOf(source(PACK, 2), source(OTHER_PACK, 5))
-        )
-        val forecast = remainingOn(
-            date = today.plusDays(6),
-            packages = listOf(stockOf(known = false), stockOf(id = OTHER_PACK, quantity = "12")),
-            courses = listOf(twoSources),
-            resolved = emptyList()
-        )
-        assertEquals(EffectiveAmount.Unknown, forecast.first { it.packageId == PACK }.amount)
-        assertEquals(tablets("2"), forecast.first { it.packageId == OTHER_PACK }.remaining)
-    }
-
-    @Test
     fun reservedByOthersIsShownSeparatelyAndNotSubtracted() {
         // Таблетки физически лежат в пачке, просто заявлены другими людьми.
         val forecast = remainingOn(
@@ -246,19 +211,14 @@ class PackageForecastTest {
         // «только действующие» не нужен — отбирать не из чего.
         val forecast = remainingOn(date = today.plusDays(6), courses = emptyList())
         assertEquals(tablets("20"), forecast.single().remaining)
-        assertFalse(forecast.single().requiresRecount)
     }
 
     @Test
     fun forecastBeyondTheWindowIsStillCalculatedByTheCalendar() {
         // Годовой курс: третий месяц лежит далеко за окном материализации, и по строкам приёмов
         // ответ был бы завышен.
-        val year = schedule(
-            start = today,
-            endInclusive = today.plusDays(364),
-            times = listOf(LocalTime.of(9, 0))
-        )
-        val long = activeCourse(schedule = year, sources = listOf(source(PACK, 60)))
+        val year = schedule(start = today, times = listOf(LocalTime.of(9, 0)))
+        val long = activeCourse(schedule = year, totalDoses = 365, sources = listOf(source(PACK, 60)))
         val forecast = remainingOn(
             date = today.plusMonths(3),
             packages = listOf(stockOf(quantity = "200")),

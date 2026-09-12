@@ -1,8 +1,8 @@
 package com.kert0n.medapp.domain.pack
 
+import com.kert0n.medapp.domain.value.DosageForm
 import com.kert0n.medapp.domain.value.requireOptionalText
 import com.kert0n.medapp.domain.value.requireText
-import kotlin.uuid.Uuid
 
 /**
  * Та часть сведений об упаковке, что уезжает на сервер: описание препарата, а не этой коробки
@@ -10,7 +10,7 @@ import kotlin.uuid.Uuid
  */
 data class PackageSharedFacts(
     val name: String,
-    val formId: Uuid? = null,
+    val form: DosageForm? = null,
     val category: String? = null,
     val manufacturer: String? = null,
     val country: String? = null,

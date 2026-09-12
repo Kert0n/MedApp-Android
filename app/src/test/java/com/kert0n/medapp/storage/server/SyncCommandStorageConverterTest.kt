@@ -9,23 +9,29 @@ import com.kert0n.medapp.fixture.SHARED_KIT
 import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.tablets
-import com.kert0n.medapp.network.medkit.MedKitSyncCommand
-import com.kert0n.medapp.network.pack.PackageSyncCommand
-import com.kert0n.medapp.network.server.SyncCommand
+import com.kert0n.medapp.queue.medkit.MedKitSyncCommand
+import com.kert0n.medapp.queue.pack.PackageSyncCommand
+import com.kert0n.medapp.queue.SyncCommand
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.kert0n.medapp.fixture.VOCABULARY
+import com.kert0n.medapp.domain.value.Vocabulary
+import com.kert0n.medapp.fixture.MILLILITRES
+import com.kert0n.medapp.fixture.TABLETS
+import com.kert0n.medapp.fixture.millilitres
+import com.kert0n.medapp.network.value.VocabularyMiss
 
 /**
- * Круговой тест по **всем двенадцати** видам команд: исчерпывающего `when` по обоим корням
+ * Круговой тест по **всем одиннадцати** видам команд: исчерпывающего `when` по обоим корням
  * сразу у маркера нет, и закрытость набора держит именно этот перечень (PLAN E2, PR 4).
  */
 class SyncCommandStorageConverterTest {
 
     private val facts = PackageSharedFacts(
         name = "Парацетамол",
-        formId = TABLET_FORM,
+        form = TABLET_FORM,
         category = "Обезболивающие",
         manufacturer = "Завод",
         country = "Россия",
@@ -42,7 +48,6 @@ class SyncCommandStorageConverterTest {
         PackageSyncCommand.Consume(PACK, dose("1.5"), INTAKE, claimAfter = tablets("4")),
         PackageSyncCommand.SetClaim(PACK, tablets("6")),
         PackageSyncCommand.ReleaseClaim(PACK),
-        PackageSyncCommand.Reconcile(PACK, tablets("11"), throughSequence = 42),
         MedKitSyncCommand.Create(HOME_KIT),
         MedKitSyncCommand.Delete(HOME_KIT),
         MedKitSyncCommand.Delete(HOME_KIT, transferTo = SHARED_KIT),
@@ -52,7 +57,8 @@ class SyncCommandStorageConverterTest {
     private fun roundTrip(command: SyncCommand): SyncCommand? = SyncCommandStorageConverter.commandOf(
         kind = SyncCommandStorageConverter.kindOf(command),
         payload = SyncCommandStorageConverter.payloadOf(command),
-        payloadVersion = SyncCommandStorageConverter.PAYLOAD_VERSION
+        payloadVersion = SyncCommandStorageConverter.PAYLOAD_VERSION,
+        vocabulary = VOCABULARY
     )
 
     @Test
@@ -63,12 +69,12 @@ class SyncCommandStorageConverterTest {
     }
 
     @Test
-    fun twelveKindsAndNoMore() {
+    fun elevenKindsAndNoMore() {
         assertEquals(
             listOf(
                 "PACKAGE_CREATE", "PACKAGE_DESCRIBE", "PACKAGE_CORRECT_STOCK", "PACKAGE_MOVE",
                 "PACKAGE_DELETE", "PACKAGE_CONSUME", "PACKAGE_SET_CLAIM", "PACKAGE_RELEASE_CLAIM",
-                "PACKAGE_RECONCILE", "MEDKIT_CREATE", "MEDKIT_DELETE", "MEDKIT_LEAVE"
+                "MEDKIT_CREATE", "MEDKIT_DELETE", "MEDKIT_LEAVE"
             ),
             everyKind.map(SyncCommandStorageConverter::kindOf).distinct()
         )
@@ -95,7 +101,7 @@ class SyncCommandStorageConverterTest {
         val restored = roundTrip(command) as PackageSyncCommand.Describe
         assertEquals(facts, restored.before)
         assertNull(restored.after.category)
-        assertNull(restored.after.formId)
+        assertNull(restored.after.form)
     }
 
     @Test
@@ -117,7 +123,8 @@ class SyncCommandStorageConverterTest {
             SyncCommandStorageConverter.commandOf(
                 kind = SyncCommandStorageConverter.kindOf(command),
                 payload = SyncCommandStorageConverter.payloadOf(command),
-                payloadVersion = SyncCommandStorageConverter.PAYLOAD_VERSION + 1
+                payloadVersion = SyncCommandStorageConverter.PAYLOAD_VERSION + 1,
+                vocabulary = VOCABULARY
             )
         )
     }
@@ -129,7 +136,8 @@ class SyncCommandStorageConverterTest {
             SyncCommandStorageConverter.commandOf(
                 "PACKAGE_EXPLODE",
                 "{}",
-                SyncCommandStorageConverter.PAYLOAD_VERSION
+                SyncCommandStorageConverter.PAYLOAD_VERSION,
+                VOCABULARY
             )
         )
     }
@@ -144,11 +152,27 @@ class SyncCommandStorageConverterTest {
 
         for (payload in listOf("не json", "{}")) {
             val refusal = runCatching {
-                SyncCommandStorageConverter.commandOf("PACKAGE_DELETE", payload, version)
+                SyncCommandStorageConverter.commandOf("PACKAGE_DELETE", payload, version, VOCABULARY)
             }.exceptionOrNull()
 
             assertTrue("$payload: $refusal", refusal is IllegalArgumentException)
             assertTrue("$payload: $refusal", refusal?.message?.contains("PACKAGE_DELETE") == true)
         }
+    }
+
+    /** Единица вне снимка — промах словаря, а не порча payload: он лечится чтением, а не человеком. */
+    @Test
+    fun aUnitMissingFromTheSnapshotIsAVocabularyMissNotAFormatError() {
+        val command = PackageSyncCommand.CorrectStock(PACK, millilitres("10"))
+        val refusal = runCatching {
+            SyncCommandStorageConverter.commandOf(
+                kind = SyncCommandStorageConverter.kindOf(command),
+                payload = SyncCommandStorageConverter.payloadOf(command),
+                payloadVersion = SyncCommandStorageConverter.PAYLOAD_VERSION,
+                vocabulary = Vocabulary(listOf(TABLETS), emptyList())
+            )
+        }.exceptionOrNull()
+        assertTrue("$refusal", refusal is VocabularyMiss)
+        assertEquals(MILLILITRES.id, (refusal as VocabularyMiss).id)
     }
 }

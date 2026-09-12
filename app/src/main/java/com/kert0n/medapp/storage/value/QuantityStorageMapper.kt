@@ -2,8 +2,8 @@ package com.kert0n.medapp.storage.value
 
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.domain.value.QuantityUnit
 import java.math.BigDecimal
-import kotlin.uuid.Uuid
 
 /**
  * Количество хранится десятичной строкой и единицей в отдельной колонке: `REAL` потерял бы
@@ -23,7 +23,7 @@ fun Quantity.toStorageSortKey(): String {
         fixed.substring(point)
 }
 
-fun storedQuantity(amount: String, unitId: Uuid): Quantity =
-    Quantity(BigDecimal(amount), unitId)
+/** Единица приходит объектом: колонка держит её идентификатор, а объект даёт снимок словаря. */
+fun storedQuantity(amount: String, unit: QuantityUnit): Quantity = Quantity(BigDecimal(amount), unit)
 
-fun storedDose(amount: String, unitId: Uuid): Dose = Dose(storedQuantity(amount, unitId))
+fun storedDose(amount: String, unit: QuantityUnit): Dose = Dose(storedQuantity(amount, unit))

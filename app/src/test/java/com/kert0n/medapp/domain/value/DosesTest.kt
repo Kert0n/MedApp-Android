@@ -1,6 +1,5 @@
 package com.kert0n.medapp.domain.value
 
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -20,33 +19,36 @@ class DosesTest {
     fun subtractionThrowsWhenThereIsNotEnough() {
         // Как у количества: «обеспечено больше, чем нужно» — ошибка расчёта, и показывать её
         // нулём значило бы её спрятать.
-        assertThrows(IllegalArgumentException::class.java) { Doses(3) - Doses(4) }
+        assertThrows(IllegalArgumentException::class.java) { 3.doses - 4.doses }
     }
 
     @Test
     fun clampedSubtractionIsAskedForByName() {
-        assertEquals(Doses.none, Doses(3).minusOrNone(Doses(4)))
-        assertEquals(Doses(1), Doses(4).minusOrNone(Doses(3)))
+        assertTrue(3.doses.minusOrNone(4.doses) == 0.doses)
+        assertTrue(4.doses.minusOrNone(3.doses) == 1.doses)
     }
 
     @Test
     fun dosesAddUpAndCompare() {
-        assertEquals(Doses(9), Doses(5) + Doses(4))
-        assertEquals(Doses(4), minOf(Doses(5), Doses(4)))
-        assertTrue(Doses.none.isNone)
-        assertTrue(Doses.one > Doses.none)
+        assertTrue(5.doses + 4.doses == 9.doses)
+        assertTrue(3.doses - 1.doses == 2.doses)
+        assertTrue(minOf(5.doses, 4.doses) == 4.doses)
+        assertTrue(1.doses > 0.doses)
+        assertTrue(0.doses.isNone)
     }
 
     @Test
     fun wholeDosesOnlyBecauseADoseIsNotSplitBetweenPacks() {
         // По одной таблетке в двух пачках при дозе в две таблетки дают ноль доз, а не одну.
-        val unitId = TABLETS_FOR_TEST
-        val dose = Dose(Quantity(java.math.BigDecimal("2"), unitId))
-        assertEquals(Doses.none, Quantity(java.math.BigDecimal("1"), unitId).dosesIn(dose))
-        assertEquals(Doses(3), Quantity(java.math.BigDecimal("7"), unitId).dosesIn(dose))
+        val unit = TABLETS_FOR_TEST
+        val dose = Dose(Quantity(java.math.BigDecimal("2"), unit))
+        assertTrue(Quantity(java.math.BigDecimal("1"), unit).dosesIn(dose) == 0.doses)
+        assertTrue(Quantity(java.math.BigDecimal("7"), unit).dosesIn(dose) == 3.doses)
     }
 
     private companion object {
-        val TABLETS_FOR_TEST = kotlin.uuid.Uuid.parse("00000000-0000-4000-8000-000000000001")
+        val TABLETS_FOR_TEST = com.kert0n.medapp.domain.value.QuantityUnit(
+            kotlin.uuid.Uuid.parse("00000000-0000-4000-8000-000000000001"), "таблетка"
+        )
     }
 }
