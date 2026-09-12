@@ -53,6 +53,8 @@ class ContractProbe {
         override suspend fun read(): StoredAccount = StoredAccount.Present(account)
         override suspend fun save(credentials: AccountCredentials): CredentialsSaved =
             error("проба учёток не заводит: они заведены один раз и лежат в local.properties")
+
+        override suspend fun confirm(): CredentialsSaved = CredentialsSaved.SAVED
     }
 
     companion object {
@@ -162,12 +164,15 @@ class ContractProbe {
 
     @Test
     fun foreignRegistrationTokenIsRefusedWithoutAnAccount() = runBlocking {
-        assertEquals(ApiFailure.RegistrationRefused, failure(anonymous.register("not-the-build-token")))
+        // Токен сборки проверяется первым: придуманные данные до учётки не доходят.
+        val invented = AccountCredentials.random()
+        assertEquals(ApiFailure.RegistrationRefused, failure(anonymous.register(invented, "not-the-build-token")))
+        assertEquals(ApiFailure.Unauthorized, failure(anonymous.token(invented)))
     }
 
     @Test
-    fun wrongKeyIsNotAccepted() = runBlocking {
-        val wrong = AccountCredentials(ownerAccount.login, "not-the-key")
+    fun wrongPasswordIsNotAccepted() = runBlocking {
+        val wrong = AccountCredentials(ownerAccount.login, "not-the-password")
         assertEquals(ApiFailure.Unauthorized, failure(anonymous.token(wrong)))
     }
 

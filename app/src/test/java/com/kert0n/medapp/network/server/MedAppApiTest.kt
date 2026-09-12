@@ -51,7 +51,7 @@ class MedAppApiTest {
 
     /** Ответ сервера на «МЕТОД путь». */
     private val routes = mapOf(
-        "POST /v1/auth/register" to (HttpStatusCode.OK to """{"login":"$kit","key":"k"}"""),
+        "POST /v1/auth/register" to (HttpStatusCode.Created to ""),
         "POST /v1/auth/token" to (HttpStatusCode.OK to """{"accessToken":"t"}"""),
         "GET /v1/users/me" to (HttpStatusCode.OK to """{"id":"$kit","medKits":[$medKit]}"""),
         "GET /v1/med-kits" to (HttpStatusCode.OK to """[{"id":"$kit","userCount":1,"drugIds":["$pack"]}]"""),
@@ -116,7 +116,7 @@ class MedAppApiTest {
         val newPack = PackagePostNetworkDTO(pack, "Аспирин", "10", unit, null, null, null, null, null)
 
         listOf(
-            api.register("registration"),
+            api.register(AccountCredentials.random(), "registration"),
             api.token(account),
             api.snapshot(),
             api.medKits(),
@@ -185,19 +185,36 @@ class MedAppApiTest {
     }
 
     @Test
-    fun registrationCarriesTheBuildToken() = runTest {
+    fun registrationCarriesTheBuildTokenAndTheInventedCredentials() = runTest {
         var header: String? = null
+        var body: String? = null
+        val account = AccountCredentials.random()
         MedAppApi(
             medAppHttpClient(
                 MockEngine { request ->
                     header = request.headers[REGISTRATION_TOKEN_HEADER]
-                    respond("""{"login":"$kit","key":"k"}""", HttpStatusCode.OK, json)
+                    body = (request.body as TextContent).text
+                    respond("", HttpStatusCode.Created, json)
                 },
                 "https://medapp.test"
             )
-        ).register("registration-token")
+        ).register(account, "registration-token")
 
         assertEquals("registration-token", header)
+        assertTrue("логин уехал: $body", body!!.contains("${account.login}"))
+        assertTrue("пароль уехал", body!!.contains(account.password))
+    }
+
+    /**
+     * Сервер, который на регистрацию отвечает старым `200` с выданной учёткой, обещанного `201` не
+     * дал: исход команды неизвестен, и учётка не считается заведённой (PLAN B5).
+     */
+    @Test
+    fun theOldRegistrationAnswerIsNotAcceptedAsSuccess() = runTest {
+        val outcome = always(HttpStatusCode.OK, """{"login":"$kit","key":"k"}""")
+            .register(AccountCredentials.random(), "registration-token")
+
+        assertEquals(ApiResult.Failure(ApiFailure.OutcomeUnknown), outcome)
     }
 
     /** Пачка кончилась и уничтожена: сервер отвечает 200 и нулём байтов. */
@@ -311,6 +328,7 @@ class MedAppApiTest {
             override suspend fun read(): StoredAccount =
                 StoredAccount.Present(AccountCredentials(kit, "k"))
             override suspend fun save(credentials: AccountCredentials) = CredentialsSaved.SAVED
+            override suspend fun confirm() = CredentialsSaved.SAVED
         }
         val result = api(tokens = AccessTokens(stored)) { line ->
             if (line == "POST /v1/auth/token") HttpStatusCode.ServiceUnavailable to "" else routes[line]

@@ -49,13 +49,18 @@ class MedAppAuthTest {
 
     private val account = AccountCredentials(
         login = Uuid.parse("00000000-0000-4000-8000-000000000071"),
-        key = "k3y"
+        password = "k3y"
     )
 
     private class Stored(var account: StoredAccount) : CredentialSource {
         override suspend fun read(): StoredAccount = account
         override suspend fun save(credentials: AccountCredentials): CredentialsSaved {
-            account = StoredAccount.Present(credentials)
+            account = StoredAccount.Pending(credentials)
+            return CredentialsSaved.SAVED
+        }
+
+        override suspend fun confirm(): CredentialsSaved {
+            (account as? StoredAccount.Pending)?.let { account = StoredAccount.Present(it.credentials) }
             return CredentialsSaved.SAVED
         }
     }
@@ -88,7 +93,7 @@ class MedAppAuthTest {
         if (request.url.encodedPath == "/v1/auth/token") {
             val number = tokenCalls.incrementAndGet()
             val basic = "Basic " + Base64.getEncoder()
-                .encodeToString("${account.login}:${account.key}".toByteArray())
+                .encodeToString("${account.login}:${account.password}".toByteArray())
             assertEquals(basic, authorization)
             return if (tokenStatus == HttpStatusCode.OK) {
                 respond("""{"accessToken":"t$number"}""", HttpStatusCode.OK, json)

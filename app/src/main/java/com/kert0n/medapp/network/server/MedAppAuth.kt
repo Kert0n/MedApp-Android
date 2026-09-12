@@ -48,7 +48,7 @@ val MedAppAuth = createClientPlugin("MedAppAuth", ::MedAppAuthConfig) {
 
     suspend fun issue(account: AccountCredentials): AccessTokenIssue {
         val response = try {
-            http.post(TOKEN_PATH) { basicAuth(account.login.toString(), account.key) }
+            http.post(TOKEN_PATH) { basicAuth(account.login.toString(), account.password) }
         } catch (cause: CancellationException) {
             throw cause
         } catch (_: Exception) {

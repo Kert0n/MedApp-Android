@@ -10,13 +10,14 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * Первичная регистрация устройства (PLAN B1, G2). Учётку заводят, только если её нет, и ключ
- * сохраняют сразу же: сервер показывает его один раз. Нечитаемую учётку поверх не
- * перерегистрируют — это решение человека, потому что брони на старом ключе уже не снять.
+ * Первичная настройка устройства (PLAN B1, G2): учётные данные **придумывает устройство**,
+ * записывает их и только потом просит сервер их запомнить. Порядок именно такой: пока данных нет
+ * на устройстве, отправлять нечего, а потерянный ответ безопасен — повтор идёт теми же данными, и
+ * сервер отвечает «такая уже есть». Своя ли это учётка, показывает пропуск по тем же данным.
  *
- * Регистрация одна на всех вызывающих: два экрана, спросившие одновременно, не заведут двух
- * учёток. Ключ, который не удалось записать, тоже не приводит ко второй: [Outcome.KeyLost]
- * запоминается, и хранилище, снова показывающее «учётки нет», регистрацию не запускает.
+ * Нечитаемую учётку поверх не перерегистрируют — это решение человека, потому что брони на старой
+ * уже не снять. Регистрация одна на всех вызывающих: два экрана, спросившие одновременно, не
+ * заведут двух учёток.
  */
 @Singleton
 class AccountRegistration @Inject constructor(
@@ -27,48 +28,67 @@ class AccountRegistration @Inject constructor(
 
     sealed interface Outcome {
 
-        /** Учётка есть — только что заведена или уже была. */
+        /** Учётка есть и сервер её знает — только что записана или уже была. */
         data object Ready : Outcome
 
         /** Сохранённое не открывается: спросить человека, а не заводить новую молча. */
         data object Unreadable : Outcome
 
         /**
-         * Сервер учётку выдал, а записать её не удалось: ключ показан один раз, и он утрачен
-         * вместе с учёткой. Спрашивают человека — второй учётки поверх не заводят.
+         * Придуманные данные не легли на устройство. На сервере при этом ничего не заведено:
+         * терять нечего, и повторить настройку можно.
          */
-        data object KeyLost : Outcome
+        data object NotStored : Outcome
 
-        /**
-         * Сервер учётку не выдал. После [ApiFailure.OutcomeUnknown] повтор может оставить на
-         * сервере лишнюю пустую учётку — данных на ней нет, и потерять нечего.
-         */
+        /** Сервер учётку не принял: ввод, токен сборки, отсутствие связи или неизвестный исход. */
         data class Failed(val failure: ApiFailure) : Outcome
     }
 
     private val mutex = Mutex()
 
-    /** Ключ, который не лёг на устройство. Повторная регистрация поверх него не запускается. */
-    private var keyLost = false
-
     suspend fun ensure(): Outcome = mutex.withLock {
-        if (keyLost) return@withLock Outcome.KeyLost
-        when (credentials.read()) {
+        when (val stored = credentials.read()) {
             is StoredAccount.Present -> Outcome.Ready
             StoredAccount.Unreadable -> Outcome.Unreadable
-            StoredAccount.Absent -> when (val result = api.register(registrationToken)) {
-                is ApiResult.Success -> keep(AccountCredentials(result.value.login, result.value.key))
-                is ApiResult.Failure -> Outcome.Failed(result.failure)
+            // Записаны, но сервер о них не сказал: повтор идёт теми же данными.
+            is StoredAccount.Pending -> register(stored.credentials)
+            StoredAccount.Absent -> {
+                val invented = AccountCredentials.random()
+                when (credentials.save(invented)) {
+                    CredentialsSaved.SAVED -> register(invented)
+                    CredentialsSaved.LOST -> Outcome.NotStored
+                }
             }
         }
     }
 
-    private suspend fun keep(account: AccountCredentials): Outcome =
-        when (credentials.save(account)) {
-            CredentialsSaved.SAVED -> Outcome.Ready
-            CredentialsSaved.LOST -> {
-                keyLost = true
-                Outcome.KeyLost
-            }
+    private suspend fun register(account: AccountCredentials): Outcome =
+        when (val registered = api.register(account, registrationToken)) {
+            is ApiResult.Success -> confirmed()
+            is ApiResult.Failure ->
+                if (registered.failure == ApiFailure.Conflict) ours(account)
+                else Outcome.Failed(registered.failure)
         }
+
+    /**
+     * Логин занят: наш ли. Пропуск по тем же данным выдан — учётка наша и запись подтверждается;
+     * учётные данные не приняты — логин чужой, и это отказ, а не повод придумывать новые поверх.
+     * Прочие отказы говорят не о принадлежности, а о связи, и повторяются позже.
+     */
+    private suspend fun ours(account: AccountCredentials): Outcome =
+        when (val issued = api.token(account)) {
+            is ApiResult.Success -> confirmed()
+            is ApiResult.Failure ->
+                if (issued.failure == ApiFailure.Unauthorized) Outcome.Failed(ApiFailure.Conflict)
+                else Outcome.Failed(issued.failure)
+        }
+
+    /**
+     * Подтверждение — тоже запись, и она может не лечь. Учётка при этом рабочая: следующая
+     * настройка повторит регистрацию теми же данными и получит `409`, а не заведёт вторую.
+     */
+    private suspend fun confirmed(): Outcome {
+        credentials.confirm()
+        return Outcome.Ready
+    }
 }

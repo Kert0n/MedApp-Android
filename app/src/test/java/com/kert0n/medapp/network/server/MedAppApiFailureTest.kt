@@ -82,7 +82,7 @@ class MedAppApiFailureTest {
     fun forbiddenRegistrationIsAConfigurationErrorNotANewAccount() = runTest {
         assertEquals(
             ApiFailure.RegistrationRefused,
-            failureOf(api(HttpStatusCode.Forbidden).register("wrong-token"))
+            failureOf(api(HttpStatusCode.Forbidden).register(AccountCredentials.random(), "wrong-token"))
         )
     }
 
