@@ -9,6 +9,9 @@ class CourseRejected(val reason: Reason) : IllegalStateException(reason.name) {
     /** Причины различаются, потому что ведут человека к разным действиям. */
     enum class Reason {
 
+        /** Коробка помечена — её выбрасывают или из её полки ушли: источником она не бывает. */
+        PACKAGE_UNUSABLE,
+
         /** Пачка уже в препарате курса. */
         ALREADY_ATTACHED,
 

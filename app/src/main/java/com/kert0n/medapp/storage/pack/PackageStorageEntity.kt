@@ -7,6 +7,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
+import com.kert0n.medapp.domain.pack.PackageStatus
 import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.network.server.ResourceVersion
@@ -84,7 +85,9 @@ class PackageStorageEntity(
     val description: String? = null,
     val version: Long? = null,
     @ColumnInfo(name = "claims_version") val claimsVersion: Long? = null,
-    @ColumnInfo(name = "synced_at") val syncedAt: Instant? = null
+    @ColumnInfo(name = "synced_at") val syncedAt: Instant? = null,
+    /** Неподтверждённое решение о коробке; снимок сервера его не переписывает (PLAN E1). */
+    val status: PackageStatus = PackageStatus.ACTIVE
 ) {
     /** Аптечка пачки, прочитанная связью: её нет — строка пачки повреждена, ключ это держит (F2). */
     fun medKitRow(read: MedKitStorageEntity?): MedKitStorageEntity =
@@ -124,6 +127,7 @@ fun Package.toStorageEntity(sync: PackageSyncState = PackageSyncState(id)): Pack
         description = facts.description,
         version = sync.version?.number,
         claimsVersion = sync.claimsVersion?.number,
-        syncedAt = sync.syncedAt
+        syncedAt = sync.syncedAt,
+        status = status
     )
 }

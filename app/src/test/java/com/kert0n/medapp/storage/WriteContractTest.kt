@@ -61,7 +61,6 @@ class WriteContractTest {
         "PackageStorageRepository.observe" to Shape.READ,
         "PackageStorageRepository.find" to Shape.READ,
         "PackageStorageRepository.list" to Shape.READ,
-        "PackageStorageRepository.pendingOf" to Shape.READ,
         "PackageStorageRepository.contentsOf" to Shape.READ,
         "PackageStorageRepository.observeSyncState" to Shape.READ,
         "PackageStorageRepository.add" to Shape.CREATION,

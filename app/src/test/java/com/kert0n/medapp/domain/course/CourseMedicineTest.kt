@@ -34,6 +34,13 @@ class CourseMedicineTest {
     private fun draftWithDose() = prescribedDraft()
 
     @Test
+    fun aBoxMarkedToGoIsNotAttached() {
+        // Помеченной к уходу коробкой не пользуются — и лечение на неё не опирается (PLAN E1).
+        val attached = draftWithDose().attach(home.markRemoving(), doses = 5.doses, at = LATER)
+        assertEquals(CourseRejected.Reason.PACKAGE_UNUSABLE, attached.rejection())
+    }
+
+    @Test
     fun attachedSourceGoesLastInTheStack() {
         // Порядок — приоритет расходования, и новая пачка встаёт после уже подключённых:
         // допить начатую и перейти к следующей — обычное намерение.

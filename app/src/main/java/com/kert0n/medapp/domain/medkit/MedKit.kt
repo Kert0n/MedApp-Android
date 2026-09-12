@@ -16,7 +16,8 @@ class MedKit(
     val location: String?,          // ≤300, место хранения; только на устройстве
     val publication: Publication,
     val participantCount: Long,     // 1 у локальной, иначе userCount с сервера
-    val createdAt: Instant
+    val createdAt: Instant,
+    val status: MedKitStatus = MedKitStatus.ACTIVE
 ) {
 
     init {
@@ -49,7 +50,8 @@ class MedKit(
         participantCount = participantCount,
         createdAt = createdAt,
         isShared = isShared,
-        acceptsInvitations = acceptsInvitations
+        acceptsInvitations = acceptsInvitations,
+        status = status
     )
 
     /**
@@ -70,18 +72,51 @@ class MedKit(
             location = location,
             publication = Publication.PUBLISHED,
             participantCount = participantCount,
-            createdAt = createdAt
+            createdAt = createdAt,
+            status = status
         )
     }
 
-    /** Меняет личные сведения, сохраняя тождество и состояние публикации аптечки. */
-    fun describe(name: String, location: String?): MedKit = MedKit(
+    /** Меняет личные сведения, сохраняя тождество, публикацию и пометку аптечки. */
+    fun describe(name: String, location: String?): MedKit {
+        check(status.allowsUse) { "аптечка помечена ($status): её не правят до ответа полки" }
+        return changed(name = name, location = location)
+    }
+
+    /**
+     * Публикация стоит в очереди. Одно решение об аптечке за раз: помеченную второй раз не
+     * публикуют и не убирают (PLAN E5).
+     */
+    fun markPublishing(): MedKit {
+        check(publication == Publication.LOCAL) { "аптечка уже на сервере" }
+        check(status.allowsDecision) { "об аптечке уже принято решение: $status" }
+        return changed(status = MedKitStatus.PUBLISHING)
+    }
+
+    /**
+     * Человек убирает аптечку из своего списка — вынося содержимое, выбрасывая его или оставляя
+     * остальным. До ответа аптечка видна, но выведена из оборота (PLAN E6).
+     */
+    fun markRemoving(): MedKit {
+        check(status.allowsDecision) { "об аптечке уже принято решение: $status" }
+        return changed(status = MedKitStatus.REMOVING)
+    }
+
+    /** Полка ответила, а решать больше нечего: пометка снимается. */
+    fun settled(): MedKit = changed(status = MedKitStatus.ACTIVE)
+
+    private fun changed(
+        name: String = this.name,
+        location: String? = this.location,
+        status: MedKitStatus = this.status
+    ): MedKit = MedKit(
         id = id,
         name = name,
         location = location,
         publication = publication,
         participantCount = participantCount,
-        createdAt = createdAt
+        createdAt = createdAt,
+        status = status
     )
 
     /** Тождество — [id]: переименованная аптечка остаётся той же аптечкой. */

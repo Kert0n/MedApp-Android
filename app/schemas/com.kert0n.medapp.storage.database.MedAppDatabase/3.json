@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 3,
-    "identityHash": "534341d51d6ef37a3e1f00293adca9de",
+    "identityHash": "040dfb9e5bdac9b8cd853b485dd137bc",
     "entities": [
       {
         "tableName": "quantity_units",
@@ -54,7 +54,7 @@
       },
       {
         "tableName": "med_kits",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `location` TEXT, `publication` TEXT NOT NULL, `participant_count` INTEGER NOT NULL, `created_at` INTEGER NOT NULL, `synced_at` INTEGER, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `location` TEXT, `publication` TEXT NOT NULL, `participant_count` INTEGER NOT NULL, `created_at` INTEGER NOT NULL, `synced_at` INTEGER, `status` TEXT NOT NULL DEFAULT 'ACTIVE', PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -95,6 +95,13 @@
             "fieldPath": "syncedAt",
             "columnName": "synced_at",
             "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'ACTIVE'"
           }
         ],
         "primaryKey": {
@@ -191,7 +198,7 @@
       },
       {
         "tableName": "packages",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `med_kit_id` TEXT NOT NULL, `name` TEXT NOT NULL, `name_search` TEXT NOT NULL, `quantity` TEXT NOT NULL, `quantity_sort` TEXT NOT NULL, `quantity_unit_id` TEXT NOT NULL, `form_id` TEXT, `category` TEXT, `manufacturer` TEXT, `country` TEXT, `description` TEXT, `version` INTEGER, `claims_version` INTEGER, `synced_at` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`id`) REFERENCES `package_records`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`med_kit_id`) REFERENCES `med_kits`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`quantity_unit_id`) REFERENCES `quantity_units`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`form_id`) REFERENCES `form_types`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `med_kit_id` TEXT NOT NULL, `name` TEXT NOT NULL, `name_search` TEXT NOT NULL, `quantity` TEXT NOT NULL, `quantity_sort` TEXT NOT NULL, `quantity_unit_id` TEXT NOT NULL, `form_id` TEXT, `category` TEXT, `manufacturer` TEXT, `country` TEXT, `description` TEXT, `version` INTEGER, `claims_version` INTEGER, `synced_at` INTEGER, `status` TEXT NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`id`) REFERENCES `package_records`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`med_kit_id`) REFERENCES `med_kits`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`quantity_unit_id`) REFERENCES `quantity_units`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`form_id`) REFERENCES `form_types`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
         "fields": [
           {
             "fieldPath": "id",
@@ -274,6 +281,12 @@
             "fieldPath": "syncedAt",
             "columnName": "synced_at",
             "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
           }
         ],
         "primaryKey": {
@@ -1400,7 +1413,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '534341d51d6ef37a3e1f00293adca9de')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '040dfb9e5bdac9b8cd853b485dd137bc')"
     ]
   }
 }

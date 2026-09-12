@@ -102,7 +102,9 @@ abstract class MedAppDatabase : RoomDatabase() {
          * - приёмы и движения держатся за запись (`RESTRICT`); части живой коробки — сведения и
          *   брони — уходят вместе с ней (`CASCADE`), а связи с лечением снимает домен, и схема их
          *   держит (`RESTRICT`): состав курса не меняется мимо самого курса;
-         * - движение стало записью о пачке: колонок аптечек нет, переносов как вида нет (D7).
+         * - движение стало записью о пачке: колонок аптечек нет, переносов как вида нет (D7);
+         * - у коробки и аптечки появился статус — неподтверждённое решение о них (E1, E6). До версии
+         *   3 решений в пути не было, поэтому все переезжают обычными.
          *
          * Ни убрать колонку с внешним ключом, ни поменять его поведение SQLite не умеет, поэтому
          * каждая задетая таблица пересоздаётся и переливается; части переливаются только у
@@ -110,6 +112,10 @@ abstract class MedAppDatabase : RoomDatabase() {
          */
         val MIGRATION_2_3: Migration = object : Migration(2, 3) {
             override fun migrate(connection: SQLiteConnection) {
+                // Неподтверждённое решение об аптечке лежит на ней самой (PLAN E5, E6).
+                connection.execSQL(
+                    "ALTER TABLE `med_kits` ADD COLUMN `status` TEXT NOT NULL DEFAULT 'ACTIVE'"
+                )
                 connection.execSQL(
                     """
                     CREATE TABLE IF NOT EXISTS `package_records` (
@@ -143,7 +149,7 @@ abstract class MedAppDatabase : RoomDatabase() {
                             `quantity_sort` TEXT NOT NULL, `quantity_unit_id` TEXT NOT NULL,
                             `form_id` TEXT, `category` TEXT, `manufacturer` TEXT, `country` TEXT,
                             `description` TEXT, `version` INTEGER, `claims_version` INTEGER,
-                            `synced_at` INTEGER,
+                            `synced_at` INTEGER, `status` TEXT NOT NULL,
                             PRIMARY KEY(`id`),
                             FOREIGN KEY(`id`) REFERENCES `package_records`(`id`)
                                 ON UPDATE NO ACTION ON DELETE RESTRICT ,
@@ -160,10 +166,10 @@ abstract class MedAppDatabase : RoomDatabase() {
                         INSERT INTO `packages_new`
                             (`id`, `med_kit_id`, `name`, `name_search`, `quantity`, `quantity_sort`,
                              `quantity_unit_id`, `form_id`, `category`, `manufacturer`, `country`,
-                             `description`, `version`, `claims_version`, `synced_at`)
+                             `description`, `version`, `claims_version`, `synced_at`, `status`)
                         SELECT `id`, `med_kit_id`, `name`, `name_search`, `quantity`, `quantity_sort`,
                                `quantity_unit_id`, `form_id`, `category`, `manufacturer`, `country`,
-                               `description`, `version`, `claims_version`, `synced_at`
+                               `description`, `version`, `claims_version`, `synced_at`, 'ACTIVE'
                         FROM `packages` WHERE `lifecycle` = 'ACTIVE' AND `access` = 'AVAILABLE'
                     """.trimIndent(),
                     "CREATE INDEX IF NOT EXISTS `index_packages_med_kit_id` ON `packages` (`med_kit_id`)",

@@ -1,6 +1,7 @@
 package com.kert0n.medapp.domain.pack
 
 import com.kert0n.medapp.domain.stock.StockMovement
+import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Money
 
 import com.kert0n.medapp.fixture.HOME_KIT
@@ -17,12 +18,14 @@ import java.math.BigDecimal
 import kotlin.uuid.Uuid
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Переходы, меняющие сведения и принадлежность. Состояний у коробки нет: она либо есть, либо её
- * нет, и утрата доступа — не состояние пачки, а запись в истории о том, что из учёта ушло
- * (PLAN D3, D7).
+ * Переходы, меняющие сведения и принадлежность. Состояний жизни у коробки нет: она либо есть, либо
+ * её нет, и утрата доступа — запись в истории о том, что из учёта ушло (PLAN D3, D7). Статус говорит
+ * только о решении, которое ещё не подтверждено, и помеченной к уходу коробкой не пользуются (E1).
  */
 class PackageStateTransitionsTest {
 
@@ -80,5 +83,30 @@ class PackageStateTransitionsTest {
         val movementId = Uuid.random()
         val lost = pack(quantity = tablets("7")).lost(movementId, LATER)
         assertEquals(StockMovement.AccessLoss(movementId, pack().ref, tablets("7"), observedAt = LATER), lost.trace)
+    }
+
+    @Test
+    fun aBoxMarkedToGoIsReadOnly() {
+        for (marked in listOf(pack().markRemoving(), pack().markLost())) {
+            assertTrue(marked.take(Dose(tablets("1")), LATER).isFailure)
+            assertThrows(IllegalStateException::class.java) { marked.dispose(tablets("1"), Uuid.random(), LATER) }
+            assertThrows(IllegalStateException::class.java) { marked.correctTo(tablets("5"), Uuid.random(), LATER) }
+            assertThrows(IllegalStateException::class.java) { marked.describe(factsOf(marked)) }
+            assertThrows(IllegalStateException::class.java) { marked.moveTo(medKit(id = SHARED_KIT).ref) }
+        }
+    }
+
+    @Test
+    fun aBoxBeingChangedIsStillInUseAndTheAnswerSettlesIt() {
+        val changing = pack().markChanging()
+        assertEquals(PackageStatus.CHANGING, changing.status)
+        assertTrue(changing.take(Dose(tablets("1")), LATER).isSuccess)
+        assertEquals(PackageStatus.ACTIVE, changing.settled().status)
+    }
+
+    @Test
+    fun theEndOfAMarkedBoxIsNotRefused() {
+        // Конец — ответ на решение, а не пользование: помеченная коробка обязана уметь кончиться.
+        assertEquals(pack().id, pack().markRemoving().thrownOut(Uuid.random(), LATER).record.id)
     }
 }

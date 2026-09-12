@@ -154,6 +154,9 @@ class MedAppDatabaseMigrationTest {
         )
         // Живая строка — только у коробки, которая есть; с ней её части.
         assertEquals(listOf(listOf(PACK.toString(), "20")), rows("SELECT id, quantity FROM packages"))
+        // Старые вещи приходят без неподтверждённых решений: помечать их было нечем (PLAN E1).
+        assertEquals(listOf(listOf("ACTIVE")), rows("SELECT status FROM packages"))
+        assertEquals(listOf("ACTIVE"), rows("SELECT status FROM med_kits").map { it.single() }.distinct())
         assertEquals(listOf(listOf(PACK.toString(), "в машине")), rows("SELECT package_id, note FROM package_details"))
         assertEquals(listOf(listOf(PACK.toString(), "5", "2")), rows("SELECT package_id, total, mine FROM claims"))
         assertEquals(listOf(listOf(COURSE.toString(), PACK.toString(), "0", "5")), rows("SELECT * FROM course_sources"))

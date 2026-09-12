@@ -1,7 +1,6 @@
 package com.kert0n.medapp.queue
 
 import com.kert0n.medapp.domain.pack.Package
-import com.kert0n.medapp.domain.pack.PackagePending
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import kotlin.uuid.Uuid
@@ -51,19 +50,6 @@ class PackageQueueState(
 
     /** В число вложено незакрытое изменение количества; правка описания или брони не в счёт. */
     val hasUnconfirmedChanges: Boolean get() = projected.changed
-
-    /**
-     * Что доставка делает с коробкой — вопрос о ней самой, а не о числе (PLAN E1). Удаление
-     * выделено из прочих изменений: помеченную коробку человек видит, но не пользуется ею, а
-     * остальное ей не мешает. Пересчёт в ноль — то же удаление: на проводе он им и становится (B6).
-     */
-    val pending: PackagePending
-        get() = when {
-            unclosed.any { it is PackageSyncCommand.Delete || (it is PackageSyncCommand.CorrectStock && it.actual.isZero) } ->
-                PackagePending.REMOVAL
-            unclosed.isNotEmpty() -> PackagePending.CHANGES
-            else -> PackagePending.NOTHING
-        }
 
     /**
      * Незакрытые команды в единице, которой пачку больше не считают: ждут отказа при взятии

@@ -58,6 +58,7 @@ class PackageStorageRow(
         quantity = storedQuantity(pack.quantity, vocabulary.storedUnit(pack.quantityUnitId)),
         addedAt = record.addedAt,
         templateId = details.templateId,
-        claims = claims?.toDomain()
+        claims = claims?.toDomain(),
+        status = pack.status
     )
 }

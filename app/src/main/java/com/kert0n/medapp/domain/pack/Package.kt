@@ -16,7 +16,8 @@ import kotlin.uuid.Uuid
  * [id], состояние меняют переходы. [quantity] — подтверждённый остаток (E1); обвязка
  * синхронизации живёт в `PackageSyncState` слоя данных. Аптечку пачка держит ссылкой [MedKitRef].
  *
- * Состояний у коробки нет: она либо есть, либо её нет. Пустой коробки не бывает — кончившаяся
+ * Состояний жизни у коробки нет: она либо есть, либо её нет; [status] говорит только о решении,
+ * которое ещё не подтвердила полка, и о том, чем пока можно пользоваться. Пустой коробки не бывает — кончившаяся
  * (расход, утилизация, пересчёт в ноль) перестаёт существовать так же, как выброшенная, и переходы
  * отвечают на это [PackageAfter.Ended] с [PackageEnding] внутри: у конца есть след, объясняющий,
  * куда делся остаток, и выбирает его переход, а не тот, кто записывает (PLAN D3, H6). Что от
@@ -32,7 +33,8 @@ class Package(
     val quantity: Quantity,
     val addedAt: Instant,         // для чужой пачки — момент ПЕРВОГО НАБЛЮДЕНИЯ
     val templateId: Uuid? = null, // из какой карточки справочника заполнено
-    val claims: Claims? = null    // null у неопубликованной аптечки
+    val claims: Claims? = null,   // null у неопубликованной аптечки
+    val status: PackageStatus = PackageStatus.ACTIVE
 ) {
 
     init {
@@ -51,11 +53,7 @@ class Package(
      * Как пачку видит экран: состояние вместе с доступностью, посчитанной тем, кто читал очередь и
      * выделения (PLAN D4, E1). Величина — наружу уходит она, а не сущность.
      */
-    fun projection(
-        availability: PackageAvailability,
-        hasUnconfirmedChanges: Boolean,
-        pending: PackagePending = PackagePending.NOTHING
-    ): PackageProjection =
+    fun projection(availability: PackageAvailability, hasUnconfirmedChanges: Boolean): PackageProjection =
         PackageProjection(
             id = id,
             medKit = medKit,
@@ -66,7 +64,7 @@ class Package(
             claims = claims,
             availability = availability,
             hasUnconfirmedChanges = hasUnconfirmedChanges,
-            pending = pending
+            status = status
         )
 
     /**
@@ -89,9 +87,12 @@ class Package(
      * человек через [at]. Записанный факт этой проверке больше не подлежит (PLAN D6). Остаток
      * акт не меняет: списывает [consume] по состоянию в базе.
      */
-    fun take(amount: Dose, at: Instant): Result<TakenDose> =
-        if (amount.unit != quantity.unit) Result.failure(IntakeRejected(IntakeRejected.Reason.UNIT_MISMATCH))
-        else Result.success(TakenDose(ref, amount, at))
+    fun take(amount: Dose, at: Instant): Result<TakenDose> = when {
+        // Решение выбросить или уйти уже принято: помеченной коробкой не пользуются (PLAN E1).
+        !status.allowsUse -> Result.failure(IntakeRejected(IntakeRejected.Reason.PACKAGE_UNUSABLE))
+        amount.unit != quantity.unit -> Result.failure(IntakeRejected(IntakeRejected.Reason.UNIT_MISMATCH))
+        else -> Result.success(TakenDose(ref, amount, at))
+    }
 
     /**
      * Расход — приём, плановый или разовый. В минус не списывает (PLAN D5). Следа в истории
@@ -111,8 +112,8 @@ class Package(
         reason: StockMovement.Disposal.Reason = StockMovement.Disposal.Reason.OTHER,
         note: String? = null
     ): PackageAfter {
-        val left = quantity.minusOrZero(amount)
-        return after(left, StockMovement.Disposal(movementId, ref, quantity - left, reason, at, at, note))
+        requireUsable()
+        return disposed(amount, movementId, at, reason, note)
     }
 
     /**
@@ -120,10 +121,8 @@ class Package(
      * смена единицы — отдельный сценарий (D3).
      */
     fun correctTo(actual: Quantity, movementId: Uuid, at: Instant, note: String? = null): PackageAfter {
-        require(actual.unit == quantity.unit) {
-            "пересчёт не меняет единицу: это отдельный сценарий"
-        }
-        return after(actual, StockMovement.Recount(movementId, ref, quantity, actual, at, at, note))
+        requireUsable()
+        return corrected(actual, movementId, at, note)
     }
 
     /**
@@ -136,7 +135,7 @@ class Package(
         at: Instant,
         reason: StockMovement.Disposal.Reason = StockMovement.Disposal.Reason.OTHER,
         note: String? = null
-    ): PackageEnding = when (val after = dispose(quantity, movementId, at, reason, note)) {
+    ): PackageEnding = when (val after = disposed(quantity, movementId, at, reason, note)) {
         is PackageAfter.Ended -> after.ending
         is PackageAfter.Left -> error("выброшенная целиком коробка не остаётся: ${after.pkg}")
     }
@@ -146,7 +145,7 @@ class Package(
      * него остаток пропал бы из учёта без объяснения (PLAN D7, H6).
      */
     fun recountedToZero(movementId: Uuid, at: Instant, note: String? = null): PackageEnding =
-        when (val after = correctTo(Quantity.zero(quantity.unit), movementId, at, note)) {
+        when (val after = corrected(Quantity.zero(quantity.unit), movementId, at, note)) {
             is PackageAfter.Ended -> after.ending
             is PackageAfter.Left -> error("пересчитанная в ноль коробка не остаётся: ${after.pkg}")
         }
@@ -158,7 +157,10 @@ class Package(
     fun goneOnServer(): PackageEnding = PackageEnding(this, trace = null)
 
     /** Заменяет описательные сведения целиком — и серверные поля, и локальные (PLAN D3). */
-    fun describe(facts: PackageFacts): Package = changed(facts = facts)
+    fun describe(facts: PackageFacts): Package {
+        requireUsable()
+        return changed(facts = facts)
+    }
 
     /**
      * Перенос меняет только принадлежность; что делать с бронями на границе публикации, решает
@@ -168,6 +170,7 @@ class Package(
      * подставить вместо неё чужой `Uuid` — пачки, формы, единицы — тогда становится нечем.
      */
     fun moveTo(target: MedKitRef): Package {
+        requireUsable()
         require(target != medKit) { "пачка уже лежит в этой аптечке" }
         return changed(medKit = target)
     }
@@ -179,6 +182,60 @@ class Package(
      */
     fun lost(movementId: Uuid, at: Instant): PackageEnding =
         PackageEnding(this, StockMovement.AccessLoss(movementId, ref, quantity, observedAt = at))
+
+    /**
+     * Изменение ушло к полке и ждёт её согласия. Пометка не мешает пользоваться коробкой: полка
+     * ответит за каждое изменение по порядку (PLAN E1).
+     */
+    fun markChanging(): Package {
+        requireUsable()
+        return changed(status = PackageStatus.CHANGING)
+    }
+
+    /**
+     * Человек решил выбросить коробку, а полка ещё не согласилась. Коробка видна, но выведена из
+     * оборота; «ок» доведёт её до конца ([thrownOut]), сбой снимет пометку ([settled]) (PLAN E6).
+     */
+    fun markRemoving(): Package {
+        requireUsable()
+        return changed(status = PackageStatus.REMOVING)
+    }
+
+    /**
+     * Человек уходит из общей полки, а коробка остаётся остальным. До ответа она видна, но трогать
+     * её нельзя; «ок» доведёт её до конца ([lost]), сбой снимет пометку ([settled]) (PLAN E6).
+     */
+    fun markLost(): Package {
+        requireUsable()
+        return changed(status = PackageStatus.LOST)
+    }
+
+    /** Полка ответила, а решать больше нечего: пометка снимается, коробка снова обычная. */
+    fun settled(): Package = changed(status = PackageStatus.ACTIVE)
+
+    private fun requireUsable() {
+        check(status.allowsUse) { "коробка помечена ($status): ею не пользуются до ответа полки" }
+    }
+
+    /** Утилизация без проверки пометки — шаг и пользования, и конца. */
+    private fun disposed(
+        amount: Quantity,
+        movementId: Uuid,
+        at: Instant,
+        reason: StockMovement.Disposal.Reason,
+        note: String?
+    ): PackageAfter {
+        val left = quantity.minusOrZero(amount)
+        return after(left, StockMovement.Disposal(movementId, ref, quantity - left, reason, at, at, note))
+    }
+
+    /** Пересчёт без проверки пометки — шаг и пользования, и конца. */
+    private fun corrected(actual: Quantity, movementId: Uuid, at: Instant, note: String?): PackageAfter {
+        require(actual.unit == quantity.unit) {
+            "пересчёт не меняет единицу: это отдельный сценарий"
+        }
+        return after(actual, StockMovement.Recount(movementId, ref, quantity, actual, at, at, note))
+    }
 
     /**
      * Чем кончился переход: пустой коробки не бывает, поэтому ушедшая в ноль кончается, а [trace]
@@ -198,7 +255,8 @@ class Package(
         facts: PackageFacts = this.facts,
         quantity: Quantity = this.quantity,
         templateId: Uuid? = this.templateId,
-        claims: Claims? = this.claims
+        claims: Claims? = this.claims,
+        status: PackageStatus = this.status
     ): Package = Package(
         id = id,
         medKit = medKit,
@@ -206,7 +264,8 @@ class Package(
         quantity = quantity,
         addedAt = addedAt,
         templateId = templateId,
-        claims = claims
+        claims = claims,
+        status = status
     )
 
     /** Тождество — [id]. Пачка, из которой приняли таблетку, та же самая пачка. */

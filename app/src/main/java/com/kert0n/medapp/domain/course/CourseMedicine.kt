@@ -61,6 +61,7 @@ class CourseMedicine(sources: List<CourseSource> = emptyList()) {
     ): Result<CourseMedicine> {
         val ref = pkg.ref
         val rejection = when {
+            !pkg.status.allowsUse -> CourseRejected.Reason.PACKAGE_UNUSABLE
             holds(ref) -> CourseRejected.Reason.ALREADY_ATTACHED
             // Пачка без формы не годится ни под какое назначение: сказать, тот ли это препарат,
             // нечем, и сначала форму надо заполнить.
