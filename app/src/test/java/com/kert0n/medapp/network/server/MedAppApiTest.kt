@@ -9,7 +9,6 @@ import com.kert0n.medapp.network.medkit.MedKitPostNetworkDTO
 import com.kert0n.medapp.network.medkit.MembershipPostNetworkDTO
 import com.kert0n.medapp.network.pack.ClaimPatchNetworkDTO
 import com.kert0n.medapp.network.pack.ClaimPostNetworkDTO
-import com.kert0n.medapp.network.pack.PackageConsumeNetworkDTO
 import com.kert0n.medapp.network.pack.PackagePatchNetworkDTO
 import com.kert0n.medapp.network.pack.PackagePostNetworkDTO
 import com.kert0n.medapp.network.pack.PackageSyncNetworkDTO
@@ -68,7 +67,6 @@ class MedAppApiTest {
         "PATCH /v1/drugs/$pack" to (HttpStatusCode.OK to drug),
         "DELETE /v1/drugs/$pack" to (HttpStatusCode.NoContent to ""),
         "PUT /v1/med-kits/$otherKit/drugs/$pack" to (HttpStatusCode.OK to drug),
-        "POST /v1/drugs/$pack/intakes" to (HttpStatusCode.OK to drug),
         "PUT /v1/drugs/$pack/sync/$sync" to (HttpStatusCode.OK to ""),
         "GET /v1/reservations" to (HttpStatusCode.OK to "[$claim]"),
         "GET /v1/reservations/$pack" to (HttpStatusCode.OK to claim),
@@ -133,7 +131,6 @@ class MedAppApiTest {
             api.patchPackage(pack, PackagePatchNetworkDTO(name = "Аспирин C", version = ResourceVersion(3))),
             api.deletePackage(pack, ResourceVersion(3)),
             api.movePackage(pack, otherKit, ResourceVersion(3)),
-            api.consume(pack, PackageConsumeNetworkDTO("2", ResourceVersion(3))),
             api.synchronise(pack, sync, PackageSyncNetworkDTO("2", ResourceVersion(3))),
             api.claims(),
             api.claim(pack),
@@ -144,8 +141,8 @@ class MedAppApiTest {
             api.template(template)
         ).forEach(::assertSuccess)
 
-        assertEquals(26, requests.size)
-        assertEquals(26, requests.map { it.substringBefore('?') }.toSet().size)
+        assertEquals(25, requests.size)
+        assertEquals(25, requests.map { it.substringBefore('?') }.toSet().size)
     }
 
     @Test
@@ -176,11 +173,11 @@ class MedAppApiTest {
 
     @Test
     fun bodiesAreTheContractShapes() = runTest {
-        api().consume(pack, PackageConsumeNetworkDTO("2", ResourceVersion(3)))
+        api().synchronise(pack, sync, PackageSyncNetworkDTO("2", ResourceVersion(3)))
 
         assertEquals(
-            Json.parseToJsonElement("""{"quantity":"2","version":3}"""),
-            Json.parseToJsonElement(bodies.getValue("POST /v1/drugs/$pack/intakes"))
+            Json.parseToJsonElement("""{"consumed":"2","drugVersion":3}"""),
+            Json.parseToJsonElement(bodies.getValue("PUT /v1/drugs/$pack/sync/$sync"))
         )
     }
 
@@ -219,13 +216,6 @@ class MedAppApiTest {
 
     /** Пачка кончилась и уничтожена: сервер отвечает 200 и нулём байтов. */
     @Test
-    fun emptyIntakeResponseMeansThePackageIsGone() = runTest {
-        val result = always(HttpStatusCode.OK).consume(pack, PackageConsumeNetworkDTO("100"))
-
-        assertEquals(ApiResult.Success(null), result)
-    }
-
-    @Test
     fun emptySyncResponseMeansThePackageIsGone() = runTest {
         val result = always(HttpStatusCode.OK)
             .synchronise(pack, sync, PackageSyncNetworkDTO("2", ResourceVersion(3)))
@@ -235,8 +225,9 @@ class MedAppApiTest {
 
     /** JSON `null` — не «ноль байтов»: за уничтожение пачки его не принимают. */
     @Test
-    fun jsonNullIsNotAnEmptyIntakeResponse() = runTest {
-        val result = always(HttpStatusCode.OK, "null").consume(pack, PackageConsumeNetworkDTO("2"))
+    fun jsonNullIsNotAnEmptySyncResponse() = runTest {
+        val result = always(HttpStatusCode.OK, "null")
+            .synchronise(pack, sync, PackageSyncNetworkDTO("2", ResourceVersion(3)))
 
         assertEquals(ApiResult.Failure(ApiFailure.OutcomeUnknown), result)
     }
@@ -276,14 +267,16 @@ class MedAppApiTest {
 
     @Test
     fun brokenJsonOfACommandLeavesTheOutcomeUnknown() = runTest {
-        val result = always(HttpStatusCode.OK, "{").consume(pack, PackageConsumeNetworkDTO("2"))
+        val result = always(HttpStatusCode.OK, "{")
+            .synchronise(pack, sync, PackageSyncNetworkDTO("2", ResourceVersion(3)))
 
         assertEquals(ApiResult.Failure(ApiFailure.OutcomeUnknown), result)
     }
 
     @Test
     fun serverErrorOnACommandIsNotRepeatedAndLeavesTheOutcomeUnknown() = runTest {
-        val result = always(HttpStatusCode.InternalServerError).consume(pack, PackageConsumeNetworkDTO("2"))
+        val result = always(HttpStatusCode.InternalServerError)
+            .synchronise(pack, sync, PackageSyncNetworkDTO("2", ResourceVersion(3)))
 
         assertEquals(ApiResult.Failure(ApiFailure.OutcomeUnknown), result)
         assertEquals(1, calls.get())
@@ -301,7 +294,7 @@ class MedAppApiTest {
     fun brokenConnectionDuringACommandLeavesTheOutcomeUnknown() = runTest {
         val result = MedAppApi(
             medAppHttpClient(MockEngine { throw IOException("обрыв") }, "https://medapp.test")
-        ).consume(pack, PackageConsumeNetworkDTO("2"))
+        ).synchronise(pack, sync, PackageSyncNetworkDTO("2", ResourceVersion(3)))
 
         assertEquals(ApiResult.Failure(ApiFailure.OutcomeUnknown), result)
     }
@@ -316,7 +309,11 @@ class MedAppApiTest {
             javax.net.ssl.SSLHandshakeException("рукопожатие")
         )) {
             val api = MedAppApi(medAppHttpClient(MockEngine { throw broken }, "https://medapp.test"))
-            assertEquals("$broken", ApiResult.Failure(ApiFailure.Unavailable), api.consume(pack, PackageConsumeNetworkDTO("2")))
+            assertEquals(
+                "$broken",
+                ApiResult.Failure(ApiFailure.Unavailable),
+                api.synchronise(pack, sync, PackageSyncNetworkDTO("2", ResourceVersion(3)))
+            )
             assertEquals("$broken", ApiResult.Failure(ApiFailure.Unavailable), api.send("DELETE", "/v1/drugs/$pack", emptyMap(), null))
         }
     }
@@ -332,7 +329,7 @@ class MedAppApiTest {
         }
         val result = api(tokens = AccessTokens(stored)) { line ->
             if (line == "POST /v1/auth/token") HttpStatusCode.ServiceUnavailable to "" else routes[line]
-        }.consume(pack, PackageConsumeNetworkDTO("2"))
+        }.synchronise(pack, sync, PackageSyncNetworkDTO("2", ResourceVersion(3)))
 
         assertEquals(ApiResult.Failure(ApiFailure.Unavailable), result)
         assertEquals(listOf("POST /v1/auth/token"), requests)

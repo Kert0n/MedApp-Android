@@ -11,7 +11,6 @@ import com.kert0n.medapp.network.medkit.MedKitPostNetworkDTO
 import com.kert0n.medapp.network.medkit.MembershipPostNetworkDTO
 import com.kert0n.medapp.network.pack.ClaimPatchNetworkDTO
 import com.kert0n.medapp.network.pack.ClaimPostNetworkDTO
-import com.kert0n.medapp.network.pack.PackageConsumeNetworkDTO
 import com.kert0n.medapp.network.pack.PackagePatchNetworkDTO
 import com.kert0n.medapp.network.pack.PackagePostNetworkDTO
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
@@ -257,11 +256,17 @@ class ContractProbe {
     fun consumptionAnswersWithTheSnapshotUntilThePackageIsGone() = runBlocking {
         val pack = newPackage(newKit(), amount = "10").pack
 
-        val left = requireNotNull(success(owner.consume(pack.id, PackageConsumeNetworkDTO("4", pack.version)))) {
-            "после частичного расхода пачка остаётся"
-        }.pack
+        val left = requireNotNull(
+            success(owner.synchronise(pack.id, Uuid.random(), PackageSyncNetworkDTO("4", pack.version)))
+        ) { "после частичного расхода пачка остаётся" }.pack
         assertEquals("6.000000", left.amount)
-        assertNull(success(owner.consume(pack.id, PackageConsumeNetworkDTO("6", left.version))))
+
+        // Пачка кончилась: сервер уничтожил её и ответил нулём байтов, а повтор того же расхода
+        // отвечает уже 404 — пачки нет (PLAN B4). На этом стоит закрытие расхода применённым.
+        val last = PackageSyncNetworkDTO("6", left.version)
+        val lastId = Uuid.random()
+        assertNull(success(owner.synchronise(pack.id, lastId, last)))
+        assertEquals(ApiFailure.NotFound, failure(owner.synchronise(pack.id, lastId, last)))
     }
 
     @Test

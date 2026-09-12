@@ -16,7 +16,6 @@ import com.kert0n.medapp.network.medkit.MembershipPostNetworkDTO
 import com.kert0n.medapp.network.pack.ClaimNetworkDTO
 import com.kert0n.medapp.network.pack.ClaimPatchNetworkDTO
 import com.kert0n.medapp.network.pack.ClaimPostNetworkDTO
-import com.kert0n.medapp.network.pack.PackageConsumeNetworkDTO
 import com.kert0n.medapp.network.pack.PackagePatchNetworkDTO
 import com.kert0n.medapp.network.pack.PackagePostNetworkDTO
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
@@ -151,12 +150,6 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
     ): ApiResult<PackageSnapshotNetworkDTO> =
         call(HttpMethod.Put, MedAppRoutes.packageIn(targetMedKitId, packageId), HttpStatusCode.OK, required(PackageSnapshotNetworkDTO.serializer())) {
             version(version)
-        }
-
-    /** `null` в успехе — пачка кончилась и уничтожена: сервер ответил нулём байтов. */
-    suspend fun consume(packageId: Uuid, intake: PackageConsumeNetworkDTO): ApiResult<PackageSnapshotNetworkDTO?> =
-        call(HttpMethod.Post, MedAppRoutes.intakes(packageId), HttpStatusCode.OK, optional(PackageSnapshotNetworkDTO.serializer())) {
-            json(intake)
         }
 
     /** `null` в успехе — пачка кончилась и уничтожена; повтор безопасен с тем же [syncId]. */

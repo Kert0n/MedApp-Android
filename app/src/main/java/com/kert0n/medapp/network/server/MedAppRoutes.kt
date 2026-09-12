@@ -23,7 +23,6 @@ object MedAppRoutes {
     fun packagesOf(medKitId: Uuid) = "${medKit(medKitId)}/drugs"
     fun packageIn(medKitId: Uuid, packageId: Uuid) = "${packagesOf(medKitId)}/$packageId"
     fun pack(packageId: Uuid) = "/v1/drugs/$packageId"
-    fun intakes(packageId: Uuid) = "${pack(packageId)}/intakes"
     fun sync(packageId: Uuid, syncId: Uuid) = "${pack(packageId)}/sync/$syncId"
     fun claim(packageId: Uuid) = "$CLAIMS/$packageId"
     fun template(templateId: Uuid) = "$TEMPLATES/$templateId"

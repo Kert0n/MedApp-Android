@@ -2,7 +2,7 @@ package com.kert0n.medapp.network.server
 
 import com.kert0n.medapp.network.account.AccountCredentials
 import com.kert0n.medapp.network.medkit.MedKitPostNetworkDTO
-import com.kert0n.medapp.network.pack.PackageConsumeNetworkDTO
+import com.kert0n.medapp.network.pack.PackageSyncNetworkDTO
 import com.kert0n.medapp.network.pack.PackagePatchNetworkDTO
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -24,6 +24,8 @@ class MedAppApiFailureTest {
 
     private val kit = Uuid.parse("00000000-0000-4000-8000-000000000021")
     private val pack = Uuid.parse("00000000-0000-4000-8000-000000000011")
+
+    private val sync = Uuid.parse("00000000-0000-4000-8000-000000000051")
 
     private fun api(
         status: HttpStatusCode,
@@ -53,11 +55,13 @@ class MedAppApiFailureTest {
     fun badRequestNamesTheFieldsAndWhatIsWrong() = runTest {
         val body = """
             {"type":"about:blank","title":"Bad Request","status":400,
-             "detail":"Validation failed","instance":"/v1/drugs/$pack/intakes",
+             "detail":"Validation failed","instance":"/v1/drugs/$pack/sync/$sync",
              "errors":[{"field":"quantity","reason":"must be greater than zero"}]}
         """
 
-        val failure = failureOf(api(HttpStatusCode.BadRequest, body).consume(pack, PackageConsumeNetworkDTO("2")))
+        val failure = failureOf(
+            api(HttpStatusCode.BadRequest, body).synchronise(pack, sync, PackageSyncNetworkDTO("2", ResourceVersion(3)))
+        )
 
         assertEquals(
             ApiFailure.Invalid(listOf(ApiFailure.FieldError("quantity", "must be greater than zero"))),
@@ -68,7 +72,9 @@ class MedAppApiFailureTest {
     /** Сломанное тело отказа не отнимает решения, которое уже дал статус. */
     @Test
     fun badRequestWithUnreadableProblemIsStillInvalid() = runTest {
-        val failure = failureOf(api(HttpStatusCode.BadRequest, "<html>").consume(pack, PackageConsumeNetworkDTO("2")))
+        val failure = failureOf(
+            api(HttpStatusCode.BadRequest, "<html>").synchronise(pack, sync, PackageSyncNetworkDTO("2", ResourceVersion(3)))
+        )
 
         assertEquals(ApiFailure.Invalid(emptyList()), failure)
     }
