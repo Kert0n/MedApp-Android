@@ -201,7 +201,7 @@ class SharedMedKitProbe {
         val shared = sharedShelfWithBorisTreated()
         val home = anna.localShelf("Дом")
 
-        assertEquals(MedKitRemoval.Outcome.MARKED, anna.scenarios().medKitRemoval.remove(shared.shelf, transferTo = home))
+        assertEquals(MedKitRemoval.Outcome.MARKED, anna.scenarios().medKitRemoval.remove(shared.shelf, MedKitRemoval.Fate.MoveTo(home)))
         anna.drain()
 
         assertEquals(listOf(SyncOperationStatus.APPLIED), anna.statuses().distinct())
@@ -230,7 +230,7 @@ class SharedMedKitProbe {
         val own = anna.localShelf("Моя общая")
         anna.publish(own)
 
-        assertEquals(MedKitRemoval.Outcome.MARKED, anna.scenarios().medKitRemoval.remove(shared.shelf, transferTo = own))
+        assertEquals(MedKitRemoval.Outcome.MARKED, anna.scenarios().medKitRemoval.remove(shared.shelf, MedKitRemoval.Fate.MoveTo(own)))
         anna.drain()
 
         assertEquals(listOf(SyncOperationStatus.APPLIED), anna.statuses().distinct())
@@ -262,7 +262,7 @@ class SharedMedKitProbe {
         anna.publish(dacha)
         boris.join(success(anna.api.createInvitation(dacha)).key)
 
-        assertEquals(MedKitRemoval.Outcome.MARKED, anna.scenarios().medKitRemoval.remove(shared.shelf, transferTo = dacha))
+        assertEquals(MedKitRemoval.Outcome.MARKED, anna.scenarios().medKitRemoval.remove(shared.shelf, MedKitRemoval.Fate.MoveTo(dacha)))
         anna.drain()
 
         assertEquals(listOf(SyncOperationStatus.APPLIED), anna.statuses().distinct())

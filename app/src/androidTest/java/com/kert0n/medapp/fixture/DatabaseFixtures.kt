@@ -114,8 +114,8 @@ suspend fun com.kert0n.medapp.storage.pack.PackageDao.save(
 fun MedAppDatabase.queueService() = com.kert0n.medapp.queue.QueueService(transactions(), queueStorage())
 
 /**
- * Сценарии над одной базой с остановленными часами [now]: удаление и перенос коробки, разбор,
- * выход. Собираются вместе, потому что аптечка зовёт шаги коробки, и граф один.
+ * Сценарии над одной базой с остановленными часами [now]: удаление и перенос коробки, уборка
+ * полки. Собираются вместе, потому что аптечка зовёт шаги коробки, и граф один.
  */
 class Scenarios(database: MedAppDatabase, now: java.time.Instant) {
     private val clock = java.time.Clock.fixed(now, java.time.ZoneOffset.UTC)
@@ -133,8 +133,5 @@ class Scenarios(database: MedAppDatabase, now: java.time.Instant) {
     )
     val medKitRemoval = com.kert0n.medapp.feature.medkits.MedKitRemoval(
         medKits, packages, packageRemoval, packageRelocation, queue, transactions, clock
-    )
-    val medKitLeaving = com.kert0n.medapp.feature.medkits.MedKitLeaving(
-        medKits, packages, queue, transactions, clock
     )
 }

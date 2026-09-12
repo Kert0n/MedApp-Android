@@ -118,7 +118,7 @@ class MedKitRemovalTest {
     /** «Забрал аптечку домой», обе местные: содержимое переезжает целиком, курс коробку не теряет. */
     @Test
     fun takingALocalMedKitAwayIntoALocalOneMovesEverythingAndKeepsTheCourse() = runTest {
-        val outcome = removal.remove(HOME_KIT, transferTo = SHARED_KIT)
+        val outcome = removal.remove(HOME_KIT, MedKitRemoval.Fate.MoveTo(SHARED_KIT))
 
         assertEquals(MedKitRemoval.Outcome.REMOVED, outcome)
         assertNull(database.medKits().find(HOME_KIT))
@@ -139,7 +139,7 @@ class MedKitRemovalTest {
      */
     @Test
     fun throwingTheMedKitOutWithItsDrugsKeepsTheTreatment() = runTest {
-        val outcome = removal.remove(HOME_KIT, transferTo = null)
+        val outcome = removal.remove(HOME_KIT, MedKitRemoval.Fate.ThrowAway)
 
         assertEquals(MedKitRemoval.Outcome.REMOVED, outcome)
         assertNull(database.medKits().find(HOME_KIT))
@@ -165,7 +165,7 @@ class MedKitRemovalTest {
     fun takingALocalMedKitAwayIntoASharedOnePublishesEachPackage() = runTest {
         publish(SHARED_KIT)
 
-        val outcome = removal.remove(HOME_KIT, transferTo = SHARED_KIT)
+        val outcome = removal.remove(HOME_KIT, MedKitRemoval.Fate.MoveTo(SHARED_KIT))
 
         assertEquals(MedKitRemoval.Outcome.REMOVED, outcome)
         assertNull(database.medKits().find(HOME_KIT))
@@ -193,7 +193,7 @@ class MedKitRemovalTest {
     fun takingASharedMedKitAwayIntoASharedOneIsOneCommandAndAWait() = runTest {
         publish(HOME_KIT, SHARED_KIT)
 
-        val outcome = removal.remove(HOME_KIT, transferTo = SHARED_KIT)
+        val outcome = removal.remove(HOME_KIT, MedKitRemoval.Fate.MoveTo(SHARED_KIT))
 
         assertEquals(MedKitRemoval.Outcome.MARKED, outcome)
         assertNotNull(database.medKits().find(HOME_KIT))
@@ -210,7 +210,7 @@ class MedKitRemovalTest {
     @Test
     fun theServerAgreeingMovesTheContentsAndTakesTheShelf() = runTest {
         publish(HOME_KIT, SHARED_KIT)
-        removal.remove(HOME_KIT, transferTo = SHARED_KIT)
+        removal.remove(HOME_KIT, MedKitRemoval.Fate.MoveTo(SHARED_KIT))
 
         theServerAgrees()
 
@@ -228,7 +228,7 @@ class MedKitRemovalTest {
     @Test
     fun theServerRefusingReturnsTheShelfAndItsPackagesToUse() = runTest {
         publish(HOME_KIT)
-        removal.remove(HOME_KIT, transferTo = null)
+        removal.remove(HOME_KIT, MedKitRemoval.Fate.ThrowAway)
 
         val stored = database.syncOperations().all().single().toDomain(VOCABULARY) as StoredSyncOperation.Readable
         database.queueStorage().settle(
@@ -240,16 +240,16 @@ class MedKitRemovalTest {
         assertEquals(MedKitStatus.ACTIVE, database.medKits().find(HOME_KIT)?.toDomain()?.status)
         assertEquals(PackageStatus.ACTIVE, database.packageRepository().find(PACK)?.status)
         assertEquals(PackageStatus.ACTIVE, database.packageRepository().find(OTHER_PACK)?.status)
-        assertEquals(MedKitRemoval.Outcome.MARKED, removal.remove(HOME_KIT, transferTo = null))
+        assertEquals(MedKitRemoval.Outcome.MARKED, removal.remove(HOME_KIT, MedKitRemoval.Fate.ThrowAway))
     }
 
     /** Полку, которая уже ждёт ответа, не убирают второй раз. */
     @Test
     fun aShelfWaitingForAnAnswerIsNotRemovedAgain() = runTest {
         publish(HOME_KIT)
-        removal.remove(HOME_KIT, transferTo = null)
+        removal.remove(HOME_KIT, MedKitRemoval.Fate.ThrowAway)
 
-        assertEquals(MedKitRemoval.Outcome.BUSY, removal.remove(HOME_KIT, transferTo = null))
+        assertEquals(MedKitRemoval.Outcome.BUSY, removal.remove(HOME_KIT, MedKitRemoval.Fate.ThrowAway))
         assertEquals(1, commands().size)
     }
 
@@ -261,7 +261,7 @@ class MedKitRemovalTest {
     fun throwingASharedMedKitOutIsOneCommandAndAWait() = runTest {
         publish(HOME_KIT)
 
-        val outcome = removal.remove(HOME_KIT, transferTo = null)
+        val outcome = removal.remove(HOME_KIT, MedKitRemoval.Fate.ThrowAway)
 
         assertEquals(MedKitRemoval.Outcome.MARKED, outcome)
         assertNotNull(database.medKits().find(HOME_KIT))
@@ -276,7 +276,7 @@ class MedKitRemovalTest {
     @Test
     fun theServerAgreeingThrowsTheSharedShelfOutWithItsDrugs() = runTest {
         publish(HOME_KIT)
-        removal.remove(HOME_KIT, transferTo = null)
+        removal.remove(HOME_KIT, MedKitRemoval.Fate.ThrowAway)
 
         theServerAgrees()
 
@@ -299,7 +299,7 @@ class MedKitRemovalTest {
     fun takingASharedMedKitHomeCarriesEveryBoxAndThenRemovesTheShelf() = runTest {
         publish(HOME_KIT)
 
-        val outcome = removal.remove(HOME_KIT, transferTo = SHARED_KIT)
+        val outcome = removal.remove(HOME_KIT, MedKitRemoval.Fate.MoveTo(SHARED_KIT))
 
         assertEquals(MedKitRemoval.Outcome.MARKED, outcome)
         assertEquals(SHARED_KIT, database.packageRepository().find(PACK)?.medKit?.id)
@@ -323,7 +323,7 @@ class MedKitRemovalTest {
     @Test
     fun aBoxThatCouldNotBeCarriedHomeKeepsTheShelf() = runTest {
         publish(HOME_KIT)
-        removal.remove(HOME_KIT, transferTo = SHARED_KIT)
+        removal.remove(HOME_KIT, MedKitRemoval.Fate.MoveTo(SHARED_KIT))
         val rows = database.syncOperations().all()
         val refused = rows.first().toDomain(VOCABULARY) as StoredSyncOperation.Readable
         val box = (refused.operation.command as PackageSyncCommand.Withdraw).packageId
@@ -344,7 +344,7 @@ class MedKitRemovalTest {
     /** Целевую аптечку удалили, пока человек выбирал: не записано ничего, и сказано почему. */
     @Test
     fun aTargetThatIsGoneChangesNothing() = runTest {
-        val outcome = removal.remove(HOME_KIT, transferTo = Uuid.random())
+        val outcome = removal.remove(HOME_KIT, MedKitRemoval.Fate.MoveTo(Uuid.random()))
 
         assertEquals(MedKitRemoval.Outcome.TARGET_GONE, outcome)
         assertNotNull(database.medKits().find(HOME_KIT))
@@ -354,7 +354,7 @@ class MedKitRemovalTest {
     /** Переносить в саму себя нечего: содержимое и так там. */
     @Test
     fun aMedKitIsNotItsOwnTarget() = runTest {
-        val outcome = removal.remove(HOME_KIT, transferTo = HOME_KIT)
+        val outcome = removal.remove(HOME_KIT, MedKitRemoval.Fate.MoveTo(HOME_KIT))
 
         assertEquals(MedKitRemoval.Outcome.TARGET_IS_THE_SAME, outcome)
         assertNotNull(database.medKits().find(HOME_KIT))
@@ -362,6 +362,6 @@ class MedKitRemovalTest {
 
     @Test
     fun aMedKitThatIsAlreadyGoneSaysSo() = runTest {
-        assertEquals(MedKitRemoval.Outcome.MED_KIT_GONE, removal.remove(Uuid.random()))
+        assertEquals(MedKitRemoval.Outcome.MED_KIT_GONE, removal.remove(Uuid.random(), MedKitRemoval.Fate.ThrowAway))
     }
 }

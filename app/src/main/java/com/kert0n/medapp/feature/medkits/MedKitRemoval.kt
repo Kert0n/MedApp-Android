@@ -15,8 +15,14 @@ import javax.inject.Inject
 import kotlin.uuid.Uuid
 
 /**
- * Человек убирает полку (ТЗ 4.1.1.2.3): либо выбрасывает коробки вместе с ней, либо переставляет
- * их на другую. История — записи о коробках, приёмы и движения — остаётся (PLAN E6, D3).
+ * Человек убирает полку (ТЗ 4.1.1.2.3, 4.1.1.11.3). Для него это **одно действие** — полки больше
+ * нет в его списке, — а различается только судьба коробок ([Fate]): выбросить вместе с полкой,
+ * перенести на другую полку или оставить остальным и выйти. История — записи о коробках, приёмы и
+ * движения — остаётся (PLAN E6, D3).
+ *
+ * **Оставить остальным** — выход из общей полки: полка и коробки живут у других, у нас коробки
+ * помечены потерянными до ответа сервера, а ответ уносит их в историю утратой доступа. Своя полка
+ * существует только у нас — оставлять её некому.
  *
  * **Своя полка существует только у нас**, поэтому решение и есть подтверждение: она разбирается по
  * коробкам, каждая проходит свой доменный путь — выбрасывания ([PackageRemoval]) или переезда
@@ -43,13 +49,25 @@ class MedKitRemoval @Inject constructor(
     private val clock: Clock
 ) {
 
-    /** [transferTo] `null` — выбросить вместе с лекарствами; иначе перенести их туда. */
-    suspend fun remove(medKitId: Uuid, transferTo: Uuid? = null): Outcome = transactions.run {
+    suspend fun remove(medKitId: Uuid, fate: Fate): Outcome = transactions.run {
         val medKit = medKits.find(medKitId) ?: return@run Outcome.MED_KIT_GONE
         if (!medKit.status.allowsDecision) return@run Outcome.BUSY
-        val target = transferTo?.let { medKits.find(it) ?: return@run Outcome.TARGET_GONE }
-        if (target != null && target.id == medKit.id) return@run Outcome.TARGET_IS_THE_SAME
         val now = clock.instant()
+        if (fate == Fate.LeaveToOthers) {
+            if (!medKit.answersToServer) return@run Outcome.NOT_SHARED
+            val leave = QueuedCommand(Uuid.random(), MedKitSyncCommand.Leave(medKitId))
+            queue.change(medKit.ref, listOf(leave), now) {
+                // Коробки остаются остальным, а у нас до ответа только видны. Ждущую своего решения
+                // не трогаем — её отпустит её же команда (PLAN E1, E6).
+                for (pkg in packages.contentsOf(medKitId)) {
+                    if (pkg.status.allowsUse) check(packages.mark(pkg.id, PackageStatus.LOST)) { "пачка прочитана этой же транзакцией" }
+                }
+                medKits.mark(medKitId, MedKitStatus.REMOVING)
+            }
+            return@run Outcome.MARKED
+        }
+        val target = (fate as? Fate.MoveTo)?.let { medKits.find(it.medKitId) ?: return@run Outcome.TARGET_GONE }
+        if (target != null && target.id == medKit.id) return@run Outcome.TARGET_IS_THE_SAME
         if (medKit.answersToServer && target != null && !target.answersToServer) {
             val withdrawals = packages.contentsOf(medKitId).filter { it.status.allowsUse }.associateWith { relocation.withdrawal(it) }
             val delete = QueuedCommand(
@@ -89,11 +107,24 @@ class MedKitRemoval @Inject constructor(
         Outcome.REMOVED
     }
 
+    /** Судьба коробок убираемой полки — единственное, чем случаи уборки отличаются для человека. */
+    sealed interface Fate {
+
+        /** Выбросить вместе с полкой: у всех, если полка общая. */
+        data object ThrowAway : Fate
+
+        /** Полный перенос на полку [medKitId] — «забрал аптечку домой» или в другую общую. */
+        data class MoveTo(val medKitId: Uuid) : Fate
+
+        /** Оставить остальным и выйти: коробки живут у других, у нас они потеряны. */
+        data object LeaveToOthers : Fate
+    }
+
     /**
      * Чем кончилось. Случаи различает поведение экрана: убрали — уходим со списка; пометили —
      * полка остаётся на месте и ждёт согласия сервера; аптечки уже нет — закрываем молча; некуда
      * переносить — просим выбрать другую; та же — говорим об этом; полка уже ждёт другого решения —
-     * ждём его ответа (PLAN E1, E6).
+     * ждём его ответа; оставить остальным местную полку нельзя — остальных нет (PLAN E1, E6).
      */
     enum class Outcome {
         REMOVED,
@@ -101,6 +132,7 @@ class MedKitRemoval @Inject constructor(
         MED_KIT_GONE,
         BUSY,
         TARGET_GONE,
-        TARGET_IS_THE_SAME
+        TARGET_IS_THE_SAME,
+        NOT_SHARED
     }
 }

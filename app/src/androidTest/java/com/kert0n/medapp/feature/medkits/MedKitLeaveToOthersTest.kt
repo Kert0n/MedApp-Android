@@ -48,20 +48,20 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Человек выходит из общей аптечки (PLAN E6): коробки целы, но не у нас — утрата доступа в
+ * Человек убирает общую полку, оставляя её остальным, — выходит (PLAN E6): коробки целы, но не у нас — утрата доступа в
  * историю, курс теряет источники с этой полки и только их, история лечения остаётся, серверу —
  * `Leave`.
  */
 @RunWith(AndroidJUnit4::class)
-class MedKitLeavingTest {
+class MedKitLeaveToOthersTest {
 
     private lateinit var database: MedAppDatabase
-    private lateinit var leaving: MedKitLeaving
+    private lateinit var removal: MedKitRemoval
 
     @Before
     fun setUp() = runTest {
         database = inMemoryDatabase()
-        leaving = Scenarios(database, LATER).medKitLeaving
+        removal = Scenarios(database, LATER).medKitRemoval
         database.medKits().upsert(
             medKit(id = SHARED_KIT, name = "Дача", publication = MedKit.Publication.PUBLISHED, participantCount = 2)
                 .toMedKitStorageEntity()
@@ -89,9 +89,9 @@ class MedKitLeavingTest {
      */
     @Test
     fun leavingMarksTheShelfAndWaitsForTheServer() = runTest {
-        val outcome = leaving.leave(SHARED_KIT)
+        val outcome = removal.remove(SHARED_KIT, MedKitRemoval.Fate.LeaveToOthers)
 
-        assertEquals(MedKitLeaving.Outcome.MARKED, outcome)
+        assertEquals(MedKitRemoval.Outcome.MARKED, outcome)
         assertNotNull(database.medKits().find(SHARED_KIT))
         assertNotNull(database.packageRepository().find(PACK))
         assertEquals(emptyList<StockMovement>(), database.stockMovements().ofPackage(PACK).map { it.toDomain(VOCABULARY) })
@@ -101,7 +101,7 @@ class MedKitLeavingTest {
         assertEquals(MedKitStatus.REMOVING, database.medKits().find(SHARED_KIT)?.toDomain()?.status)
         assertEquals(PackageStatus.LOST, database.packageRepository().find(PACK)?.status)
         assertEquals(PackageStatus.ACTIVE, database.packageRepository().find(OTHER_PACK)?.status)
-        assertEquals(MedKitLeaving.Outcome.BUSY, leaving.leave(SHARED_KIT))
+        assertEquals(MedKitRemoval.Outcome.BUSY, removal.remove(SHARED_KIT, MedKitRemoval.Fate.LeaveToOthers))
     }
 
     /**
@@ -111,7 +111,7 @@ class MedKitLeavingTest {
      */
     @Test
     fun theServerAgreeingLosesTheShelfsPackagesAndKeepsTheCourse() = runTest {
-        leaving.leave(SHARED_KIT)
+        removal.remove(SHARED_KIT, MedKitRemoval.Fate.LeaveToOthers)
 
         theServerAgrees()
 
@@ -141,8 +141,8 @@ class MedKitLeavingTest {
 
     @Test
     fun aLocalMedKitIsNotLeft() = runTest {
-        assertEquals(MedKitLeaving.Outcome.NOT_SHARED, leaving.leave(HOME_KIT))
+        assertEquals(MedKitRemoval.Outcome.NOT_SHARED, removal.remove(HOME_KIT, MedKitRemoval.Fate.LeaveToOthers))
         assertNotNull(database.medKits().find(HOME_KIT))
-        assertEquals(MedKitLeaving.Outcome.MED_KIT_GONE, leaving.leave(Uuid.random()))
+        assertEquals(MedKitRemoval.Outcome.MED_KIT_GONE, removal.remove(Uuid.random(), MedKitRemoval.Fate.LeaveToOthers))
     }
 }
