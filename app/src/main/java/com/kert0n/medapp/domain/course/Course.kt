@@ -50,6 +50,17 @@ class Course(
 
     val totalDoses: Doses get() = prescription.totalDoses
 
+    /** Как курс видит экран: величина, наружу уходит она, а не сущность. */
+    fun projection(): CourseProjection = CourseProjection(
+        id = id,
+        prescription = prescription,
+        sources = sources,
+        takenOffPlan = takenOffPlan,
+        revision = revision,
+        createdAt = createdAt,
+        updatedAt = updatedAt
+    )
+
     /**
      * Сколько доз ещё впереди при [progress] по плану. Что принято, знают приёмы — курс их не
      * хранит и получает прогресс аргументом; принятое мимо плана он знает сам. Больше

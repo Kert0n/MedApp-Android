@@ -3,6 +3,7 @@ package com.kert0n.medapp.storage.intake
 import com.kert0n.medapp.domain.course.ScheduledOccurrence
 import com.kert0n.medapp.domain.intake.CourseIntake
 import com.kert0n.medapp.domain.intake.Intake
+import com.kert0n.medapp.domain.intake.IntakeProjection
 import com.kert0n.medapp.network.intake.IntakeSyncState
 import java.time.Instant
 import kotlin.uuid.Uuid
@@ -14,7 +15,8 @@ import kotlinx.coroutines.flow.Flow
  */
 interface IntakeStorageRepository {
 
-    fun observeOfCourse(courseId: Uuid): Flow<List<Intake>>
+    /** Поток несёт проекции — величины для экрана; сущности отдают `find`/`ofCourse` в транзакции сценария. */
+    fun observeOfCourse(courseId: Uuid): Flow<List<IntakeProjection>>
 
     /** Пункты курса одним чтением — из них сценарий собирает прогресс внутри своей транзакции. */
     suspend fun ofCourse(courseId: Uuid): List<Intake>

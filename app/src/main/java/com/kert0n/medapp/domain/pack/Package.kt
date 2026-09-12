@@ -53,6 +53,25 @@ class Package(
     val suppliesStock: Boolean
         get() = suppliesStock(lifecycle, access)
 
+    /**
+     * Как пачку видит экран: состояние вместе с доступностью, посчитанной тем, кто читал очередь и
+     * выделения (PLAN D4, E1). Величина — наружу уходит она, а не сущность.
+     */
+    fun projection(availability: PackageAvailability, hasUnconfirmedChanges: Boolean): PackageProjection =
+        PackageProjection(
+            id = id,
+            medKit = medKit,
+            facts = facts,
+            quantity = quantity,
+            addedAt = addedAt,
+            templateId = templateId,
+            claims = claims,
+            lifecycle = lifecycle,
+            access = access,
+            availability = availability,
+            hasUnconfirmedChanges = hasUnconfirmedChanges
+        )
+
     /** Как пачку видит чужой агрегат — курс, приём, движение: без остатка и без переходов. */
     val ref: PackageRef
         get() = PackageRef(

@@ -6,6 +6,7 @@ import com.kert0n.medapp.domain.medkit.MedKitRef
 import com.kert0n.medapp.domain.pack.ExpiryDate
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageFacts
+import com.kert0n.medapp.domain.pack.PackageProjection
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
 import com.kert0n.medapp.domain.value.DosageForm
 import com.kert0n.medapp.domain.value.Dose
@@ -72,6 +73,10 @@ fun pack(
     lifecycle = lifecycle,
     access = access
 )
+
+/** Проекция пачки без очереди и выделений: оценка равна подтверждённому остатку. */
+fun Package.projected(hasUnconfirmedChanges: Boolean = false): PackageProjection =
+    projection(PackageAvailability(this, effective = quantity), hasUnconfirmedChanges)
 
 /** Сведения, взятые у пачки: круговой тест начинается с того, что уже сохранено. */
 fun factsOf(pkg: Package): PackageFacts = pkg.facts

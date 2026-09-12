@@ -5,6 +5,7 @@ import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageAvailability
 import com.kert0n.medapp.domain.pack.PackageFacts
+import com.kert0n.medapp.domain.pack.PackageProjection
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.queue.PackageQueueState
@@ -17,7 +18,6 @@ import com.kert0n.medapp.storage.course.toStorageEntity as toCourseStorageEntity
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.queue.StoredSyncOperation
 import com.kert0n.medapp.storage.server.SyncOperationDao
-import com.kert0n.medapp.storage.server.SyncOperationStorageRow
 import com.kert0n.medapp.storage.stock.StockMovementDao
 import com.kert0n.medapp.storage.stock.toStorageEntity as toMovementStorageEntity
 import com.kert0n.medapp.storage.value.VocabularyDao
@@ -41,16 +41,13 @@ class PackageRoomRepository @Inject constructor(
      * Снимок словаря читается после строки, а не вместе с ней, и это безопасно: словарь только
      * растёт, а единица ложится в базу не позже строки, которая её называет.
      */
-    override fun observe(id: Uuid): Flow<Package?> =
-        packages.observe(id).map { it?.toDomain(vocabulary.snapshot()) }
+    override fun observe(id: Uuid): Flow<PackageProjection?> =
+        onChange { projectionOf(id) }
 
     override suspend fun find(id: Uuid): Package? =
         packages.find(id)?.toDomain(vocabulary.snapshot())
 
-    override fun observeAvailability(id: Uuid): Flow<PackageAvailability?> =
-        onChange { availabilityOf(id) }
-
-    override fun list(query: PackageQuery, today: LocalDate): Flow<List<Package>> =
+    override fun list(query: PackageQuery, today: LocalDate): Flow<List<PackageProjection>> =
         onChange { listing(query, today) }
 
     override suspend fun add(pkg: Package, sync: PackageSyncState) =
@@ -123,62 +120,44 @@ class PackageRoomRepository @Inject constructor(
     private fun <T> onChange(read: suspend () -> T): Flow<T> =
         database.invalidationTracker.createFlow(*AVAILABILITY_TABLES).map { read() }
 
-    private suspend fun availabilityOf(id: Uuid): PackageAvailability? = database.withTransaction {
+    private suspend fun projectionOf(id: Uuid): PackageProjection? = database.withTransaction {
         val words = vocabulary.snapshot()
         val pkg = packages.find(id)?.toDomain(words) ?: return@withTransaction null
-        availabilityOf(
-            pkg,
-            queue.unclosedOfPackage(id),
-            packages.allocationsOf(listOf(id)).firstOrNull(),
-            words
-        )
+        projectionOf(pkg, packages.allocationsOf(listOf(id)).firstOrNull(), words)
     }
 
     /**
-     * «Есть свободное» запросом не выражается: это вычитание чужих броней и выделения из оценки
-     * количества, а оценка зависит от очереди (PLAN H4).
+     * Список — готовые проекции одним чтением. «Есть свободное» запросом не выражается: это
+     * вычитание чужих броней и выделения из оценки количества, а оценка зависит от очереди
+     * (PLAN H4).
      */
-    private suspend fun listing(query: PackageQuery, today: LocalDate): List<Package> =
+    private suspend fun listing(query: PackageQuery, today: LocalDate): List<PackageProjection> =
         database.withTransaction {
             val words = vocabulary.snapshot()
             val found = packages.matching(query, today).map { it.toDomain(words) }
-            if (query.filter != PackageQuery.Filter.HasFree) return@withTransaction found
             val allocations = packages.allocationsOf(found.map { it.id })
-            found.filter { pkg ->
-                availabilityOf(
-                    pkg,
-                    queue.unclosedOfPackage(pkg.id),
-                    allocations.firstOrNull { it.packageId == pkg.id },
-                    words
-                ).freeForAnyone.isZero.not()
-            }
+            val projected = found.map { pkg -> projectionOf(pkg, allocations.firstOrNull { it.packageId == pkg.id }, words) }
+            if (query.filter != PackageQuery.Filter.HasFree) projected
+            else projected.filter { !it.availability.freeForAnyone.isZero }
         }
-
-    private fun availabilityOf(
-        pkg: Package,
-        unclosed: List<SyncOperationStorageRow>,
-        allocation: PackageAllocationRow?,
-        words: Vocabulary
-    ): PackageAvailability = PackageAvailability(
-        pkg = pkg,
-        effective = amountOf(pkg, unclosed, words),
-        myAllocation = allocation?.allocated(words, pkg.quantity.unit) ?: Quantity.zero(pkg.quantity.unit)
-    )
 
     /**
-     * Незакрытые команды применяются к подтверждённому остатку по возрастанию номера. Команда,
-     * которую нечем прочитать после обновления приложения, в число не входит: она названа среди
-     * нечитаемых отдельно, а число остаётся тем, что известно (PLAN E1, F4).
+     * Проекция пачки: оценка количества — незакрытые команды поверх подтверждённого остатка по
+     * возрастанию номера; команда, которую нечем прочитать после обновления приложения, в число
+     * не входит и названа среди нечитаемых отдельно (PLAN E1, F4). Выделение — из назначения
+     * активному курсу (PLAN D4).
      */
-    private fun amountOf(
-        pkg: Package,
-        unclosed: List<SyncOperationStorageRow>,
-        words: Vocabulary
-    ): Quantity {
-        val commands = unclosed.mapNotNull {
+    private suspend fun projectionOf(pkg: Package, allocation: PackageAllocationRow?, words: Vocabulary): PackageProjection {
+        val commands = queue.unclosedOfPackage(pkg.id).mapNotNull {
             (it.toDomain(words) as? StoredSyncOperation.Readable)?.operation?.command as? PackageSyncCommand
         }
-        return PackageQueueState(pkg, commands).amount
+        val state = PackageQueueState(pkg, commands)
+        val availability = PackageAvailability(
+            pkg = pkg,
+            effective = state.amount,
+            myAllocation = allocation?.allocated(words, pkg.quantity.unit) ?: Quantity.zero(pkg.quantity.unit)
+        )
+        return pkg.projection(availability, state.hasUnconfirmedChanges)
     }
 
     private companion object {

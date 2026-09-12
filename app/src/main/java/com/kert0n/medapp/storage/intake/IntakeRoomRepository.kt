@@ -3,6 +3,7 @@ package com.kert0n.medapp.storage.intake
 import com.kert0n.medapp.domain.course.ScheduledOccurrence
 import com.kert0n.medapp.domain.intake.CourseIntake
 import com.kert0n.medapp.domain.intake.Intake
+import com.kert0n.medapp.domain.intake.IntakeProjection
 import com.kert0n.medapp.network.intake.IntakeSyncState
 import com.kert0n.medapp.domain.intake.UnplannedIntake
 import androidx.room.withTransaction
@@ -29,10 +30,10 @@ class IntakeRoomRepository @Inject constructor(
     private val vocabulary: VocabularyDao
 ) : IntakeStorageRepository {
 
-    override fun observeOfCourse(courseId: Uuid): Flow<List<Intake>> =
+    override fun observeOfCourse(courseId: Uuid): Flow<List<IntakeProjection>> =
         intakes.observeOfCourse(courseId).map { rows ->
             val words = vocabulary.snapshot()
-            rows.map { it.toDomain(words) }
+            rows.map { it.toDomain(words).projection() }
         }
 
     override suspend fun ofCourse(courseId: Uuid): List<Intake> {

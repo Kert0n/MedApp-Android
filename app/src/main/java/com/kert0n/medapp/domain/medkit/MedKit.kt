@@ -33,6 +33,18 @@ class MedKit(
     /** Как аптечку видит чужой агрегат: тождество и публикация, без переходов. */
     val ref: MedKitRef get() = MedKitRef(id, publication)
 
+    /** Как аптечку видит экран: величина, наружу уходит она, а не сущность. */
+    fun projection(): MedKitProjection = MedKitProjection(
+        id = id,
+        name = name,
+        location = location,
+        publication = publication,
+        participantCount = participantCount,
+        createdAt = createdAt,
+        isShared = isShared,
+        acceptsInvitations = acceptsInvitations
+    )
+
     /**
      * Отдельно от [isShared]: аптечка, из которой ушли все, кроме меня, остаётся серверной и
      * приглашения выдаёт. Приглашать в местную некуда — на сервере её нет (PLAN D2).

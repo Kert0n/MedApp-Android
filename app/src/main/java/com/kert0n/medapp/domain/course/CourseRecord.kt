@@ -43,6 +43,10 @@ class CourseRecord(
     /** Лечение идёт: план для него ещё существует. */
     val isOpen: Boolean get() = outcome == null
 
+    /** Как запись видит экран и аналитика: величина, наружу уходит она, а не сущность. */
+    fun projection(): CourseRecordProjection =
+        CourseRecordProjection(id, title, note, prescription, startedAt, outcome, closedAt)
+
     /** Название и заметка правятся всегда: это не изменение назначенного лечения (PLAN D5). */
     fun rename(title: String, note: String?): CourseRecord =
         CourseRecord(id, title, note, prescription, startedAt, outcome, closedAt)

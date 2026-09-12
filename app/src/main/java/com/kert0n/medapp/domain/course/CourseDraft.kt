@@ -50,6 +50,21 @@ class CourseDraft(
 
     val allocatedDosesTotal: Doses get() = medicine.allocatedTotal
 
+    /** Как черновик видит экран: величина, наружу уходит она, а не сущность. */
+    fun projection(): CourseDraftProjection = CourseDraftProjection(
+        id = id,
+        title = title,
+        note = note,
+        dose = dose,
+        form = form,
+        schedule = schedule,
+        totalDoses = totalDoses,
+        sources = sources,
+        revision = revision,
+        createdAt = createdAt,
+        updatedAt = updatedAt
+    )
+
     /** Выделение пачки в единицах пачки; `null` — пачка не выбрана. */
     fun allocatedOf(pkg: PackageRef): Quantity? {
         val allocated = medicine.allocatedTo(pkg) ?: return null

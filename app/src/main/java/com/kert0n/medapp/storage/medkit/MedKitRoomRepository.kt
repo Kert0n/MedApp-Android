@@ -2,6 +2,7 @@ package com.kert0n.medapp.storage.medkit
 
 import androidx.room.withTransaction
 import com.kert0n.medapp.domain.medkit.MedKit
+import com.kert0n.medapp.domain.medkit.MedKitProjection
 import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.storage.pack.PackageDao
@@ -18,11 +19,11 @@ class MedKitRoomRepository @Inject constructor(
     private val packages: PackageDao
 ) : MedKitStorageRepository {
 
-    override fun observeAll(): Flow<List<MedKit>> =
-        medKits.observeAll().map { rows -> rows.map { it.toDomain() } }
+    override fun observeAll(): Flow<List<MedKitProjection>> =
+        medKits.observeAll().map { rows -> rows.map { it.toDomain().projection() } }
 
-    override fun observe(id: Uuid): Flow<MedKit?> =
-        medKits.observe(id).map { it?.toDomain() }
+    override fun observe(id: Uuid): Flow<MedKitProjection?> =
+        medKits.observe(id).map { it?.toDomain()?.projection() }
 
     override suspend fun find(id: Uuid): MedKit? = medKits.find(id)?.toDomain()
 

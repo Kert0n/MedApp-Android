@@ -13,6 +13,7 @@ import com.kert0n.medapp.fixture.inMemoryDatabase
 import com.kert0n.medapp.fixture.medKit
 import com.kert0n.medapp.fixture.millilitres
 import com.kert0n.medapp.fixture.pack
+import com.kert0n.medapp.fixture.projected
 import com.kert0n.medapp.fixture.packageRepository
 import com.kert0n.medapp.fixture.queueRepository
 import com.kert0n.medapp.fixture.source
@@ -35,6 +36,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -72,16 +74,33 @@ class PackageRoomRepositoryTest {
         database.close()
     }
 
+    /** Наружу уходит проекция — величина с доступностью внутри, а не сущность (PLAN H1). */
     @Test
-    fun savedPackageIsObservedAsDomain() = runTest {
+    fun savedPackageIsObservedAsAProjection() = runTest {
         val observed = requireNotNull(repository.observe(PACK).first())
         assertEquals(paracetamol.facts, observed.facts)
         assertEquals(tablets("20"), observed.quantity)
+        assertEquals(paracetamol.projected(), observed)
+        assertFalse(observed.hasUnconfirmedChanges)
+    }
+
+    /** Список — те же проекции, собранные одним чтением: у каждой пачки своя доступность. */
+    @Test
+    fun theListCarriesAProjectionPerPackage() = runTest {
+        repository.add(pack(id = OTHER_PACK, name = "Ибупрофен", quantity = tablets("8")))
+        queue.enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
+
+        val listed = repository.list(PackageQuery(), today).first().associateBy { it.id }
+
+        assertEquals(tablets("17"), listed.getValue(PACK).availability.effective)
+        assertTrue(listed.getValue(PACK).hasUnconfirmedChanges)
+        assertEquals(tablets("8"), listed.getValue(OTHER_PACK).availability.effective)
+        assertFalse(listed.getValue(OTHER_PACK).hasUnconfirmedChanges)
     }
 
     @Test
     fun withoutQueueTheAmountIsTheConfirmedOne() = runTest {
-        val availability = requireNotNull(repository.observeAvailability(PACK).first())
+        val availability = requireNotNull(repository.observe(PACK).first()).availability
         assertEquals(tablets("20"), availability.effective)
         assertEquals(tablets("20"), availability.availableToMe)
         assertEquals(tablets("20"), availability.freeForAnyone)
@@ -92,7 +111,7 @@ class PackageRoomRepositoryTest {
     fun unclosedConsumeIsProjectedOnce() = runTest {
         queue.enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
 
-        val availability = requireNotNull(repository.observeAvailability(PACK).first())
+        val availability = requireNotNull(repository.observe(PACK).first()).availability
         assertEquals(tablets("17"), availability.effective)
     }
 
@@ -103,7 +122,7 @@ class PackageRoomRepositoryTest {
 
         assertEquals(
             tablets("20"),
-            requireNotNull(repository.observeAvailability(PACK).first()).effective
+            requireNotNull(repository.observe(PACK).first()).availability.effective
         )
     }
 
@@ -113,7 +132,7 @@ class PackageRoomRepositoryTest {
         queue.enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
         queue.settle(operation, SyncOperationStatus.PENDING, lastError = "обрыв", at = at, attempted = true)
 
-        val availability = requireNotNull(repository.observeAvailability(PACK).first())
+        val availability = requireNotNull(repository.observe(PACK).first()).availability
         assertEquals(tablets("17"), availability.effective)
         assertEquals(tablets("17"), availability.freeForAnyone)
     }
@@ -125,7 +144,7 @@ class PackageRoomRepositoryTest {
         queue.enqueue(recount, PackageSyncCommand.CorrectStock(PACK, tablets("10")), at)
         queue.enqueue(later, PackageSyncCommand.Consume(PACK, dose("2"), OTHER_INTAKE), at)
 
-        val availability = requireNotNull(repository.observeAvailability(PACK).first())
+        val availability = requireNotNull(repository.observe(PACK).first()).availability
         assertEquals(tablets("8"), availability.effective)
     }
 
@@ -133,7 +152,7 @@ class PackageRoomRepositoryTest {
     fun claimsOfOthersReduceWhatIsAvailableToMe() = runTest {
         repository.saveClaims(PACK, Claims(total = BigDecimal("8"), mine = BigDecimal("3")))
 
-        val availability = requireNotNull(repository.observeAvailability(PACK).first())
+        val availability = requireNotNull(repository.observe(PACK).first()).availability
         assertEquals(tablets("15"), availability.availableToMe)
     }
 
@@ -150,7 +169,7 @@ class PackageRoomRepositoryTest {
     fun activeCourseAllocationIsSubtractedFromTheFreePart() = runTest {
         givenActiveCourseTaking(doses = 4)
 
-        val availability = requireNotNull(repository.observeAvailability(PACK).first())
+        val availability = requireNotNull(repository.observe(PACK).first()).availability
         assertEquals(tablets("20"), availability.availableToMe)
         assertEquals(tablets("12"), availability.freeForAnyone)
     }
@@ -179,7 +198,7 @@ class PackageRoomRepositoryTest {
 
         assertTrue(repository.loseAccess(PACK))
 
-        val availability = requireNotNull(repository.observeAvailability(PACK).first())
+        val availability = requireNotNull(repository.observe(PACK).first()).availability
         assertEquals(tablets("0"), availability.freeForAnyone)
         // Брони снимаются вместе с доступом: их больше не существует, а не «их не видно».
         assertNull(requireNotNull(repository.observe(PACK).first()).claims)
@@ -230,7 +249,7 @@ class PackageRoomRepositoryTest {
         val sync = PackageSyncState(PACK, version = ResourceVersion(5), claimsVersion = ResourceVersion(2), syncedAt = at)
         repository.applyServerSnapshot(pack(quantity = millilitres("100")), sync, at)
 
-        val availability = requireNotNull(repository.observeAvailability(PACK).first())
+        val availability = requireNotNull(repository.observe(PACK).first()).availability
         assertEquals(millilitres("100"), availability.effective)
         assertEquals(millilitres("100"), availability.availableToMe)
         assertEquals(millilitres("100"), availability.freeForAnyone)

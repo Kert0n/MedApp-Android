@@ -15,7 +15,8 @@ import kotlin.uuid.Uuid
  * Сущность Package сравнивается по id, поэтому её нельзя вкладывать в состояние StateFlow:
  * расход и правка описания окажутся равными старому состоянию. Здесь сущности нет даже внутри
  * вложенных полей. Перечисления — общий доменный словарь, а не изменяемая сущность.
- * quantity — подтверждённый остаток; проекция ожидающих операций добавляется отдельно (PLAN D4).
+ * quantity — подтверждённый остаток; effective, availableToMe и freeForAnyone — оценка с
+ * незакрытыми командами поверх, чужими бронями и своим выделением (PLAN D4, E1).
  *
  * Версии предусловия здесь нет: человеку она ничего не говорит, а экрану состояния синхронизации
  * нужен момент последней сверки, который маппер получает аргументом.
@@ -45,5 +46,9 @@ data class PackagePresentationDTO(
     val claims: ClaimsPresentationDTO?,
     val lifecycle: Package.Lifecycle,
     val access: Package.Access,
+    val effective: QuantityPresentationDTO,
+    val availableToMe: QuantityPresentationDTO,
+    val freeForAnyone: QuantityPresentationDTO,
+    val hasUnconfirmedChanges: Boolean,
     val syncedAt: Instant?
 )
