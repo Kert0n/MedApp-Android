@@ -52,23 +52,30 @@ class MedKitRoomRepository @Inject constructor(
         syncedAt: Instant
     ) = medKits.applyServerParticipants(id, participantCount, syncedAt)
 
-    override suspend fun published(medKit: MedKit, snapshots: List<PackageSnapshot>, at: Instant): Boolean =
-        database.withTransaction {
-            check(medKit.answersToServer) { "записывается опубликованная аптечка" }
-            // Снимок чужой аптечки сюда не ложится — и откатывает переключение вместе с собой.
-            require(snapshots.all { it.pack.medKit.id == medKit.id }) { "публикуются снимки этой аптечки" }
-            // Между чтением содержимого и этой записью человек продолжал жить: пачка, которая
-            // изменилась или появилась, серверу не досталась, и старый снимок лёг бы поверх
-            // нового местного (E5). Тогда переключения нет.
-            val words = vocabulary.snapshot()
-            val current = packages.ofMedKit(medKit.id).map { it.toDomain(words) }.associateBy { it.id }
-            val unchanged = current.size == snapshots.size && snapshots.all { snapshot ->
-                val stored = current[snapshot.pack.id] ?: return@all false
-                stored.quantity == snapshot.pack.quantity && stored.facts.shared == snapshot.pack.facts.shared
-            }
-            if (!unchanged) return@withTransaction false
-            medKits.upsert(medKit.toStorageEntity(syncedAt = at))
-            for (snapshot in snapshots) packages.applySnapshot(snapshot, observedAt = at)
-            true
+    override suspend fun publish(
+        medKitId: Uuid,
+        snapshots: List<PackageSnapshot>,
+        at: Instant
+    ): PublicationStorage.Switch = database.withTransaction {
+        // Снимок чужой аптечки сюда не ложится — и откатывает переключение вместе с собой.
+        require(snapshots.all { it.pack.medKit.id == medKitId }) { "публикуются снимки этой аптечки" }
+        val stored = medKits.find(medKitId)?.toDomain()
+            ?: return@withTransaction PublicationStorage.Switch.MED_KIT_GONE
+        if (stored.answersToServer) return@withTransaction PublicationStorage.Switch.ALREADY_PUBLISHED
+        // Между чтением содержимого и этой записью человек продолжал жить: пачка, которая
+        // изменилась или появилась, серверу не досталась, и старый снимок лёг бы поверх
+        // нового местного (E5). Тогда переключения нет.
+        val words = vocabulary.snapshot()
+        val current = packages.ofMedKit(medKitId).map { it.toDomain(words) }.associateBy { it.id }
+        val unchanged = current.size == snapshots.size && snapshots.all { snapshot ->
+            val kept = current[snapshot.pack.id] ?: return@all false
+            kept.quantity == snapshot.pack.quantity && kept.facts.shared == snapshot.pack.facts.shared
         }
+        if (!unchanged) return@withTransaction PublicationStorage.Switch.CHANGED_MEANWHILE
+        // Переход применяется к прочитанному здесь, а не к экземпляру, взятому до сети: имя и
+        // место, поправленные пока шла публикация, остаются — сервер их и не знает (PLAN C0, E4).
+        medKits.upsert(stored.publish().toStorageEntity(syncedAt = at))
+        for (snapshot in snapshots) packages.applySnapshot(snapshot, observedAt = at)
+        PublicationStorage.Switch.PUBLISHED
+    }
 }

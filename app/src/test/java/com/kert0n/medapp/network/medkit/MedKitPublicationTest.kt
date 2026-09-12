@@ -63,7 +63,6 @@ class MedKitPublicationTest {
         val outcome = service.publish(local, packages)
         assertTrue("$outcome", outcome is MedKitPublication.Outcome.Published)
         outcome as MedKitPublication.Outcome.Published
-        assertEquals(MedKit.Publication.PUBLISHED, outcome.medKit.publication)
         assertEquals(2, outcome.packages.size)
         assertEquals(
             listOf("POST /v1/med-kits", "POST /v1/med-kits/$HOME_KIT/drugs", "POST /v1/med-kits/$HOME_KIT/drugs"),

@@ -19,6 +19,7 @@ import com.kert0n.medapp.fixture.VOCABULARY
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
 import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.network.server.medAppJson
+import com.kert0n.medapp.queue.medkit.PublicationStorage
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import java.time.Instant
 import kotlin.uuid.Uuid
@@ -69,7 +70,7 @@ class MedKitRoomRepositoryTest {
     /** Переключение и первые подтверждённые остатки с версиями — одной записью (PLAN E5). */
     @Test
     fun publishingSwitchesTheKitAndTakesTheServerState() = runTest {
-        assertTrue(medKits.published(medKit().publish(), listOf(snapshot()), at))
+        assertEquals(PublicationStorage.Switch.PUBLISHED, medKits.publish(HOME_KIT, listOf(snapshot()), at))
 
         assertEquals(MedKit.Publication.PUBLISHED, requireNotNull(medKits.find(HOME_KIT)).publication)
         assertEquals(tablets("20"), requireNotNull(database.packageRepository().find(PACK)).quantity)
@@ -83,13 +84,51 @@ class MedKitRoomRepositoryTest {
      */
     @Test
     fun aPackageChangedMeanwhileRefusesTheSwitch() = runTest {
-        assertFalse(medKits.published(medKit().publish(), listOf(snapshot(quantity = "18.000000")), at))
+        assertEquals(
+            PublicationStorage.Switch.CHANGED_MEANWHILE,
+            medKits.publish(HOME_KIT, listOf(snapshot(quantity = "18.000000")), at)
+        )
         assertEquals(MedKit.Publication.LOCAL, requireNotNull(medKits.find(HOME_KIT)).publication)
         assertNull(requireNotNull(database.packages().find(PACK)).pack.syncState().version)
 
         database.packageRepository().add(pack(id = OTHER_PACK, name = "Ибупрофен"))
-        assertFalse(medKits.published(medKit().publish(), listOf(snapshot()), at))
+        assertEquals(
+            PublicationStorage.Switch.CHANGED_MEANWHILE,
+            medKits.publish(HOME_KIT, listOf(snapshot()), at)
+        )
         assertEquals(MedKit.Publication.LOCAL, requireNotNull(medKits.find(HOME_KIT)).publication)
+    }
+
+    /**
+     * Пока шла публикация, человек переименовал аптечку и переставил её на другую полку.
+     * Переключение применяется к тому, что лежит в базе, а не к экземпляру, прочитанному до сети,
+     * поэтому правка остаётся: имени и места сервер и не знает (PLAN C0, E4).
+     */
+    @Test
+    fun aRenameMadeWhileTheNetworkWasBusySurvivesTheSwitch() = runTest {
+        medKits.save(medKit().describe(name = "Дорожная", location = "Рюкзак"))
+
+        assertEquals(PublicationStorage.Switch.PUBLISHED, medKits.publish(HOME_KIT, listOf(snapshot()), at))
+
+        val switched = requireNotNull(medKits.find(HOME_KIT))
+        assertEquals(MedKit.Publication.PUBLISHED, switched.publication)
+        assertEquals("Дорожная", switched.name)
+        assertEquals("Рюкзак", switched.location)
+    }
+
+    /**
+     * Аптечку убрали, пока шла публикация: переключать нечего, и вставкой она не воскресает.
+     * Сказать об этом честнее, чем завести её заново (PLAN E5).
+     */
+    @Test
+    fun aMedKitRemovedWhileTheNetworkWasBusyIsNotBroughtBack() = runTest {
+        val stored = requireNotNull(database.packageRepository().find(PACK))
+        database.packageRepository().end(stored.thrownOut(Uuid.random(), at), at)
+        assertTrue(medKits.delete(HOME_KIT))
+
+        assertEquals(PublicationStorage.Switch.MED_KIT_GONE, medKits.publish(HOME_KIT, emptyList(), at))
+
+        assertNull(medKits.find(HOME_KIT))
     }
 
     /**
@@ -109,7 +148,7 @@ class MedKitRoomRepositoryTest {
     @Test
     fun aSnapshotOfAnotherKitLeavesTheKitLocal() = runTest {
         val failure = runCatching {
-            medKits.published(medKit().publish(), listOf(snapshot(medKitId = SHARED_KIT)), at)
+            medKits.publish(HOME_KIT, listOf(snapshot(medKitId = SHARED_KIT)), at)
         }.exceptionOrNull()
 
         assertNotNull(failure)

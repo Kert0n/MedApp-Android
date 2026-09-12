@@ -64,15 +64,19 @@ class MedKitPublishingTest {
     private class Storage(
         var medKit: MedKit?,
         var contents: List<Package>,
-        private val accepts: Boolean = true
+        private val switch: PublicationStorage.Switch = PublicationStorage.Switch.PUBLISHED
     ) : PublicationStorage {
-        var published: Pair<MedKit, List<PackageSnapshot>>? = null
+        var published: Pair<Uuid, List<PackageSnapshot>>? = null
         override suspend fun medKit(id: Uuid): MedKit? = medKit?.takeIf { it.id == id }
         override suspend fun contentsOf(medKitId: Uuid): List<Package> = contents
-        override suspend fun published(medKit: MedKit, snapshots: List<PackageSnapshot>, at: Instant): Boolean {
-            if (!accepts) return false
-            published = medKit to snapshots
-            return true
+        override suspend fun publish(
+            medKitId: Uuid,
+            snapshots: List<PackageSnapshot>,
+            at: Instant
+        ): PublicationStorage.Switch {
+            if (switch != PublicationStorage.Switch.PUBLISHED) return switch
+            published = medKitId to snapshots
+            return switch
         }
     }
 
@@ -139,16 +143,28 @@ class MedKitPublishingTest {
 
         assertEquals(MedKitPublishing.Outcome.Published, outcome)
         val (switched, snapshots) = requireNotNull(storage.published)
-        assertEquals(MedKit.Publication.PUBLISHED, switched.publication)
+        assertEquals(HOME_KIT, switched)
         assertEquals(setOf(PACK, OTHER_PACK), snapshots.mapTo(HashSet()) { it.pack.id })
         assertEquals(1L, snapshots.first().sync.version?.number)
     }
 
     @Test
     fun aMedKitThatChangedMeanwhileIsNotSwitched() = runTest {
-        val storage = Storage(medKit(), listOf(pack(id = PACK)), accepts = false)
+        val storage = Storage(medKit(), listOf(pack(id = PACK)), PublicationStorage.Switch.CHANGED_MEANWHILE)
 
         assertEquals(MedKitPublishing.Outcome.ChangedMeanwhile, publishing(storage, happyServer).publish(HOME_KIT))
+        assertNull(storage.published)
+    }
+
+    /**
+     * Аптечку убрали, пока шла сеть: переключение отвечает «её нет», и сценарий говорит то же.
+     * Вставкой она не воскресает — сказать об этом честнее, чем завести её заново (PLAN E5).
+     */
+    @Test
+    fun aMedKitRemovedWhileTheNetworkWasBusyIsReportedGone() = runTest {
+        val storage = Storage(medKit(), listOf(pack(id = PACK)), PublicationStorage.Switch.MED_KIT_GONE)
+
+        assertEquals(MedKitPublishing.Outcome.MedKitGone, publishing(storage, happyServer).publish(HOME_KIT))
         assertNull(storage.published)
     }
 

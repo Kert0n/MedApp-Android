@@ -17,7 +17,9 @@ import kotlin.uuid.Uuid
  * и пишет переключение вместе с первыми подтверждёнными остатками одной транзакцией.
  *
  * Сеть никогда не выполняется внутри транзакции (F5), поэтому транзакций две, и владелец обеих —
- * здесь: что пачки не менялись между ними, проверяет запись переключения.
+ * здесь. Что случилось между ними, решает сама запись переключения: она перечитывает аптечку и
+ * её пачки, а не полагается на прочитанное до сети. Поэтому переименование, сделанное пока шла
+ * публикация, остаётся, убранная аптечка не воскресает, а изменившаяся пачка отменяет переключение.
  */
 class MedKitPublishing @Inject constructor(
     private val storage: PublicationStorage,
@@ -49,7 +51,12 @@ class MedKitPublishing @Inject constructor(
                         )
                     }
                 }
-                if (storage.published(result.medKit, snapshots, at)) Outcome.Published else Outcome.ChangedMeanwhile
+                when (storage.publish(medKitId, snapshots, at)) {
+                    PublicationStorage.Switch.PUBLISHED -> Outcome.Published
+                    PublicationStorage.Switch.MED_KIT_GONE -> Outcome.MedKitGone
+                    PublicationStorage.Switch.ALREADY_PUBLISHED -> Outcome.AlreadyPublished
+                    PublicationStorage.Switch.CHANGED_MEANWHILE -> Outcome.ChangedMeanwhile
+                }
             }
         }
     }
