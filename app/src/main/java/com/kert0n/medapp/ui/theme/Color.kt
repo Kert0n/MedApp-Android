@@ -41,6 +41,15 @@ val LightColors: ColorScheme = lightColorScheme(
     surfaceVariant = Color(0xFFDCE5DC),
     onSurfaceVariant = Color(0xFF414942),
     surfaceTint = Color(0xFF1B6B4A),
+    // Подложки Material: на них стоят панель навигации, карточки и листы. Без них панель
+    // навигации берёт умолчание — сиреневое.
+    surfaceDim = Color(0xFFD7DBD4),
+    surfaceBright = Color(0xFFF6FBF3),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFF0F5ED),
+    surfaceContainer = Color(0xFFEAEFE7),
+    surfaceContainerHigh = Color(0xFFE5EAE2),
+    surfaceContainerHighest = Color(0xFFDFE4DC),
     inverseSurface = Color(0xFF2E312E),
     inverseOnSurface = Color(0xFFEFF1EC),
 
@@ -79,6 +88,13 @@ val DarkColors: ColorScheme = darkColorScheme(
     surfaceVariant = Color(0xFF414942),
     onSurfaceVariant = Color(0xFFC0C9C0),
     surfaceTint = Color(0xFF8CD4AB),
+    surfaceDim = Color(0xFF101410),
+    surfaceBright = Color(0xFF363A35),
+    surfaceContainerLowest = Color(0xFF0B0F0B),
+    surfaceContainerLow = Color(0xFF191C18),
+    surfaceContainer = Color(0xFF1D211C),
+    surfaceContainerHigh = Color(0xFF272B26),
+    surfaceContainerHighest = Color(0xFF323631),
     inverseSurface = Color(0xFFE1E3DE),
     inverseOnSurface = Color(0xFF2E312E),
 

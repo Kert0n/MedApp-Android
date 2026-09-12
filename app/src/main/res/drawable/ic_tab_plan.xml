@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- План на дату: календарь. Заменяется официальным Material Symbols `calendar_month`. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FF000000"
+        android:fillType="evenOdd"
+        android:pathData="M7,1h2v2h6v-2h2v2h1a2,2 0 0 1 2,2v16a2,2 0 0 1 -2,2h-14a2,2 0 0 1 -2,-2v-16a2,2 0 0 1 2,-2h1zM5,9v12h14v-12zM7,11h3v3h-3zM11,11h3v3h-3zM15,11h3v3h-3zM7,15h3v3h-3zM11,15h3v3h-3z" />
+</vector>

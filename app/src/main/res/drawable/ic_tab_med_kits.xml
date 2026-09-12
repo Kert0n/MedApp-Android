@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Аптечка: сумка с крестом. Заменяется официальным Material Symbols `medical_services`. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FF000000"
+        android:fillType="evenOdd"
+        android:pathData="M9,2h6v4h3a2,2 0 0 1 2,2v11a2,2 0 0 1 -2,2h-12a2,2 0 0 1 -2,-2v-11a2,2 0 0 1 2,-2h3zM11,4v2h2v-2zM11,10v3h-3v2h3v3h2v-3h3v-2h-3v-3z" />
+</vector>

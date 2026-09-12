@@ -40,6 +40,9 @@ class ThemeTest {
         assertEquals(Color(0xFF3B6470), scheme.tertiary)
         assertEquals(Color(0xFFF6FBF3), scheme.surface)
         assertEquals(Color(0xFFBA1A1A), scheme.error)
+        // Подложка панели навигации: незаданная роль приходит из умолчаний Material сиреневой,
+        // и видно это только на экране — поэтому она названа здесь.
+        assertEquals(Color(0xFFEAEFE7), scheme.surfaceContainer)
     }
 
     /** Тёмная схема — те же тона при другом свете, а не умолчания Material. */
@@ -51,5 +54,6 @@ class ThemeTest {
         assertEquals(Color(0xFFA8F0C6), scheme.onPrimaryContainer)
         assertEquals(Color(0xFF101410), scheme.surface)
         assertEquals(Color(0xFF1B6B4A), scheme.inversePrimary)
+        assertEquals(Color(0xFF1D211C), scheme.surfaceContainer)
     }
 }
