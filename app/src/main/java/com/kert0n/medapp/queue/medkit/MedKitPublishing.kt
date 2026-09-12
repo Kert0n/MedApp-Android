@@ -43,6 +43,10 @@ class MedKitPublishing @Inject constructor(
                 for (dto in result.packages) {
                     when (val resolution = resolver.resolve(dto, at)) {
                         is PackageSnapshotResolver.Resolution.Resolved -> snapshots += resolution.snapshot
+                        // Своя публикуемая полка незнакомой быть не может: ответ вне договора, и
+                        // повтор доведёт публикацию по идентификаторам.
+                        is PackageSnapshotResolver.Resolution.Elsewhere ->
+                            return Outcome.Refused(Unavailability.SERVER_SILENT, rolledBack = false)
                         // Аптечка на сервере уже есть; не прочитался словарь — повтор дочитает и
                         // доведёт публикацию по идентификаторам.
                         is PackageSnapshotResolver.Resolution.Unresolved -> return Outcome.Refused(

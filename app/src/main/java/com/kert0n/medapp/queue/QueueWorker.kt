@@ -198,6 +198,8 @@ class QueueWorker @Inject constructor(
     private suspend fun known(snapshot: PackageSnapshotNetworkDTO, then: (PackageSnapshot) -> Step): Step =
         when (val resolution = snapshots.resolve(snapshot, clock.instant())) {
             is PackageSnapshotResolver.Resolution.Resolved -> then(resolution.snapshot)
+            // Команда применена, а коробка уже на полке, где нас нет: ответ окончательный (E6).
+            is PackageSnapshotResolver.Resolution.Elsewhere -> Step.Settled(Delivery.Applied(PackageState.Elsewhere))
             is PackageSnapshotResolver.Resolution.Unresolved -> Step.Deferred(resolution.reason, stop = resolution.stop)
         }
 
@@ -285,6 +287,8 @@ class QueueWorker @Inject constructor(
     private suspend fun snapshotRead(packageId: Uuid): Read = when (val read = transport.packageSnapshot(packageId)) {
         is ApiResult.Success -> when (val resolution = snapshots.resolve(read.value, clock.instant())) {
             is PackageSnapshotResolver.Resolution.Resolved -> Read.Snapshot(resolution.snapshot)
+            // Коробка на полке, где нас нет: отправлять некуда — это утрата доступа, а не повтор (E6).
+            is PackageSnapshotResolver.Resolution.Elsewhere -> Read.Failed(Delivery.AccessLost)
             is PackageSnapshotResolver.Resolution.Unresolved -> Read.Failed(Delivery.Retry(resolution.reason), stop = resolution.stop)
         }
         is ApiResult.Failure -> when (val failure = read.failure) {

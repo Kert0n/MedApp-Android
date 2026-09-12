@@ -200,7 +200,10 @@ class QueueWorkerTest {
             val state = effects.firstNotNullOfOrNull {
                 when (it) {
                     is Settlement.Effect.LayDown -> PackageState.Present(it.snapshot)
-                    is Settlement.Effect.PackageEnded -> PackageState.Gone
+                    is Settlement.Effect.PackageEnded ->
+                        if (it.ending == Settlement.Effect.Ending.ACCESS_LOST && transition is Settlement.Transition.Close &&
+                            (transition as Settlement.Transition.Close).status == SyncOperationStatus.APPLIED
+                        ) PackageState.Elsewhere else PackageState.Gone
                     else -> null
                 }
             } ?: PackageState.None
@@ -845,12 +848,12 @@ class QueueWorkerTest {
     }
 
     /**
-     * Сосед перенёс пачку в аптечку, которой у нас локально нет: снимок в ответе положить некуда.
-     * Это тот же вопрос, что и промах словаря, и исход тот же — операция ждёт с ответом в руках и
-     * названной причиной, а проход жив и следующая операция обрабатывается (PLAN E3, E4).
+     * Сосед перенёс пачку в аптечку, которой у нас нет. Это не промах словаря: ждать нечего, коробка
+     * ушла туда, где нас нет. Команда применена, а коробка у нас кончается утратой доступа —
+     * операция закрыта, а не отложена навсегда, и проход идёт дальше (PLAN E3, E6).
      */
     @Test
-    fun aSnapshotNamingAnUnknownMedKitIsDeferredAndThePassGoesOn() = runTest {
+    fun aSnapshotNamingAnUnknownMedKitClosesTheOperationAndThePassGoesOn() = runTest {
         val storage = Storage(listOf(operation(sequence = 0), operation(id = OTHER_PACK, sequence = 1, command = PackageSyncCommand.Consume(OTHER_PACK, dose("1"), OTHER_PACK))))
         val elsewhere = snapshotJson.replace(HOME_KIT.toString(), SHARED_KIT.toString())
         val transport = transport { request ->
@@ -860,9 +863,10 @@ class QueueWorkerTest {
 
         val report = worker(storage, transport).drain()
 
-        assertEquals(1, report.settled)
-        assertEquals(SyncOperationStatus.ANSWERED, storage.operations.getValue(INTAKE).status)
-        assertEquals("аптечка $SHARED_KIT неизвестна", storage.deferred.single().second)
+        assertEquals(2, report.settled)
+        assertEquals(SyncOperationStatus.APPLIED, storage.operations.getValue(INTAKE).status)
+        assertEquals(Delivery.Applied(PackageState.Elsewhere), storage.settled.first { it.first == INTAKE }.second)
+        assertTrue(storage.deferred.isEmpty())
         assertEquals(SyncOperationStatus.APPLIED, storage.operations.getValue(OTHER_PACK).status)
         assertEquals(0, store.refreshed)
     }

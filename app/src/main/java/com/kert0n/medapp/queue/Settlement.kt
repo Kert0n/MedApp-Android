@@ -131,6 +131,8 @@ fun Delivery.settlement(command: SyncCommand): Settlement = when (this) {
 private fun PackageState.effects(command: SyncCommand): List<Settlement.Effect> = when (this) {
     is PackageState.Present -> listOf(Settlement.Effect.LayDown(snapshot))
     PackageState.Gone -> listOfNotNull((command as? PackageSyncCommand)?.let { it.gone(it.endsAs()) })
+    // Команда своё сделала, а коробка ушла туда, где нас нет: у нас она кончается утратой доступа.
+    PackageState.Elsewhere -> listOfNotNull((command as? PackageSyncCommand)?.gone(Settlement.Effect.Ending.ACCESS_LOST))
     PackageState.None -> emptyList()
 }
 

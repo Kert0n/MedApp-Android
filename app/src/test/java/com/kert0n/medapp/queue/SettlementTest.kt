@@ -124,6 +124,22 @@ class SettlementTest {
         )
     }
 
+    /**
+     * Расход применён, а коробка уже на полке, где нас нет: учёт — применён, коробка у нас кончается
+     * утратой доступа (PLAN E3, E6).
+     */
+    @Test
+    fun appliedButElsewhereKeepsTheAccountingAndLosesTheBox() {
+        assertEquals(
+            listOf(
+                Effect.Account(IntakeAccounting.REMOTE_APPLIED),
+                Effect.PackageEnded(PACK, Effect.Ending.ACCESS_LOST),
+                Effect.Settled
+            ),
+            Delivery.Applied(PackageState.Elsewhere).settlement(consume).effects
+        )
+    }
+
     @Test
     fun staleRepreparesUnderTheSameNumberAndLaysTheSnapshotDown() {
         val settlement = Delivery.Stale(snapshot, notBefore = later).settlement(consume)

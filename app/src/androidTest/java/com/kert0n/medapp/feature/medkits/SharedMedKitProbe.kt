@@ -340,6 +340,29 @@ class SharedMedKitProbe {
         assertEquals(listOf(shared.box), anna.database.courses().sourcePackagesOf(COURSE))
     }
 
+    /**
+     * Анна переставила полку в общую, куда Борис вступил **только на сервере**: у него на устройстве
+     * этой полки нет. Снимок называет незнакомую полку — это не «подождать», а утрата доступа:
+     * операция закрыта, а не отложена навсегда; коробки у Бориса нет, лечение без источника (E6).
+     * Когда в приложении появится чтение общих полок, этот случай станет прыжком (сценарий 3).
+     */
+    @Test
+    fun theBoxJumpsIntoAShelfBorisDoesNotHaveOnHisDevice(): Unit = runBlocking {
+        val shared = sharedShelfWithBorisTreated()
+        val dacha = anna.localShelf("Дача")
+        anna.publish(dacha)
+        success(boris.api.joinMedKit(MembershipPostNetworkDTO(success(anna.api.createInvitation(dacha)).key)))
+
+        assertEquals(MedKitRemoval.Outcome.MARKED, anna.scenarios().medKitRemoval.remove(shared.shelf, MedKitRemoval.Fate.MoveTo(dacha)))
+        anna.drain()
+        boris.confirm(shared.intakes[1], shared.box)
+        boris.drain()
+
+        assertTrue("операции Бориса закрыты, а не ждут", boris.statuses().none { it == SyncOperationStatus.PENDING || it == SyncOperationStatus.ANSWERED })
+        assertEquals(IntakeAccounting.REMOTE_REFUSED, boris.accountingOf(shared.intakes[1]))
+        assertBorisLostTheBox(shared.box)
+    }
+
     /** Коробки у Бориса нет, остаток ушёл в историю утратой доступа, лечение без источника, но идёт. */
     private suspend fun assertBorisLostTheBox(box: Uuid) {
         assertNull(boris.packages.find(box))

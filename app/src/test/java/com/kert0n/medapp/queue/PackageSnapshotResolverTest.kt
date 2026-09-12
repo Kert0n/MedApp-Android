@@ -102,12 +102,14 @@ class PackageSnapshotResolverTest {
         assertEquals(4L, resolved.snapshot.sync.version?.number)
     }
 
+    /**
+     * Полка, которой у нас нет, — не «ещё не дочитали», а «коробка ушла туда, где нас нет»: ответ
+     * окончательный, и словарь ради него не читается (PLAN E3, E6).
+     */
     @Test
-    fun anUnknownMedKitIsUnresolvedAndDoesNotStopThePass() = runTest {
+    fun anUnknownMedKitMeansTheBoxIsElsewhereForGood() = runTest {
         val resolution = resolver(online = true).resolve(dto(snapshotJson.replace(HOME_KIT.toString(), SHARED_KIT.toString())), EARLIER)
-        val unresolved = resolution as PackageSnapshotResolver.Resolution.Unresolved
-        assertEquals("аптечка $SHARED_KIT неизвестна", unresolved.reason)
-        assertFalse(unresolved.stop)
+        assertEquals(PackageSnapshotResolver.Resolution.Elsewhere(SHARED_KIT), resolution)
     }
 
     @Test
