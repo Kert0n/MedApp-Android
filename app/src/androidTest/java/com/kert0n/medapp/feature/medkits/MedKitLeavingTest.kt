@@ -25,6 +25,10 @@ import com.kert0n.medapp.fixture.packageRepository
 import com.kert0n.medapp.fixture.plannedIntake
 import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
+import com.kert0n.medapp.queue.Delivery
+import com.kert0n.medapp.queue.PackageState
+import com.kert0n.medapp.queue.settlement
+import com.kert0n.medapp.fixture.queueStorage
 import com.kert0n.medapp.queue.StoredSyncOperation
 import com.kert0n.medapp.queue.SyncCommand
 import com.kert0n.medapp.queue.medkit.MedKitSyncCommand
@@ -77,11 +81,33 @@ class MedKitLeavingTest {
     private suspend fun commands(): List<SyncCommand> = database.syncOperations().all()
         .map { (it.toDomain(VOCABULARY) as StoredSyncOperation.Readable).operation.command }
 
+    /**
+     * Выход — наше участие, но узнать о нём мы можем только от сервера: до его ответа полка на
+     * месте, коробки целы, курс держит источники (PLAN E1, E3, E6).
+     */
     @Test
-    fun leavingLosesTheShelfsPackagesAndKeepsTheCourse() = runTest {
+    fun leavingMarksTheShelfAndWaitsForTheServer() = runTest {
         val outcome = leaving.leave(SHARED_KIT)
 
-        assertEquals(MedKitLeaving.Outcome.LEFT, outcome)
+        assertEquals(MedKitLeaving.Outcome.MARKED, outcome)
+        assertNotNull(database.medKits().find(SHARED_KIT))
+        assertNotNull(database.packageRepository().find(PACK))
+        assertEquals(emptyList<StockMovement>(), database.stockMovements().ofPackage(PACK).map { it.toDomain(VOCABULARY) })
+        assertEquals(listOf(PACK, OTHER_PACK).sorted(), database.courses().sourcePackagesOf(COURSE).sorted())
+        assertEquals(listOf(MedKitSyncCommand.Leave(SHARED_KIT)), commands())
+    }
+
+    /**
+     * Сервер согласился: коробки целы, но не у нас — последний виденный остаток каждой уходит в
+     * историю утратой доступа, курс теряет источники **с этой полки и только их**, а лечение и его
+     * история остаются (PLAN D5, D7, E6).
+     */
+    @Test
+    fun theServerAgreeingLosesTheShelfsPackagesAndKeepsTheCourse() = runTest {
+        leaving.leave(SHARED_KIT)
+
+        theServerAgrees()
+
         assertNull(database.medKits().find(SHARED_KIT))
         assertNull(database.packageRepository().find(PACK))
         assertNotNull(database.packageRepository().find(OTHER_PACK))
@@ -91,7 +117,19 @@ class MedKitLeavingTest {
         assertEquals(listOf(OTHER_PACK), database.courses().sourcePackagesOf(COURSE))
         assertNotNull(database.courses().findRecord(COURSE))
         assertEquals("Парацетамол", requireNotNull(database.intakes().find(INTAKE)).toDomain(VOCABULARY).taken?.pkg?.name)
-        assertEquals(listOf(MedKitSyncCommand.Leave(SHARED_KIT)), commands())
+    }
+
+    /**
+     * Сервер согласился. Исход доводит до конца очередь — тем же путём, что и в бою: эффект
+     * закрытия операции, а не отдельная дверь для теста.
+     */
+    private suspend fun theServerAgrees() {
+        val stored = database.syncOperations().all().single().toDomain(VOCABULARY) as StoredSyncOperation.Readable
+        database.queueStorage().settle(
+            stored.operation.id,
+            Delivery.Applied(PackageState.None).settlement(stored.operation.command),
+            LATER
+        )
     }
 
     @Test

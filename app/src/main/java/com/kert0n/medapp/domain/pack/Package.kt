@@ -142,6 +142,16 @@ class Package(
     }
 
     /**
+     * Пересчитали и увидели ноль: коробки не осталось, а «было столько» объясняет пересчёт — без
+     * него остаток пропал бы из учёта без объяснения (PLAN D7, H6).
+     */
+    fun recountedToZero(movementId: Uuid, at: Instant, note: String? = null): PackageEnding =
+        when (val after = correctTo(Quantity.zero(quantity.unit), movementId, at, note)) {
+            is PackageAfter.Ended -> after.ending
+            is PackageAfter.Left -> error("пересчитанная в ноль коробка не остаётся: ${after.pkg}")
+        }
+
+    /**
      * Пачки нет на сервере, и нет по нашей же причине — мы сами её туда и отправили удалять либо
      * израсходовали до конца. О количестве это не говорит ничего, поэтому следа нет (PLAN D7).
      */

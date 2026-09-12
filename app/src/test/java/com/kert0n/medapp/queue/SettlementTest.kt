@@ -44,16 +44,50 @@ class SettlementTest {
     }
 
     @Test
-    fun appliedWithThePackageGoneArchivesIt() {
+    fun appliedWithThePackageGoneEndsItWithoutATrace() {
         val settlement = Delivery.Applied(PackageState.Gone).settlement(consume)
-        assertEquals(listOf(Effect.Account(IntakeAccounting.REMOTE_APPLIED), Effect.PackageGone(PACK)), settlement.effects)
+        assertEquals(listOf(Effect.Account(IntakeAccounting.REMOTE_APPLIED), Effect.PackageEnded(PACK, Effect.Ending.CONSUMED)), settlement.effects)
     }
 
     @Test
-    fun appliedWithNoPackageStateTouchesOnlyTheAccounting() {
+    fun appliedLeaveTakesTheShelfAndNotAPackage() {
+        // Выход касается полки целиком, а не какой-то её коробки: состояния пачки у него нет
+        // вовсе, а следствие — то, что до согласия сервера не трогали (PLAN E6).
         val settlement = Delivery.Applied(PackageState.None).settlement(leave)
         assertEquals(Transition.Close(SyncOperationStatus.APPLIED), settlement.transition)
-        assertEquals(listOf<Effect>(Effect.Account(IntakeAccounting.REMOTE_APPLIED)), settlement.effects)
+        assertEquals(
+            listOf<Effect>(Effect.Account(IntakeAccounting.REMOTE_APPLIED), Effect.MedKitLeft(SHARED_KIT)),
+            settlement.effects
+        )
+    }
+
+    /** Разбор полки приходит тем же путём и несёт, куда девать её содержимое (PLAN E6). */
+    @Test
+    fun appliedDismantleCarriesWhereTheContentsGo() {
+        val settlement = Delivery.Applied(PackageState.None)
+            .settlement(MedKitSyncCommand.Delete(SHARED_KIT, transferTo = HOME_KIT))
+        assertEquals(
+            listOf<Effect>(
+                Effect.Account(IntakeAccounting.REMOTE_APPLIED),
+                Effect.MedKitDismantled(SHARED_KIT, transferTo = HOME_KIT)
+            ),
+            settlement.effects
+        )
+    }
+
+    /**
+     * «Пачки нет» после нашего же `Delete` — это выброшенная коробка, и она обязана объяснить, куда
+     * делся остаток; после расхода объяснение уже есть — сам приём (PLAN D7, H6).
+     */
+    @Test
+    fun theEndingNamesWhyTheBoxIsGone() {
+        assertEquals(
+            listOf<Effect>(
+                Effect.Account(IntakeAccounting.REMOTE_APPLIED),
+                Effect.PackageEnded(PACK, Effect.Ending.THROWN_OUT)
+            ),
+            Delivery.Applied(PackageState.Gone).settlement(PackageSyncCommand.Delete(PACK)).effects
+        )
     }
 
     @Test
@@ -91,7 +125,7 @@ class SettlementTest {
         assertEquals(
             listOf(
                 Effect.Account(IntakeAccounting.REMOTE_REFUSED),
-                Effect.PackageLost(PACK),
+                Effect.PackageEnded(PACK, Effect.Ending.ACCESS_LOST),
                 Effect.Cascade(SyncOperationStatus.ACCESS_LOST, IntakeAccounting.REMOTE_REFUSED)
             ),
             settlement.effects

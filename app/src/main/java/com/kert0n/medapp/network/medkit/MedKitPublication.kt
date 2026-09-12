@@ -32,9 +32,9 @@ class MedKitPublication @Inject constructor(private val api: MedAppApi) {
 
     suspend fun publish(medKit: MedKit, packages: List<Package>): Outcome {
         require(packages.all { it.medKit.id == medKit.id }) { "публикуются пачки этой аптечки" }
-        // Публикуется местная аптечка: у общей писателей уже несколько, и «текущее местное
-        // состояние» перестало быть истиной. Переключает её хранение, здесь только провод (E5).
-        check(!medKit.answersToServer) { "аптечка уже на сервере" }
+        // На провод уходит местная аптечка: у общей писателей уже несколько, и «публикуется
+        // текущее местное состояние» перестало быть правдой. Переключает её хранение (PLAN E5).
+        check(!medKit.answersToServer) { "публикуется местная аптечка, а эта уже общая" }
         val onServer: Map<Uuid, PackageSnapshotNetworkDTO> = when (val created = api.createMedKit(MedKitPostNetworkDTO(medKit.id))) {
             is ApiResult.Success -> emptyMap()
             is ApiResult.Failure -> when (created.failure) {

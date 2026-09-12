@@ -59,9 +59,7 @@ class PackageRoomRepository @Inject constructor(
 
     override suspend fun add(pkg: Package, sync: PackageSyncState) = save(pkg, sync)
 
-    /** Пачка целиком — запись, живая строка и сведения — одной транзакцией DAO. */
-    private suspend fun save(pkg: Package, sync: PackageSyncState) =
-        packages.save(pkg.record.toStorageEntity(), pkg.toStorageEntity(sync), pkg.toDetailsStorageEntity())
+    private suspend fun save(pkg: Package, sync: PackageSyncState) = packages.save(pkg, sync)
 
     override suspend fun describe(packageId: Uuid, facts: PackageFacts): Boolean =
         change(packageId) { it.describe(facts) }

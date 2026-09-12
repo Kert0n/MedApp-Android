@@ -200,7 +200,7 @@ class QueueWorkerTest {
             val state = effects.firstNotNullOfOrNull {
                 when (it) {
                     is Settlement.Effect.LayDown -> PackageState.Present(it.snapshot)
-                    is Settlement.Effect.PackageGone -> PackageState.Gone
+                    is Settlement.Effect.PackageEnded -> PackageState.Gone
                     else -> null
                 }
             } ?: PackageState.None

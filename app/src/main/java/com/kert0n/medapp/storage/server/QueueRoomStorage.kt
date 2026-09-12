@@ -29,6 +29,7 @@ import com.kert0n.medapp.storage.medkit.MedKitDao
 import com.kert0n.medapp.storage.pack.PackageDao
 import com.kert0n.medapp.storage.pack.applySnapshot
 import com.kert0n.medapp.storage.pack.end
+import com.kert0n.medapp.storage.pack.save
 import com.kert0n.medapp.storage.stock.StockMovementDao
 import com.kert0n.medapp.storage.stock.toStorageEntity as toMovementStorageEntity
 import com.kert0n.medapp.storage.value.VocabularyDao
@@ -168,11 +169,13 @@ class QueueRoomStorage @Inject constructor(
     private suspend fun apply(id: Uuid, effect: Settlement.Effect, at: Instant) {
         when (effect) {
             is Settlement.Effect.LayDown -> layDown(effect.snapshot, at)
-            // Коробки у нас больше нет. Чем это объясняется, решает переход самой пачки: «нет на
-            // сервере» по нашей же причине — о количестве это не говорит ничего; утрачен доступ —
-            // последний виденный остаток уходит из учёта записью в историю (PLAN D7).
-            is Settlement.Effect.PackageGone -> ended(effect.packageId, at) { it.goneOnServer() }
-            is Settlement.Effect.PackageLost -> ended(effect.packageId, at) { it.lost(Uuid.random(), at) }
+            // Коробки у нас больше нет; чем это объясняется, названо в самом эффекте, а переход
+            // приносит пачка (PLAN D7).
+            is Settlement.Effect.PackageEnded -> ended(effect.packageId, at) { it.endedAs(effect.ending, at) }
+            // Полку разобрали или из неё вышли: до согласия сервера ничего не трогали, и всё
+            // случается здесь — одной транзакцией с закрытием операции (PLAN E6, F5).
+            is Settlement.Effect.MedKitDismantled -> dismantled(effect.medKitId, effect.transferTo, at)
+            is Settlement.Effect.MedKitLeft -> left(effect.medKitId, at)
             is Settlement.Effect.Account -> intakes.setAccounting(id, effect.accounting)
             is Settlement.Effect.Cascade -> cascade(id, effect)
         }
@@ -186,6 +189,48 @@ class QueueRoomStorage @Inject constructor(
         val words = vocabulary.snapshot()
         val pkg = packages.find(packageId)?.toDomain(words) ?: return
         packages.end(ending(pkg), courses, movements, words, at)
+    }
+
+    /** Названный очередью конец — переходом самой пачки: след выбирает она, а не хранение. */
+    private fun Package.endedAs(ending: Settlement.Effect.Ending, at: Instant): PackageEnding = when (ending) {
+        Settlement.Effect.Ending.THROWN_OUT -> thrownOut(Uuid.random(), at)
+        Settlement.Effect.Ending.RECOUNTED -> recountedToZero(Uuid.random(), at)
+        Settlement.Effect.Ending.CONSUMED -> goneOnServer()
+        Settlement.Effect.Ending.ACCESS_LOST -> lost(Uuid.random(), at)
+    }
+
+    /**
+     * Полку разобрали, и сервер согласился. Содержимое уходит своими доменными концами либо
+     * переезжает на названную полку, и только после этого уходит строка самой аптечки: аптечки с
+     * содержимым и содержимого без аптечки не бывает ни на миг (PLAN E6, F5).
+     *
+     * Цели уже нет — сервер переставил коробки туда, где мы их не видим: это утрата доступа, а не
+     * выбрасывание, и говорить о чужой причине исчезновения мы не беремся (E3).
+     */
+    private suspend fun dismantled(medKitId: Uuid, transferTo: Uuid?, at: Instant) {
+        val words = vocabulary.snapshot()
+        val target = transferTo?.let { medKits.find(it)?.toRef() }
+        for (row in packages.ofMedKit(medKitId)) {
+            val pkg = row.toDomain(words)
+            when {
+                transferTo == null -> packages.end(pkg.thrownOut(Uuid.random(), at), courses, movements, words, at)
+                target != null -> packages.save(pkg.moveTo(target), row.pack.syncState())
+                else -> packages.end(pkg.lost(Uuid.random(), at), courses, movements, words, at)
+            }
+        }
+        medKits.delete(medKitId)
+    }
+
+    /**
+     * Из полки вышли: коробки целы, но не у нас — последний виденный остаток каждой уходит из
+     * учёта записью в историю, и строка полки уходит следом. Курс и его история остаются (E6).
+     */
+    private suspend fun left(medKitId: Uuid, at: Instant) {
+        val words = vocabulary.snapshot()
+        for (row in packages.ofMedKit(medKitId)) {
+            packages.end(row.toDomain(words).lost(Uuid.random(), at), courses, movements, words, at)
+        }
+        medKits.delete(medKitId)
     }
 
     /** Разрешённый снимок поверх подтверждённого остатка и броней; разрешать здесь нечего. */

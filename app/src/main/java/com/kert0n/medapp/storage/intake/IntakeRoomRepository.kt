@@ -15,10 +15,8 @@ import com.kert0n.medapp.storage.database.chunkedForQuery
 import com.kert0n.medapp.domain.pack.PackageAfter
 import com.kert0n.medapp.storage.pack.PackageDao
 import com.kert0n.medapp.storage.pack.end
+import com.kert0n.medapp.storage.pack.save
 import com.kert0n.medapp.storage.stock.StockMovementDao
-import com.kert0n.medapp.storage.pack.toDetailsStorageEntity
-import com.kert0n.medapp.storage.pack.toStorageEntity as toPackageStorageEntity
-import com.kert0n.medapp.storage.pack.toStorageEntity as toRecordStorageEntity
 import com.kert0n.medapp.storage.value.VocabularyDao
 import com.kert0n.medapp.storage.value.toStorageAmount
 import java.time.Instant
@@ -108,11 +106,7 @@ class IntakeRoomRepository @Inject constructor(
                 // держится он за вечную запись и конец переживает (PLAN D3, D6, H6).
                 is PackageAfter.Ended -> packages.end(spent.ending, courses, movements, words, outcome.answeredAt)
                 // Расход не трогает обвязку доставки: версия и картина броней остаются прежними (E3).
-                is PackageAfter.Left -> packages.save(
-                    spent.pkg.record.toRecordStorageEntity(),
-                    spent.pkg.toPackageStorageEntity(it.pack.syncState()),
-                    spent.pkg.toDetailsStorageEntity()
-                )
+                is PackageAfter.Left -> packages.save(spent.pkg, it.pack.syncState())
             }
         }
         outcome.reallocation?.let { (course, expected) ->

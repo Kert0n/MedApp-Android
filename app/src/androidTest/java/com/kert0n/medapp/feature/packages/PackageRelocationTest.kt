@@ -82,13 +82,18 @@ class PackageRelocationTest {
         assertEquals(emptyList<SyncCommand>(), commands())
     }
 
+    /**
+     * Общая коробка ждёт ответа сервера на прежней полке: отказ по версии иначе оставил бы её на
+     * чужой. Новое место придёт снимком ответа — он и есть истина по этой коробке (PLAN E1, E6).
+     */
     @Test
-    fun sharedToSharedTellsTheServerToMove() = runTest {
+    fun sharedToSharedTellsTheServerToMoveAndWaits() = runTest {
         publish(HOME_KIT, SHARED_KIT)
 
-        assertEquals(PackageRelocation.Outcome.MOVED, relocation.move(PACK, SHARED_KIT))
+        assertEquals(PackageRelocation.Outcome.MARKED, relocation.move(PACK, SHARED_KIT))
 
-        assertMovedAndStillASource()
+        assertEquals(HOME_KIT, requireNotNull(database.packageRepository().find(PACK)).medKit.id)
+        assertEquals(listOf(PACK), database.courses().sourcePackagesOf(COURSE))
         assertEquals(listOf(PackageSyncCommand.Move(PACK, SHARED_KIT)), commands())
     }
 

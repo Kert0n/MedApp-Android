@@ -22,7 +22,8 @@ import kotlin.uuid.Uuid
  * следа в истории (D7). Что ещё нужно сделать, решает граница публикации:
  *
  * - местная → местная: ничего;
- * - общая → общая: серверу — `Move`, свою бронь он сохраняет, потому что мы видим цель;
+ * - общая → общая: серверу — `Move`, и коробка ждёт его ответа на прежней полке: новое место
+ *   принесёт снимок. Свою бронь сервер сохраняет, потому что мы видим цель;
  * - местная → общая: коробка становится известна серверу — `Create` в целевой аптечке, а
  *   выделение курса, если оно есть, едет следом бронью `SetClaim`, иначе на сервере его бы не
  *   было. До ответа обвязка пуста и броней нет — первое подтверждённое число даст снимок ответа
@@ -55,12 +56,26 @@ class PackageRelocation @Inject constructor(
         val from = pkg.medKit
         val to = target.ref
         if (from.answersToServer && !to.answersToServer) return Outcome.TARGET_NEEDS_PUBLICATION
-        place(pkg, to, at)
-        when {
-            from.answersToServer -> queue.change(to, listOf(command(PackageSyncCommand.Move(pkg.id, to.id))), at) { true }
-            to.answersToServer -> publish(pkg, to, at)
+        return when {
+            // Коробка на общей полке: переставляет её сервер, и до его ответа она остаётся там,
+            // где лежит. Иначе отказ по версии оставил бы её на чужой полке (PLAN E1, E6). Новое
+            // место придёт снимком ответа — он же истина по этой коробке.
+            from.answersToServer -> {
+                queue.change(to, listOf(command(PackageSyncCommand.Move(pkg.id, to.id))), at) { true }
+                Outcome.MARKED
+            }
+            // Своя коробка на общую полку: сервер о ней ещё не знает, спорить не с кем, и место
+            // меняется сразу. Серверу она едет созданием — вместе с выделением курса.
+            to.answersToServer -> {
+                place(pkg, to, at)
+                publish(pkg, to, at)
+                Outcome.MOVED
+            }
+            else -> {
+                place(pkg, to, at)
+                Outcome.MOVED
+            }
         }
-        return Outcome.MOVED
     }
 
     /** Только место: переход пачки к прочитанному состоянию, без команд (PLAN D7). */
@@ -82,9 +97,10 @@ class PackageRelocation @Inject constructor(
     private fun command(command: PackageSyncCommand) = QueuedCommand(Uuid.random(), command)
 
     /**
-     * Чем кончилось. Переставили — экран показывает новую полку; коробки уже нет — закрывает
-     * молча; цели нет — просит выбрать другую; та же полка — говорит об этом; цель местная, а
-     * коробка общая — просит согласия на публикацию цели (PLAN E5, E6).
+     * Чем кончилось. Переставили — экран показывает новую полку; пометили — коробка остаётся на
+     * прежней и ждёт ответа сервера; коробки уже нет — закрывает молча; цели нет — просит выбрать
+     * другую; та же полка — говорит об этом; цель местная, а коробка общая — просит согласия на
+     * публикацию цели (PLAN E5, E6).
      */
-    enum class Outcome { MOVED, GONE, TARGET_GONE, TARGET_IS_THE_SAME, TARGET_NEEDS_PUBLICATION }
+    enum class Outcome { MOVED, MARKED, GONE, TARGET_GONE, TARGET_IS_THE_SAME, TARGET_NEEDS_PUBLICATION }
 }

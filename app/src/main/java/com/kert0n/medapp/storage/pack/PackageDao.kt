@@ -6,9 +6,11 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
+import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageEnding
 import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.network.pack.PackageSnapshot
+import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.storage.course.CourseDao
 import com.kert0n.medapp.storage.course.releaseSource
 import com.kert0n.medapp.storage.stock.StockMovementDao
@@ -224,6 +226,13 @@ suspend fun PackageDao.applySnapshot(snapshot: PackageSnapshot, observedAt: Inst
         snapshot.pack.claims?.toStorageEntity(snapshot.pack.id),
         observedAt
     )
+
+/**
+ * Пачка целиком: запись о коробке, живая строка и личные сведения собираются из одной сущности.
+ * Порознь их не бывает, и раскладывать пачку на три строки каждому вызывающему незачем (PLAN F1).
+ */
+suspend fun PackageDao.save(pkg: Package, sync: PackageSyncState = PackageSyncState(pkg.id)) =
+    save(pkg.record.toStorageEntity(), pkg.toStorageEntity(sync), pkg.toDetailsStorageEntity())
 
 /**
  * Конец коробки — **одно место на всё приложение**: расход, утилизация, пересчёт в ноль,
