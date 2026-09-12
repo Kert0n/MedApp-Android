@@ -204,6 +204,16 @@ sealed interface PackageSyncCommand : SyncCommand {
          * версии, отличается от расхода, который сервер не видел (решение владельца, PLAN E3).
          * Без блока брони или при броне, которую расход не менял, судить нечем — `false`.
          */
+        /**
+         * Опустошил бы этот расход пачку: доза не меньше подтверждённого остатка, по которому
+         * готовился запрос. Пачка, списанная до нуля, сервером уничтожается, и повтор такого
+         * расхода отвечает 404 (PLAN B4): это наш же расход, дошедший до нуля, а не утрата доступа.
+         */
+        fun emptiedBy(prepared: PreparedRequest): Boolean {
+            val before = prepared.quantityBefore ?: return false
+            return amount.quantity.amount >= before.amount
+        }
+
         fun provenAppliedBy(snapshot: PackageSnapshotNetworkDTO, prepared: PreparedRequest): Boolean {
             val wanted = claimAfter?.takeUnless { it.isZero } ?: return false
             val before = prepared.mineBefore ?: return false

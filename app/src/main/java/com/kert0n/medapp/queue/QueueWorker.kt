@@ -122,7 +122,7 @@ class QueueWorker @Inject constructor(
                 ApiFailure.PreconditionRequired -> Step.Settled(refused(taken.command, RefusalReason.INVALID))
                 is ApiFailure.Invalid ->
                     Step.Settled(refused(taken.command, (taken.command as? PackageSyncCommand)?.onInvalid ?: RefusalReason.INVALID))
-                ApiFailure.NotFound -> Step.Settled(notFound(taken.command))
+                ApiFailure.NotFound -> Step.Settled(notFound(taken, request))
                 ApiFailure.Unauthorized, ApiFailure.RegistrationRefused -> Step.Unauthorized
                 is ApiFailure.TooManyRequests ->
                     Step.Settled(Delivery.Retry("429"), retryAfter = failure.retryAfter, stop = true)
@@ -223,10 +223,19 @@ class QueueWorker @Inject constructor(
         else -> Delivery.Refused(reason, PackageState.None)
     }
 
-    /** 404 значит разное для разных команд (PLAN B4): что именно — говорит команда. */
-    private suspend fun notFound(command: SyncCommand): Delivery = when (command) {
+    /**
+     * 404 значит разное для разных команд (PLAN B4): что именно — говорит команда. У расхода есть
+     * ещё один случай: повтор запроса, который уже уходил и мог уничтожить пачку, дойдя до нуля, —
+     * тогда пачки нет по нашей же причине, и это применение, а не потеря доступа (PLAN E3).
+     */
+    private suspend fun notFound(operation: SyncOperation, request: PreparedRequest): Delivery = when (val command = operation.command) {
         is PackageSyncCommand -> when (command.onNotFound) {
-            NotFoundPolicy.ACCESS_LOST -> Delivery.AccessLost
+            NotFoundPolicy.ACCESS_LOST ->
+                if (command is PackageSyncCommand.Consume && operation.attempts > 0 && command.emptiedBy(request)) {
+                    Delivery.Applied(PackageState.Gone)
+                } else {
+                    Delivery.AccessLost
+                }
             NotFoundPolicy.REPREPARE -> snapshotThen(command.packageId) { Delivery.Stale(it) }
             NotFoundPolicy.APPLIED ->
                 if (command is PackageSyncCommand.ReleaseClaim) snapshotThen(command.packageId) { Delivery.Applied(PackageState.Present(it)) }

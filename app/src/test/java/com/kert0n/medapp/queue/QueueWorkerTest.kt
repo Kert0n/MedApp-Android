@@ -346,6 +346,39 @@ class QueueWorkerTest {
     }
 
     /**
+     * Последняя доза: расход списал пачку до нуля, сервер её уничтожил, ответ потерялся — и повтор
+     * отвечает 404 (PLAN B4). Пачки нет по нашей же причине, значит расход применён, а доступ не
+     * утрачен.
+     */
+    @Test
+    fun aRepeatedConsumptionThatEmptiedThePackageIsAppliedNotLost() = runTest {
+        val everything = PackageSyncCommand.Consume(PACK, dose("20"), INTAKE)
+        val frozen = everything.toPreparedRequest(
+            INTAKE, PackageSyncState(PACK, ResourceVersion(3)), tablets("20"), null, EARLIER
+        )
+        val storage = Storage(
+            listOf(operation(everything, status = SyncOperationStatus.SENDING, attempts = 1, prepared = frozen))
+        )
+        val transport = Transport { ApiResult.Failure(ApiFailure.NotFound) }
+
+        worker(storage, transport).drain()
+
+        assertEquals(Delivery.Applied(PackageState.Gone), storage.settled.single().second)
+    }
+
+    /** 404 на первой же отправке — пачки нет не по нашей причине: доступ утрачен. */
+    @Test
+    fun aFirstConsumptionMeetingANotFoundIsAccessLost() = runTest {
+        val everything = PackageSyncCommand.Consume(PACK, dose("20"), INTAKE)
+        val storage = Storage(listOf(operation(everything)))
+        val transport = transport { ApiResult.Failure(ApiFailure.NotFound) }
+
+        worker(storage, transport).drain()
+
+        assertEquals(Delivery.AccessLost, storage.settled.single().second)
+    }
+
+    /**
      * 412 у `sync` — версия устарела, запрос отвергнут до применения (PLAN B3, E3): состояние
      * читается и ложится в базу, запрос готовится заново под тем же номером и уходит тем же
      * проходом — со свежей версией.
