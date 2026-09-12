@@ -1,5 +1,6 @@
-package com.kert0n.medapp.network.medkit
+package com.kert0n.medapp.queue.medkit
 
+import com.kert0n.medapp.queue.Expected
 import com.kert0n.medapp.queue.SyncCommand
 import kotlin.uuid.Uuid
 
@@ -18,6 +19,9 @@ import kotlin.uuid.Uuid
 sealed interface MedKitSyncCommand : SyncCommand {
 
     val medKitId: Uuid
+
+    /** Ответы по аптечке команде не нужны: `{id}` созданной она и так знает, остальное — `204`. */
+    override val expects: Expected get() = Expected.NOTHING
 
     /**
      * Опубликовать аптечку: на сервере появляется её существование и участие.

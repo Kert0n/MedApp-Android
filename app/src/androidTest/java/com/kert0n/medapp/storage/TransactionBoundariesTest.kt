@@ -10,8 +10,10 @@ import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.INTAKE
 import com.kert0n.medapp.fixture.LATER
+import com.kert0n.medapp.domain.value.doses
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
+import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.SHARED_KIT
 import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.course
@@ -30,7 +32,7 @@ import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.fixture.unplannedIntake
 import com.kert0n.medapp.network.intake.IntakeAccounting
 import com.kert0n.medapp.network.intake.IntakeSyncState
-import com.kert0n.medapp.network.pack.PackageSyncCommand
+import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.storage.course.ActivePackageAssignmentStorageEntity
@@ -134,6 +136,46 @@ class TransactionBoundariesTest {
         assertEquals(other, courses.courseHolding(PACK))
     }
 
+    /**
+     * Источники и назначения — два представления одного отношения, и пишутся вместе:
+     * привязанная пачка занята курсом, отвязанная свободна (PLAN F1, F2).
+     */
+    @Test
+    fun changingTheSourcesReassignsThePackagesInTheSameTransaction() = runTest {
+        val activation = draft()
+        courses.activate(activation, planned = listOf(plannedIntake()))
+        val ibuprofen = pack(id = OTHER_PACK, quantity = tablets("10"), form = TABLET_FORM)
+        packages.add(ibuprofen)
+
+        val extended = activation.course.attach(ibuprofen, 3.doses, LATER).getOrThrow()
+        assertTrue(courses.updateSources(extended, expected = activation.course.revision))
+        assertEquals(COURSE, courses.courseHolding(PACK))
+        assertEquals(COURSE, courses.courseHolding(OTHER_PACK))
+
+        val shrunk = extended.detach(paracetamol, LATER)
+        assertTrue(courses.updateSources(shrunk, expected = extended.revision))
+        assertNull(courses.courseHolding(PACK))
+        assertEquals(COURSE, courses.courseHolding(OTHER_PACK))
+        assertEquals(listOf(OTHER_PACK), requireNotNull(courses.findPlan(COURSE)).sources.map { it.pkg.id })
+    }
+
+    /** Пересчёт обеспечения состав не меняет: иначе назначения пачек разошлись бы с источниками. */
+    @Test
+    fun reallocationWithAnotherCompositionIsRefused() = runTest {
+        val activation = draft()
+        courses.activate(activation, planned = listOf(plannedIntake()))
+        val ibuprofen = pack(id = OTHER_PACK, quantity = tablets("10"), form = TABLET_FORM)
+        packages.add(ibuprofen)
+        val extended = activation.course.attach(ibuprofen, 3.doses, LATER).getOrThrow()
+
+        val failure = runCatching {
+            courses.reallocate(CourseReallocation(extended, activation.course.revision))
+        }.exceptionOrNull()
+
+        assertEquals(IllegalStateException::class, failure!!::class)
+        assertNull(courses.courseHolding(OTHER_PACK))
+    }
+
     @Test
     fun closingRemovesThePlanAndKeepsTheRecord() = runTest {
         val activation = draft()
@@ -160,7 +202,7 @@ class TransactionBoundariesTest {
 
         val applied = intakes.record(
             IntakeOutcome(
-                intake = plannedIntake().confirm(paracetamol, dose("2"), LATER),
+                intake = plannedIntake().confirm(paracetamol.take(dose("2"), LATER).getOrThrow()),
                 expected = setOf(IntakeStatus.PLANNED, IntakeStatus.MISSED),
                 sync = IntakeSyncState(INTAKE, IntakeAccounting.LOCAL_APPLIED),
             )
@@ -181,7 +223,7 @@ class TransactionBoundariesTest {
         courses.activate(draft(), planned = listOf(plannedIntake()))
         val outcome = {
             IntakeOutcome(
-                intake = plannedIntake().confirm(paracetamol, dose("2"), LATER),
+                intake = plannedIntake().confirm(paracetamol.take(dose("2"), LATER).getOrThrow()),
                 expected = setOf(IntakeStatus.PLANNED),
                 sync = IntakeSyncState(INTAKE, IntakeAccounting.LOCAL_APPLIED)
             )
@@ -206,7 +248,7 @@ class TransactionBoundariesTest {
             queue.change(published, listOf(clash), at) {
                 intakes.record(
                     IntakeOutcome(
-                        intake = plannedIntake().confirm(paracetamol, dose("2"), LATER),
+                        intake = plannedIntake().confirm(paracetamol.take(dose("2"), LATER).getOrThrow()),
                         expected = setOf(IntakeStatus.PLANNED),
                         sync = IntakeSyncState(INTAKE, IntakeAccounting.PENDING, operationId = operation)
                     )
@@ -292,7 +334,7 @@ class TransactionBoundariesTest {
             queue.change(published, listOf(consume), at) {
                 intakes.record(
                     IntakeOutcome(
-                        intake = plannedIntake().confirm(paracetamol, dose("2"), LATER),
+                        intake = plannedIntake().confirm(paracetamol.take(dose("2"), LATER).getOrThrow()),
                         expected = setOf(IntakeStatus.PLANNED),
                         sync = IntakeSyncState(INTAKE, IntakeAccounting.PENDING, operationId = operation)
                     )
@@ -470,8 +512,20 @@ class TransactionBoundariesTest {
         assertEquals(activation.record.prescription, record.prescription)
     }
 
+    /** Название эпизода — правило записи, и оно стоит до SQL: пустое имя в базу не попадает. */
+    @Test
+    fun blankTitleIsRejectedBeforeItReachesTheRow() = runTest {
+        val activation = draft()
+        courses.activate(activation)
+
+        val refusal = runCatching { courses.rename(COURSE, "   ", note = null) }.exceptionOrNull()
+
+        assertEquals(IllegalArgumentException::class, refusal!!::class)
+        assertEquals(activation.record.title, requireNotNull(courses.findRecord(COURSE)).title)
+    }
+
     private fun confirmedOutcome() = IntakeOutcome(
-        intake = plannedIntake().confirm(paracetamol, dose("2"), LATER),
+        intake = plannedIntake().confirm(paracetamol.take(dose("2"), LATER).getOrThrow()),
         expected = setOf(IntakeStatus.PLANNED),
         sync = IntakeSyncState(INTAKE, IntakeAccounting.LOCAL_APPLIED)
     )

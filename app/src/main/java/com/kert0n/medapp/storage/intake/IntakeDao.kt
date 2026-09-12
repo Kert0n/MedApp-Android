@@ -28,6 +28,10 @@ interface IntakeDao {
     fun observeOfCourse(courseId: Uuid): Flow<List<IntakeStorageRow>>
 
     @Transaction
+    @Query("SELECT * FROM intakes WHERE course_id = :courseId ORDER BY scheduled_at")
+    suspend fun ofCourse(courseId: Uuid): List<IntakeStorageRow>
+
+    @Transaction
     @Query(
         "SELECT * FROM intakes WHERE status = 'PLANNED' AND scheduled_at < :until " +
             "ORDER BY scheduled_at"
@@ -85,10 +89,21 @@ interface IntakeDao {
         operationId: Uuid?
     ): Int
 
-    /** Операция расхода закрыта — факт учтён на сервере; закрытие и учёт ложатся одной транзакцией. */
+    /** Операция расхода применена — факт учтён на сервере; закрытие и учёт ложатся одной транзакцией. */
     @Query("UPDATE intakes SET accounting = 'REMOTE_APPLIED' WHERE operation_id = :operationId AND accounting = 'PENDING'")
     suspend fun markRemoteApplied(operationId: Uuid): Int
 
+    /** Операция расхода отказана или пачки не стало — серверный остаток факт не включает, и это видно. */
+    @Query("UPDATE intakes SET accounting = 'REMOTE_REFUSED' WHERE operation_id = :operationId AND accounting = 'PENDING'")
+    suspend fun markRemoteRefused(operationId: Uuid): Int
+
     @Query("DELETE FROM intakes WHERE id = :id")
     suspend fun delete(id: Uuid)
+
+    @Query("SELECT * FROM intakes WHERE course_id = :courseId AND status = 'PLANNED'")
+    suspend fun plannedOf(courseId: Uuid): List<IntakeStorageEntity>
+
+    /** Убираются только плановые: условие в запросе, а не в вызывающем, — факт не удалится и по ошибке. */
+    @Query("DELETE FROM intakes WHERE id IN (:ids) AND status = 'PLANNED'")
+    suspend fun deletePlanned(ids: List<Uuid>): Int
 }

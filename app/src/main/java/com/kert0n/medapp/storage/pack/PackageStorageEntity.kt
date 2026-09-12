@@ -2,6 +2,7 @@ package com.kert0n.medapp.storage.pack
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.kert0n.medapp.domain.pack.Package
@@ -9,6 +10,9 @@ import com.kert0n.medapp.domain.pack.PackageSharedFacts
 import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.network.server.ResourceVersion
+import com.kert0n.medapp.storage.medkit.MedKitStorageEntity
+import com.kert0n.medapp.storage.value.DosageFormStorageEntity
+import com.kert0n.medapp.storage.value.QuantityUnitStorageEntity
 import com.kert0n.medapp.storage.value.storedForm
 import com.kert0n.medapp.storage.value.toStorageAmount
 import com.kert0n.medapp.storage.value.toStorageSortKey
@@ -28,10 +32,34 @@ import kotlin.uuid.Uuid
  * получается без `CAST(… AS REAL)` (F3). `name_search` — название в нижнем регистре: `lower()`
  * и `COLLATE NOCASE` в SQLite знают только латиницу, и по-русски поиск без учёта регистра иначе
  * не работает.
+ *
+ * Пачка не живёт без аптечки и без единицы, в которой её считают: ключи `RESTRICT` держат это в
+ * схеме, а не в коде (PLAN F2). Аптечку с пачками база удалить не даст — сценарий сначала
+ * решает, куда им деться; словарь только растёт, и удалять из него нечего.
  */
 @Entity(
     tableName = "packages",
-    indices = [Index("med_kit_id"), Index("name_search")]
+    foreignKeys = [
+        ForeignKey(
+            entity = MedKitStorageEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["med_kit_id"],
+            onDelete = ForeignKey.RESTRICT
+        ),
+        ForeignKey(
+            entity = QuantityUnitStorageEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["quantity_unit_id"],
+            onDelete = ForeignKey.RESTRICT
+        ),
+        ForeignKey(
+            entity = DosageFormStorageEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["form_id"],
+            onDelete = ForeignKey.RESTRICT
+        )
+    ],
+    indices = [Index("med_kit_id"), Index("name_search"), Index("quantity_unit_id"), Index("form_id")]
 )
 class PackageStorageEntity(
     @PrimaryKey val id: Uuid,

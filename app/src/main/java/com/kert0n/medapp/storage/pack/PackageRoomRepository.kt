@@ -8,7 +8,7 @@ import com.kert0n.medapp.domain.pack.PackageFacts
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.queue.PackageQueueState
-import com.kert0n.medapp.network.pack.PackageSyncCommand
+import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.storage.course.CourseDao
 import com.kert0n.medapp.storage.course.CourseReallocation
@@ -50,6 +50,8 @@ class PackageRoomRepository @Inject constructor(
     override fun observeAvailability(id: Uuid): Flow<PackageAvailability?> =
         onChange { availabilityOf(id) }
 
+    override suspend fun availability(id: Uuid): PackageAvailability? = availabilityOf(id)
+
     override fun list(query: PackageQuery, today: LocalDate): Flow<List<Package>> =
         onChange { listing(query, today) }
 
@@ -84,7 +86,7 @@ class PackageRoomRepository @Inject constructor(
         pkg: Package,
         sync: PackageSyncState,
         observedAt: Instant
-    ) = packages.applyServerSnapshot(pkg.toStorageEntity(sync), observedAt)
+    ): Boolean = packages.applyServerSnapshot(pkg.toStorageEntity(sync), observedAt)
 
     override suspend fun saveClaims(packageId: Uuid, claims: Claims?) {
         if (claims == null) packages.deleteClaims(packageId)

@@ -30,6 +30,9 @@ interface PackageStorageRepository {
      */
     fun observeAvailability(id: Uuid): Flow<PackageAvailability?>
 
+    /** То же одним чтением — для сценария, который считает по ней внутри своей транзакции. */
+    suspend fun availability(id: Uuid): PackageAvailability?
+
     /** Список экрана: `today` приходит аргументом, потому что база системных часов не читает. */
     fun list(query: PackageQuery, today: LocalDate): Flow<List<Package>>
 
@@ -55,8 +58,11 @@ interface PackageStorageRepository {
      */
     suspend fun loseAccess(packageId: Uuid): Boolean
 
-    /** Снимок переписывает серверную часть целиком и не касается личных сведений (PLAN E4). */
-    suspend fun applyServerSnapshot(pkg: Package, sync: PackageSyncState, observedAt: Instant)
+    /**
+     * Снимок переписывает серверную часть целиком и не касается личных сведений (PLAN E4).
+     * Меньшая версия большую не откатывает: `false` — снимок старее того, что есть, и не применён.
+     */
+    suspend fun applyServerSnapshot(pkg: Package, sync: PackageSyncState, observedAt: Instant): Boolean
 
     /** `null` снимает картину броней: аптечка не опубликована либо доступ утрачен. */
     suspend fun saveClaims(packageId: Uuid, claims: Claims?)

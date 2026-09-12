@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
-# Заводит двух пробных пользователей ContractProbe на сервере из local.properties — один раз.
+# Заводит и восстанавливает двух пробных пользователей ContractProbe на сервере из local.properties.
 #
-# Учётки дописываются в local.properties и на экран не выводятся: ключ выдаётся сервером
-# единожды, а файл в git не попадает (PLAN G, AGENTS «Связь с сервером»). Уже заведённого
-# пользователя скрипт не трогает, поэтому повторный запуск новых учёток не плодит.
+# Учётные данные придумывает клиент (PLAN B1): логин и пароль дописываются в local.properties
+# ДО запроса, поэтому потерянный ответ ничего не теряет — повтор идёт теми же данными. Если сервер
+# учётку потерял (новая раскатка, чистая база), скрипт регистрирует те же данные заново, и она
+# возвращается под тем же логином. Учётка, которая на месте, не трогается.
+#
+# Секреты уходят curl через stdin, а не аргументами: аргументы видны в списке процессов. На экран
+# они не выводятся, а local.properties в git не попадает (PLAN G, AGENTS «Связь с сервером»).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 props=local.properties
 prop() { grep -E "^$1=" "$props" | head -1 | cut -d= -f2- || true; }
-field() { python3 -c "import json, sys; print(json.load(sys.stdin)['$1'])"; }
 
 base=$(prop MEDAPP_BASE_URL)
 base=${base:-https://medapp.ru.net}
@@ -22,18 +25,57 @@ fi
 # Дописываемая строка не должна прилипнуть к последней строке файла.
 [ -n "$(tail -c1 "$props")" ] && echo >> "$props"
 
+# Что говорит выдача пропуска по этим данным; печатается код ответа.
+token_code() {
+    printf 'user = "%s:%s"\n' "$1" "$2" |
+        curl -sS -o /dev/null -w '%{http_code}' -X POST "$base/v1/auth/token" --config -
+}
+
+# Просим сервер запомнить придуманные данные; печатается код ответа.
+register() {
+    printf 'header = "X-Registration-Token: %s"\nheader = "Content-Type: application/json"\ndata = "{\\"login\\":\\"%s\\",\\"password\\":\\"%s\\"}"\n' \
+        "$token" "$1" "$2" |
+        curl -sS -o /dev/null -w '%{http_code}' -X POST "$base/v1/auth/register" --config -
+}
+
 for user in A B; do
-    if [ -n "$(prop "MEDAPP_PROBE_${user}_LOGIN")" ]; then
-        echo "Пробный пользователь $user уже заведён."
-        continue
+    login=$(prop "MEDAPP_PROBE_${user}_LOGIN")
+    password=$(prop "MEDAPP_PROBE_${user}_KEY")
+    if [ -z "$login" ] || [ -z "$password" ]; then
+        login=$(uuidgen | tr '[:upper:]' '[:lower:]')
+        password=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
+        printf 'MEDAPP_PROBE_%s_LOGIN=%s\nMEDAPP_PROBE_%s_KEY=%s\n' \
+            "$user" "$login" "$user" "$password" >> "$props"
+        echo "Пробный пользователь $user придуман и записан в $props."
     fi
-    # Токен уходит curl через stdin, а не аргументом: аргументы видны в списке процессов
-    # любому, кто в этот момент смотрит, а токен открывает регистрацию.
-    body=$(printf 'header = "X-Registration-Token: %s"\n' "$token" |
-        curl -sS --fail-with-body -X POST "$base/v1/auth/register" --config -)
-    login=$(printf '%s' "$body" | field login)
-    key=$(printf '%s' "$body" | field key)
-    printf 'MEDAPP_PROBE_%s_LOGIN=%s\nMEDAPP_PROBE_%s_KEY=%s\n' \
-        "$user" "$login" "$user" "$key" >> "$props"
-    echo "Пробный пользователь $user заведён на $base."
+
+    # 200 — учётка есть и она наша; 401 — сервер её не знает, заводим теми же данными; всё
+    # остальное (429, 5xx, обрыв) о существовании учётки не говорит, и гадать по нему нельзя.
+    issued=$(token_code "$login" "$password")
+    case "$issued" in
+        200)
+            echo "Пробный пользователь $user на месте."
+            continue
+            ;;
+        401) ;;
+        *)
+            echo "Выдача пропуска пользователю $user ответила HTTP $issued — состояние учётки неизвестно." >&2
+            echo "Повторите позже; регистрировать поверх неизвестного состояния скрипт не будет." >&2
+            exit 1
+            ;;
+    esac
+
+    code=$(register "$login" "$password")
+    case "$code" in
+        201) echo "Пробный пользователь $user заведён на $base." ;;
+        409)
+            echo "Логин пользователя $user занят, а пропуск по записанному паролю не выдан." >&2
+            echo "Удалите строки MEDAPP_PROBE_${user}_* из $props и запустите скрипт снова." >&2
+            exit 1
+            ;;
+        *)
+            echo "Регистрация пользователя $user не прошла: HTTP $code" >&2
+            exit 1
+            ;;
+    esac
 done

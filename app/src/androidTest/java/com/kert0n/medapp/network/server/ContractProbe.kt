@@ -11,7 +11,6 @@ import com.kert0n.medapp.network.medkit.MedKitPostNetworkDTO
 import com.kert0n.medapp.network.medkit.MembershipPostNetworkDTO
 import com.kert0n.medapp.network.pack.ClaimPatchNetworkDTO
 import com.kert0n.medapp.network.pack.ClaimPostNetworkDTO
-import com.kert0n.medapp.network.pack.PackageConsumeNetworkDTO
 import com.kert0n.medapp.network.pack.PackagePatchNetworkDTO
 import com.kert0n.medapp.network.pack.PackagePostNetworkDTO
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
@@ -30,9 +29,10 @@ import org.junit.Test
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.QuantityUnit
-import com.kert0n.medapp.network.pack.PackageSyncCommand
+import com.kert0n.medapp.queue.PreparedRequest
+import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncState
-import com.kert0n.medapp.network.pack.toPreparedRequest
+import com.kert0n.medapp.queue.pack.toPreparedRequest
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -52,6 +52,8 @@ class ContractProbe {
         override suspend fun read(): StoredAccount = StoredAccount.Present(account)
         override suspend fun save(credentials: AccountCredentials): CredentialsSaved =
             error("проба учёток не заводит: они заведены один раз и лежат в local.properties")
+
+        override suspend fun confirm(): CredentialsSaved = CredentialsSaved.SAVED
     }
 
     companion object {
@@ -102,6 +104,10 @@ class ContractProbe {
         )
 
         /** Успех, в том числе с `null` — пачка кончилась и уничтожена; отказ — провал пробы. */
+        /** Готовый запрос очереди — примитивами, как его и шлёт `QueueHttpTransport`. */
+        private suspend fun MedAppApi.send(request: PreparedRequest) =
+            send(request.method, request.path, request.query, request.body)
+
         private fun <T> success(result: ApiResult<T>): T = when (result) {
             is ApiResult.Success -> result.value
             is ApiResult.Failure -> throw AssertionError("ожидался успех: $result")
@@ -157,12 +163,15 @@ class ContractProbe {
 
     @Test
     fun foreignRegistrationTokenIsRefusedWithoutAnAccount() = runBlocking {
-        assertEquals(ApiFailure.RegistrationRefused, failure(anonymous.register("not-the-build-token")))
+        // Токен сборки проверяется первым: придуманные данные до учётки не доходят.
+        val invented = AccountCredentials.random()
+        assertEquals(ApiFailure.RegistrationRefused, failure(anonymous.register(invented, "not-the-build-token")))
+        assertEquals(ApiFailure.Unauthorized, failure(anonymous.token(invented)))
     }
 
     @Test
-    fun wrongKeyIsNotAccepted() = runBlocking {
-        val wrong = AccountCredentials(ownerAccount.login, "not-the-key")
+    fun wrongPasswordIsNotAccepted() = runBlocking {
+        val wrong = AccountCredentials(ownerAccount.login, "not-the-password")
         assertEquals(ApiFailure.Unauthorized, failure(anonymous.token(wrong)))
     }
 
@@ -247,11 +256,17 @@ class ContractProbe {
     fun consumptionAnswersWithTheSnapshotUntilThePackageIsGone() = runBlocking {
         val pack = newPackage(newKit(), amount = "10").pack
 
-        val left = requireNotNull(success(owner.consume(pack.id, PackageConsumeNetworkDTO("4", pack.version)))) {
-            "после частичного расхода пачка остаётся"
-        }.pack
+        val left = requireNotNull(
+            success(owner.synchronise(pack.id, Uuid.random(), PackageSyncNetworkDTO("4", pack.version)))
+        ) { "после частичного расхода пачка остаётся" }.pack
         assertEquals("6.000000", left.amount)
-        assertNull(success(owner.consume(pack.id, PackageConsumeNetworkDTO("6", left.version))))
+
+        // Пачка кончилась: сервер уничтожил её и ответил нулём байтов, а повтор того же расхода
+        // отвечает уже 404 — пачки нет (PLAN B4). На этом стоит закрытие расхода применённым.
+        val last = PackageSyncNetworkDTO("6", left.version)
+        val lastId = Uuid.random()
+        assertNull(success(owner.synchronise(pack.id, lastId, last)))
+        assertEquals(ApiFailure.NotFound, failure(owner.synchronise(pack.id, lastId, last)))
     }
 
     @Test
@@ -301,19 +316,49 @@ class ContractProbe {
         )
         val request = consume.toPreparedRequest(operationId, sync, confirmed = null, mine = null, at = Instant.EPOCH)
 
-        val body = requireNotNull(success(owner.send(request))) { "sync отвечает снимком" }
+        val body = requireNotNull(success(owner.send(request)).body.takeIf { it.isNotEmpty() }) { "sync отвечает снимком" }
         val snapshot = medAppJson.decodeFromString(PackageSnapshotNetworkDTO.serializer(), body)
         assertEquals("8.000000", snapshot.pack.amount)
         assertEquals("3.000000", snapshot.claims.mine)
         // Тот же замороженный запрос второй раз: сервер применил его один раз и отвечает тем же
         // снимком; 409 он отдаёт только другому телу под тем же номером.
         val repeated = medAppJson.decodeFromString(
-            PackageSnapshotNetworkDTO.serializer(), requireNotNull(success(owner.send(request)))
+            PackageSnapshotNetworkDTO.serializer(), success(owner.send(request)).body
         )
         assertEquals("8.000000", repeated.pack.amount)
         // Снятие брони и удаление — без тела.
-        assertNull(success(owner.send(PackageSyncCommand.ReleaseClaim(pack.id).toPreparedRequest(
+        assertEquals("", success(owner.send(PackageSyncCommand.ReleaseClaim(pack.id).toPreparedRequest(
             Uuid.random(), PackageSyncState(pack.id, snapshot.pack.version, snapshot.claims.version), null, null, Instant.EPOCH
-        ))))
+        ))).body)
+    }
+
+    /**
+     * 412 у `sync` — устаревшая версия, и запрос **не применён** (PLAN B3, E3): остаток тот же, а
+     * тот же номер с той же дельтой и свежей версией сервер принимает. Внеплановый расход — тот же
+     * `sync` без блока брони. На этом стоит переподготовка очереди под тем же `syncId`.
+     */
+    @Test
+    fun staleSyncIsNotAppliedAndTheSameNumberIsAcceptedWithTheFreshVersion() = runBlocking {
+        val pack = newPackage(newKit(), amount = "10").pack
+        val unitObject = QuantityUnit(unit, "проба")
+        val operationId = Uuid.random()
+        val consume = PackageSyncCommand.Consume(pack.id, Dose(Quantity(BigDecimal("2"), unitObject)), operationId)
+        val stale = consume.toPreparedRequest(
+            operationId, PackageSyncState(pack.id, version = ResourceVersion(pack.version.number + 1)), null, null, Instant.EPOCH
+        )
+
+        assertEquals(ApiFailure.PreconditionFailed, failure(owner.send(stale)))
+        // 428 сюда не приходит: расход без версии клиент не выражает вовсе — это отвергает сама
+        // форма запроса (`PackageSyncNetworkDTO`, проверено в `WireContractTest`).
+        val untouched = success(owner.packageSnapshot(pack.id))
+        assertEquals("10.000000", untouched.pack.amount)
+        assertEquals(pack.version, untouched.pack.version)
+
+        val fresh = consume.toPreparedRequest(operationId, PackageSyncState(pack.id, version = untouched.pack.version), null, null, Instant.EPOCH)
+        val applied = medAppJson.decodeFromString(PackageSnapshotNetworkDTO.serializer(), success(owner.send(fresh)).body)
+        assertEquals("8.000000", applied.pack.amount)
+        assertNull(applied.claims.mine)
+        // И ещё раз тем же номером — журнал: применено один раз.
+        assertEquals("8.000000", medAppJson.decodeFromString(PackageSnapshotNetworkDTO.serializer(), success(owner.send(fresh)).body).pack.amount)
     }
 }

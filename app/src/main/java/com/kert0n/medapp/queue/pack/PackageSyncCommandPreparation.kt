@@ -1,22 +1,51 @@
-package com.kert0n.medapp.network.pack
+package com.kert0n.medapp.queue.pack
 
+import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.network.pack.ClaimPatchNetworkDTO
+import com.kert0n.medapp.network.pack.ClaimPostNetworkDTO
+import com.kert0n.medapp.network.pack.PackagePatchNetworkDTO
+import com.kert0n.medapp.network.pack.PackagePostNetworkDTO
+import com.kert0n.medapp.network.pack.PackageSyncNetworkDTO
+import com.kert0n.medapp.network.pack.PackageSyncState
+import com.kert0n.medapp.network.pack.toPatchNetworkDTO
 import com.kert0n.medapp.network.server.MedAppRoutes
 import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.network.server.medAppJson
 import com.kert0n.medapp.network.value.toNetworkAmount
+import com.kert0n.medapp.queue.Preparation
 import com.kert0n.medapp.queue.PreparedRequest
+import com.kert0n.medapp.queue.RefusalReason
 import java.time.Instant
 import kotlin.uuid.Uuid
 
 /**
- * Команда по пачке становится запросом ровно один раз — перед первой отправкой — и с теми
- * предусловиями, что были у пачки в этот момент: версией состояния, версией броней, подтверждённым
- * остатком и своей бронью. На повторе запрос не пересобирается: устаревшее предусловие отвергнет
- * сервер, и в этом вся безопасность повтора (PLAN E2, E3).
+ * «Подумали» перед отправкой: команда смотрит на пачку, какой её знает устройство после свежего
+ * чтения, и решает — уходит запрос, закрывается отказ или желаемое уже так (PLAN E2, E3).
+ * Число в единице, которой пачку больше не считают, на провод не идёт — ни расход, ни бронь, ни
+ * пересчёт ([PackageSyncCommand.measuredIn]). Бронь, равная желаемой, и снятие отсутствующей
+ * брони — уже так. Всё остальное становится запросом по [toPreparedRequest].
+ */
+fun PackageSyncCommand.prepare(operationId: Uuid, pkg: Package, sync: PackageSyncState, at: Instant): Preparation {
+    val mine = pkg.claims?.mine?.let { Quantity(it, pkg.quantity.unit) }
+    val unit = measuredIn
+    return when {
+        unit != null && unit != pkg.quantity.unit -> Preparation.Refuse(RefusalReason.UNIT_CHANGED)
+        this is PackageSyncCommand.SetClaim && mine == amount -> Preparation.AlreadyApplied
+        this is PackageSyncCommand.ReleaseClaim && mine == null && sync.claimsVersion != null -> Preparation.AlreadyApplied
+        else -> Preparation.Request(toPreparedRequest(operationId, sync, confirmed = pkg.quantity, mine = mine, at = at))
+    }
+}
+
+/**
+ * Команда по пачке как запрос — с теми предусловиями, что у пачки в этот момент: версией
+ * состояния, версией броней, подтверждённым остатком и своей бронью. Собранный запрос не
+ * пересобирается: повтор с неизвестным исходом идёт тем же, а устаревший сбрасывается и
+ * собирается заново по свежему состоянию (PLAN E2, E3).
  *
- * [operationId] — `syncId` курсового расхода: повтор под тем же номером сервер применит один раз.
- * Ноль пересчёта — `DELETE`: это дело провода, а не смысл команды.
+ * Расход — всегда `sync` под [operationId]: у него есть номер, и повтор под ним сервер применит
+ * один раз; внеплановый расход — тот же `sync` без блока брони (решение владельца, B4).
+ * Ноль пересчёта — `DELETE`: это форма провода, а не смысл команды.
  */
 fun PackageSyncCommand.toPreparedRequest(
     operationId: Uuid,
@@ -83,33 +112,23 @@ fun PackageSyncCommand.toPreparedRequest(
             query = versionQuery(version),
             sync = sync, confirmed = confirmed, mine = mine, at = at
         )
-        is PackageSyncCommand.Consume -> {
-            val claimAfter = claimAfter
-            if (claimAfter == null) prepared(
-                method = "POST",
-                path = MedAppRoutes.intakes(packageId),
-                body = medAppJson.encodeToString(
-                    PackageConsumeNetworkDTO.serializer(),
-                    PackageConsumeNetworkDTO(amount = amount.quantity.toNetworkAmount(), version = version)
-                ),
-                sync = sync, confirmed = confirmed, mine = mine, at = at
-            ) else prepared(
-                method = "PUT",
-                path = MedAppRoutes.sync(packageId, operationId),
-                body = medAppJson.encodeToString(
-                    PackageSyncNetworkDTO.serializer(),
-                    PackageSyncNetworkDTO(
-                        consumed = amount.quantity.toNetworkAmount(),
-                        packageVersion = version,
-                        // Нулевая бронь — не блок брони, а зависимое снятие (PLAN E2).
-                        claim = claimAfter.takeUnless { it.isZero }?.let {
-                            PackageSyncNetworkDTO.Claim(it.toNetworkAmount(), claimsVersion)
-                        }
-                    )
-                ),
-                sync = sync, confirmed = confirmed, mine = mine, at = at
-            )
-        }
+        is PackageSyncCommand.Consume -> prepared(
+            method = "PUT",
+            path = MedAppRoutes.sync(packageId, operationId),
+            body = medAppJson.encodeToString(
+                PackageSyncNetworkDTO.serializer(),
+                PackageSyncNetworkDTO(
+                    consumed = amount.quantity.toNetworkAmount(),
+                    packageVersion = version,
+                    // Внеплановый расход и нулевая бронь — без блока брони: первому бронь не
+                    // нужна, у второго снятие уезжает зависимым `ReleaseClaim` (PLAN E2).
+                    claim = claimAfter?.takeUnless { it.isZero }?.let {
+                        PackageSyncNetworkDTO.Claim(it.toNetworkAmount(), claimsVersion)
+                    }
+                )
+            ),
+            sync = sync, confirmed = confirmed, mine = mine, at = at
+        )
         is PackageSyncCommand.SetClaim ->
             // Бронь на сервере одна на пару «человек и пачка»: есть своя — правится, нет — заявляется.
             if (mine == null) prepared(
@@ -137,19 +156,6 @@ fun PackageSyncCommand.toPreparedRequest(
         )
     }
 }
-
-/** Отвечает ли сервер на этот запрос снимком пачки — или снимок после него читается отдельно. */
-val PackageSyncCommand.answersWithSnapshot: Boolean
-    get() = when (this) {
-        is PackageSyncCommand.Create, is PackageSyncCommand.Describe, is PackageSyncCommand.Move,
-        is PackageSyncCommand.Consume -> true
-        is PackageSyncCommand.CorrectStock -> !actual.isZero
-        is PackageSyncCommand.Delete, is PackageSyncCommand.SetClaim, is PackageSyncCommand.ReleaseClaim -> false
-    }
-
-/** Курсовой расход едет `sync` под своим номером: повтор сервер применит один раз (PLAN B4). */
-val PackageSyncCommand.isSync: Boolean
-    get() = this is PackageSyncCommand.Consume && claimAfter != null
 
 private fun prepared(
     method: String,

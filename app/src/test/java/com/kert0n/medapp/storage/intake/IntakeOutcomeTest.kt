@@ -22,7 +22,7 @@ class IntakeOutcomeTest {
 
     private val operation: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000091")
 
-    private fun confirmed() = plannedIntake().confirm(pack(), dose("2"), LATER)
+    private fun confirmed() = plannedIntake().confirm(pack().take(dose("2"), LATER).getOrThrow())
 
     private fun outcome(sync: IntakeSyncState) = IntakeOutcome(
         intake = confirmed(),

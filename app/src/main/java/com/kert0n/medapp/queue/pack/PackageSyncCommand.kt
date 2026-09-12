@@ -1,8 +1,17 @@
-package com.kert0n.medapp.network.pack
+package com.kert0n.medapp.queue.pack
 
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.domain.value.QuantityUnit
+import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
+import com.kert0n.medapp.queue.ConflictPolicy
+import com.kert0n.medapp.queue.Expected
+import com.kert0n.medapp.queue.NotFoundPolicy
+import com.kert0n.medapp.queue.RefusalReason
+import com.kert0n.medapp.queue.PreparedRequest
+import com.kert0n.medapp.queue.StalePolicy
+import java.math.BigDecimal
 import com.kert0n.medapp.queue.SyncCommand
 import kotlin.uuid.Uuid
 
@@ -17,6 +26,20 @@ sealed interface PackageSyncCommand : SyncCommand {
     val packageId: Uuid
 
     /**
+     * В какой единице команда называет число, которое уедет без единицы: расход, бронь, пересчёт.
+     * Сервер прочёл бы его в своей единице, поэтому по пачке в другой единице такая команда не
+     * уходит (PLAN E3). `null` — голого числа нет: создание везёт единицу с собой, ноль пересчёта
+     * становится удалением, у остальных числа нет вовсе.
+     */
+    val measuredIn: QuantityUnit?
+        get() = when (this) {
+            is Consume -> amount.unit
+            is SetClaim -> amount.unit
+            is CorrectStock -> actual.unit.takeUnless { actual.isZero }
+            is Create, is Describe, is Move, is Delete, is ReleaseClaim -> null
+        }
+
+    /**
      * Остаток после этой команды (PLAN E1); `null` — количество команда не меняет. Пересчёт
      * заменяет число, а не вычитает; удаление даёт ноль; расход больше остатка даёт ноль,
      * потому что нехватка — отказ сервера, и разбирается она снимком, а не числом.
@@ -27,6 +50,61 @@ sealed interface PackageSyncCommand : SyncCommand {
         is Delete -> Quantity.zero(amount.unit)
         is Create, is Describe, is Move, is SetClaim, is ReleaseClaim -> null
     }
+
+    /**
+     * Устаревшая версия: расход и бронь готовятся заново — дельту и абсолютное решение владельца
+     * чужое изменение не отменяет; остальное чужая правка перекрывает, и человек смотрит заново.
+     * Создание версии не везёт: 409 у него — «уже есть», и это не устаревание.
+     */
+    val onStale: StalePolicy
+        get() = when (this) {
+            is Consume, is SetClaim, is ReleaseClaim -> StalePolicy.REPREPARE
+            is Create, is Describe, is CorrectStock, is Move, is Delete -> StalePolicy.REFUSE
+        }
+
+    /**
+     * 404: у команд над пачкой и переносом нет пачки или аптечки — доступа нет; у правки брони
+     * нет своей брони — заявить заново по свежему `mine`; у снятия брони и удаления нет того, что
+     * снимают или удаляют, — уже так. Заявление брони 404 не отвечает иначе как пачкой.
+     */
+    val onNotFound: NotFoundPolicy
+        get() = when (this) {
+            is Create, is Describe, is Move, is Consume -> NotFoundPolicy.ACCESS_LOST
+            is CorrectStock -> if (actual.isZero) NotFoundPolicy.APPLIED else NotFoundPolicy.ACCESS_LOST
+            is SetClaim -> NotFoundPolicy.REPREPARE
+            is ReleaseClaim, is Delete -> NotFoundPolicy.APPLIED
+        }
+
+    /**
+     * 409: у создания — «уже есть», у заявления брони — «уже заявлена». У расхода это тот же номер
+     * с другим телом: переподготовка тела не меняет, значит такой ответ — дефект, а не состояние
+     * сервера (PLAN E3). Версия сюда не относится: она отвечает 412.
+     */
+    val onConflict: ConflictPolicy
+        get() = when (this) {
+            is Create -> ConflictPolicy.EXISTS
+            is SetClaim -> ConflictPolicy.REPREPARE
+            is Consume, is Describe, is CorrectStock, is Move, is Delete, is ReleaseClaim ->
+                ConflictPolicy.REFUSE
+        }
+
+    /** 400: у расхода — больше остатка, единственный отказ по условию, что у него есть; у прочих — ввод. */
+    val onInvalid: RefusalReason
+        get() = if (this is Consume) RefusalReason.INSUFFICIENT else RefusalReason.INVALID
+
+    /**
+     * Форма успешного ответа по контракту операции (PLAN B4, B5): создание, правка и перенос
+     * отвечают снимком; расход — снимком либо нулём байтов, когда пачка кончилась; бронь —
+     * бронью без версии картины, и снимок читается следом; удаление и снятие брони — `204`.
+     */
+    override val expects: Expected
+        get() = when (this) {
+            is Create, is Describe, is Move -> Expected.SNAPSHOT
+            is CorrectStock -> if (actual.isZero) Expected.NOTHING else Expected.SNAPSHOT
+            is Consume -> Expected.SNAPSHOT_OR_GONE
+            is SetClaim -> Expected.CLAIM
+            is Delete, is ReleaseClaim -> Expected.NOTHING
+        }
 
     /**
      * Завести упаковку на сервере.
@@ -70,7 +148,7 @@ sealed interface PackageSyncCommand : SyncCommand {
      * Пересчитали и увидели столько.
      *
      * **Абсолютное значение, а не дельта** (PLAN E1): проекция заменяет остаток, а не вычитает.
-     * Ноль допустим и переводится в DELETE сетевым маппером — это его дело, а не смысл команды.
+     * Ноль допустим и становится `DELETE` при подготовке запроса — это форма провода, а не смысл команды (B6).
      */
     data class CorrectStock(
         override val packageId: Uuid,
@@ -117,6 +195,31 @@ sealed interface PackageSyncCommand : SyncCommand {
             require(claimAfter == null || claimAfter.unit == amount.unit) {
                 "бронь измеряется той же единицей, что расход"
             }
+        }
+
+        /**
+         * Применился ли этот расход, судя по броням: `sync` пишет расход и бронь одной
+         * транзакцией, и своя бронь, равная заявленной после расхода и не равной той, что была
+         * до запроса, — след применения. Так потерянный ответ, за которым пришёл отказ по
+         * версии, отличается от расхода, который сервер не видел (решение владельца, PLAN E3).
+         * Без блока брони или при броне, которую расход не менял, судить нечем — `false`.
+         */
+        /**
+         * Опустошил бы этот расход пачку: доза не меньше подтверждённого остатка, по которому
+         * готовился запрос. Пачка, списанная до нуля, сервером уничтожается, и повтор такого
+         * расхода отвечает 404 (PLAN B4): это наш же расход, дошедший до нуля, а не утрата доступа.
+         */
+        fun emptiedBy(prepared: PreparedRequest): Boolean {
+            val before = prepared.quantityBefore ?: return false
+            return amount.quantity.amount >= before.amount
+        }
+
+        fun provenAppliedBy(snapshot: PackageSnapshotNetworkDTO, prepared: PreparedRequest): Boolean {
+            val wanted = claimAfter?.takeUnless { it.isZero } ?: return false
+            val before = prepared.mineBefore ?: return false
+            if (before.amount.compareTo(wanted.amount) == 0) return false
+            val mine = snapshot.claims.mine ?: return false
+            return BigDecimal(mine).compareTo(wanted.amount) == 0
         }
     }
 

@@ -2,12 +2,13 @@ package com.kert0n.medapp.queue
 
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.value.Quantity
-import com.kert0n.medapp.network.pack.PackageSyncCommand
+import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import kotlin.uuid.Uuid
 
 /**
  * Остаток пачки глазами очереди: подтверждённое сервером число и незакрытые команды в порядке
- * `sequence` (PLAN E1). Домену отдаётся [amount]; признаки очереди остаются здесь, и экран
+ * `sequence` (PLAN E1). Закрытые — применённые, отказанные, потерявшие доступ — не считаются:
+ * истина по ним уже прочитана снимком и лежит в подтверждённом числе. Домену отдаётся [amount]; признаки очереди остаются здесь, и экран
  * сводит их с доменным результатом сам.
  */
 class PackageQueueState(

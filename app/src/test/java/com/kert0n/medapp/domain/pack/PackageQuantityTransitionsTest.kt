@@ -36,6 +36,21 @@ class PackageQuantityTransitionsTest {
         assertEquals(Package.Lifecycle.ACTIVE, left.lifecycle)
     }
 
+    @Test
+    fun disposingMoreThanIsLeftDisposesOfEverything() {
+        // Выбросил «пачку» из трёх таблеток, назвав пять: в минус не уходит, ушло три, пачка в
+        // архиве. Правило — переход пачки, а не хранения, которое его записывает.
+        val gone = pack(quantity = tablets("3")).dispose(tablets("5"))
+        assertTrue(gone.quantity.isZero)
+        assertEquals(Package.Lifecycle.ARCHIVED, gone.lifecycle)
+        assertEquals(tablets("18"), pack(quantity = tablets("20")).dispose(tablets("2")).quantity)
+    }
+
+    @Test(expected = IllegalStateException::class)
+    fun disposingFromAnArchivedPackIsRefused() {
+        pack().archive().dispose(tablets("1"))
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun consumingMoreThanIsLeftIsRefused() {
         pack(quantity = tablets("3")).consume(dose("5"))

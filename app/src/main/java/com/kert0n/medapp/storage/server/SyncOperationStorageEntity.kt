@@ -17,7 +17,8 @@ import kotlin.uuid.Uuid
  *
  * `sequence` уникален и монотонен — его выдаёт база, и порядок применения задаётся им, а не
  * временем создания. `package_id` называет затронутую пачку и пуст у команд аптечки: порядок по
- * одной упаковке строится запросом, а не доменной функцией.
+ * одной упаковке строится запросом, а не доменной функцией. `answer_*` — ответ сервера,
+ * записанный до применения: он есть ровно у `ANSWERED`, и закрытие его стирает.
  */
 @Entity(
     tableName = "sync_operations",
@@ -42,7 +43,10 @@ class SyncOperationStorageEntity(
     @ColumnInfo(name = "group_id") val groupId: Uuid? = null,
     @ColumnInfo(name = "last_error") val lastError: String? = null,
     @ColumnInfo(name = "last_tried_at") val lastTriedAt: Instant? = null,
-    @Embedded(prefix = "prepared_") val prepared: PreparedRequestStorageColumns? = null
+    @Embedded(prefix = "prepared_") val prepared: PreparedRequestStorageColumns? = null,
+    @ColumnInfo(name = "answer_status") val answerStatus: Int? = null,
+    @ColumnInfo(name = "answer_body") val answerBody: String? = null,
+    @ColumnInfo(name = "not_before") val notBefore: Instant? = null
 )
 
 /**
@@ -63,5 +67,8 @@ fun SyncOperation.toStorageEntity(): SyncOperationStorageEntity = SyncOperationS
     groupId = groupId,
     lastError = lastError,
     lastTriedAt = lastTriedAt,
-    prepared = prepared?.toStorageColumns()
+    prepared = prepared?.toStorageColumns(),
+    answerStatus = answer?.status,
+    answerBody = answer?.body,
+    notBefore = notBefore
 )

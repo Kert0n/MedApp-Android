@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.room.testing.MigrationTestHelper
 import androidx.test.platform.app.InstrumentationRegistry
 import com.kert0n.medapp.fixture.PACK
+import com.kert0n.medapp.fixture.fileDatabase
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.storage.pack.toDetailsStorageEntity
@@ -48,9 +49,9 @@ class MedAppDatabaseMigrationTest {
     fun aNewerDatabaseFileIsRefusedInsteadOfWiped() = runTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val file = "refuses-downgrade.db"
-        context.deleteDatabase(file)
 
-        val written = Room.databaseBuilder(context, MedAppDatabase::class.java, file).build()
+        // Засеянная база: пачка не пишется без аптечки и словаря, ключи это держат (F2).
+        val written = fileDatabase(file)
         val paracetamol = pack(quantity = tablets("20"))
         written.packages().save(paracetamol.toStorageEntity(), paracetamol.toDetailsStorageEntity())
         written.openHelper.writableDatabase.execSQL("PRAGMA user_version = 99")

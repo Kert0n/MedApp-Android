@@ -24,6 +24,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.kert0n.medapp.fixture.VOCABULARY
 import com.kert0n.medapp.fixture.dose
+import com.kert0n.medapp.domain.course.CourseProgress
 import com.kert0n.medapp.domain.value.doses
 import com.kert0n.medapp.fixture.LATER
 import com.kert0n.medapp.fixture.availability
@@ -196,6 +197,6 @@ class CourseStorageMapperTest {
         ).toPlan(VOCABULARY)
         assertEquals(2.doses, restored.takenOffPlan)
         assertEquals(listOf(3.doses), restored.sources.map { it.allocatedDoses })
-        assertEquals(5.doses, restored.remainingDoses(taken = 0.doses))
+        assertEquals(5.doses, restored.remainingDoses(CourseProgress.none))
     }
 }

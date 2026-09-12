@@ -1,5 +1,6 @@
 package com.kert0n.medapp.storage.intake
 
+import com.kert0n.medapp.domain.course.ScheduledOccurrence
 import com.kert0n.medapp.domain.intake.CourseIntake
 import com.kert0n.medapp.domain.intake.Intake
 import com.kert0n.medapp.network.intake.IntakeSyncState
@@ -34,6 +35,11 @@ class IntakeRoomRepository @Inject constructor(
             rows.map { it.toDomain(words) }
         }
 
+    override suspend fun ofCourse(courseId: Uuid): List<Intake> {
+        val words = vocabulary.snapshot()
+        return intakes.ofCourse(courseId).map { it.toDomain(words) }
+    }
+
     override suspend fun find(id: Uuid): Intake? = intakes.find(id)?.toDomain(vocabulary.snapshot())
 
     override suspend fun syncStateOf(id: Uuid): IntakeSyncState? = intakes.findEntity(id)?.syncState()
@@ -50,6 +56,15 @@ class IntakeRoomRepository @Inject constructor(
             val words = vocabulary.snapshot()
             rows.map { it.toDomain(words) as CourseIntake }
         }
+
+    override suspend fun prunePlanned(courseId: Uuid, keep: Set<ScheduledOccurrence>): Int = database.withTransaction {
+        // Тождество пункта — назначенные дата и время (PLAN F4), по ним и сверяется.
+        val kept = keep.mapTo(HashSet()) { it.slot }
+        val extra = intakes.plannedOf(courseId)
+            .filter { (it.scheduledOn to it.scheduledTime) !in kept }
+            .map { it.id }
+        if (extra.isEmpty()) 0 else intakes.deletePlanned(extra)
+    }
 
     override suspend fun record(outcome: IntakeOutcome): Boolean = database.withTransaction {
         val intake = outcome.intake

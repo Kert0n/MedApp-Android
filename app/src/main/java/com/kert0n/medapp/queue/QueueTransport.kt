@@ -2,17 +2,17 @@ package com.kert0n.medapp.queue
 
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
 import com.kert0n.medapp.network.server.ApiResult
+import com.kert0n.medapp.network.server.RawResponse
 import kotlin.uuid.Uuid
 
 /**
- * Что очереди нужно от сервера: отправить замороженный запрос как есть и прочитать снимок пачки.
- * Работнику всё равно, что он отправляет, — у него [PreparedRequest]; тело ответа он читает
- * сам, потому что знает, какая команда его ждала.
+ * Что очереди нужно от сервера: отправить замороженный запрос как есть и получить ответ как
+ * есть — статус и тело, — и прочитать снимок пачки. Ответ записывается до разбора: разбирает его
+ * [Expected.read], чистой функцией, и потому его можно разобрать заново из записи.
  */
 interface QueueTransport {
 
-    /** Тело успешного ответа; `null` — ответ без тела (204 или пачка уничтожена). */
-    suspend fun send(request: PreparedRequest): ApiResult<String?>
+    suspend fun send(request: PreparedRequest): ApiResult<RawResponse>
 
     suspend fun packageSnapshot(packageId: Uuid): ApiResult<PackageSnapshotNetworkDTO>
 }

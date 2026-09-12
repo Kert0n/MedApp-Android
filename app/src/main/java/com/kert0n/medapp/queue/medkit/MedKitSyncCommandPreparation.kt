@@ -1,5 +1,6 @@
-package com.kert0n.medapp.network.medkit
+package com.kert0n.medapp.queue.medkit
 
+import com.kert0n.medapp.network.medkit.MedKitPostNetworkDTO
 import com.kert0n.medapp.network.server.MedAppRoutes
 import com.kert0n.medapp.network.server.medAppJson
 import com.kert0n.medapp.queue.PreparedRequest

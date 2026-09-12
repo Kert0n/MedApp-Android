@@ -2,6 +2,7 @@ package com.kert0n.medapp.platform.credentials
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.kert0n.medapp.di.CredentialsStore
@@ -21,9 +22,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 /**
- * Учётка на устройстве (PLAN G2): логин открыто, ключ — шифротекстом с вектором инициализации в
- * DataStore, а ключ расшифровки — в AndroidKeyStore. Каталог DataStore исключён из облачной
- * копии и переноса, поэтому шифротекст без своего ключа никуда не уезжает.
+ * Учётка на устройстве (PLAN G2): логин открыто, пароль — шифротекстом с вектором инициализации в
+ * DataStore, а ключ расшифровки — в AndroidKeyStore. Каталог DataStore исключён из облачной копии
+ * и переноса, поэтому шифротекст без своего ключа никуда не уезжает.
+ *
+ * Рядом лежит признак того, что сервер эти данные принял: данные придумывает устройство и
+ * записывает их раньше запроса, поэтому «записано» и «сервер знает» — разные состояния.
  *
  * Сохранённое, которое не открывается, — это [StoredAccount.Unreadable], а не отсутствие учётки:
  * сброс хранилища не должен выглядеть приглашением зарегистрироваться заново. Повреждённый файл
@@ -40,14 +44,15 @@ class KeystoreCredentialSource @Inject constructor(
         try {
             val saved = store.data.first()
             val login = saved[LOGIN] ?: return@withContext StoredAccount.Absent
-            val iv = saved[KEY_IV]
-            val ciphertext = saved[KEY_CIPHERTEXT]
+            val iv = saved[PASSWORD_IV]
+            val ciphertext = saved[PASSWORD_CIPHERTEXT]
             if (iv == null || ciphertext == null) return@withContext StoredAccount.Unreadable
             val plain = key.open(
                 KeystoreKey.Sealed(decode(iv), decode(ciphertext)),
                 associated = login.encodeToByteArray()
             )
-            StoredAccount.Present(AccountCredentials(Uuid.parse(login), plain.decodeToString()))
+            val account = AccountCredentials(Uuid.parse(login), plain.decodeToString())
+            if (saved[CONFIRMED] == true) StoredAccount.Present(account) else StoredAccount.Pending(account)
         } catch (_: IOException) {
             StoredAccount.Unreadable
         } catch (_: GeneralSecurityException) {
@@ -62,11 +67,12 @@ class KeystoreCredentialSource @Inject constructor(
     override suspend fun save(credentials: AccountCredentials): CredentialsSaved = withContext(io) {
         val login = credentials.login.toString()
         try {
-            val sealed = key.seal(credentials.key.encodeToByteArray(), associated = login.encodeToByteArray())
+            val sealed = key.seal(credentials.password.encodeToByteArray(), associated = login.encodeToByteArray())
             store.edit {
                 it[LOGIN] = login
-                it[KEY_IV] = encode(sealed.iv)
-                it[KEY_CIPHERTEXT] = encode(sealed.ciphertext)
+                it[PASSWORD_IV] = encode(sealed.iv)
+                it[PASSWORD_CIPHERTEXT] = encode(sealed.ciphertext)
+                it[CONFIRMED] = false
             }
             CredentialsSaved.SAVED
         } catch (_: IOException) {
@@ -78,13 +84,24 @@ class KeystoreCredentialSource @Inject constructor(
         }
     }
 
+    override suspend fun confirm(): CredentialsSaved = withContext(io) {
+        try {
+            // Подтверждать нечего, пока учётка не записана: признак сам по себе ничего не значит.
+            store.edit { if (it[LOGIN] != null) it[CONFIRMED] = true }
+            CredentialsSaved.SAVED
+        } catch (_: IOException) {
+            CredentialsSaved.LOST
+        }
+    }
+
     private fun encode(bytes: ByteArray): String = Base64.getEncoder().encodeToString(bytes)
 
     private fun decode(text: String): ByteArray = Base64.getDecoder().decode(text)
 
     private companion object {
         val LOGIN = stringPreferencesKey("login")
-        val KEY_IV = stringPreferencesKey("key_iv")
-        val KEY_CIPHERTEXT = stringPreferencesKey("key_ciphertext")
+        val PASSWORD_IV = stringPreferencesKey("password_iv")
+        val PASSWORD_CIPHERTEXT = stringPreferencesKey("password_ciphertext")
+        val CONFIRMED = booleanPreferencesKey("confirmed")
     }
 }

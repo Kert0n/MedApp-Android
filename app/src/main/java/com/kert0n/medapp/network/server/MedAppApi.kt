@@ -5,7 +5,7 @@ import com.kert0n.medapp.network.account.AccessTokenNetworkDTO
 import com.kert0n.medapp.network.account.AccessTokenThrottled
 import com.kert0n.medapp.network.account.AccessTokenUnavailable
 import com.kert0n.medapp.network.account.AccountCredentials
-import com.kert0n.medapp.network.account.AccountRegisteredNetworkDTO
+import com.kert0n.medapp.network.account.AccountPostNetworkDTO
 import com.kert0n.medapp.network.account.AccountSnapshotNetworkDTO
 import com.kert0n.medapp.network.medkit.InvitationNetworkDTO
 import com.kert0n.medapp.network.medkit.MedKitCreatedNetworkDTO
@@ -16,14 +16,12 @@ import com.kert0n.medapp.network.medkit.MembershipPostNetworkDTO
 import com.kert0n.medapp.network.pack.ClaimNetworkDTO
 import com.kert0n.medapp.network.pack.ClaimPatchNetworkDTO
 import com.kert0n.medapp.network.pack.ClaimPostNetworkDTO
-import com.kert0n.medapp.network.pack.PackageConsumeNetworkDTO
 import com.kert0n.medapp.network.pack.PackagePatchNetworkDTO
 import com.kert0n.medapp.network.pack.PackagePostNetworkDTO
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
 import com.kert0n.medapp.network.pack.PackageSyncNetworkDTO
 import com.kert0n.medapp.network.template.PackageTemplateNetworkDTO
 import com.kert0n.medapp.network.value.VocabularyEntryNetworkDTO
-import com.kert0n.medapp.queue.PreparedRequest
 import io.ktor.client.HttpClient
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.basicAuth
@@ -38,7 +36,11 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import io.ktor.client.network.sockets.ConnectTimeoutException
 import java.io.IOException
+import java.net.ConnectException
+import java.net.UnknownHostException
+import javax.net.ssl.SSLHandshakeException
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.uuid.Uuid
@@ -58,10 +60,14 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
 
     // Учётная запись
 
-    /** Повторять нельзя: повтор даст вторую учётку. */
-    suspend fun register(registrationToken: String): ApiResult<AccountRegisteredNetworkDTO> =
-        call(HttpMethod.Post, MedAppRoutes.REGISTER, HttpStatusCode.OK, required(AccountRegisteredNetworkDTO.serializer())) {
+    /**
+     * Учётные данные придумывает клиент, поэтому повтор безопасен: второй учётки он не заводит, а
+     * отвечает `409` по занятому логину (PLAN B1). Тела в ответе нет.
+     */
+    suspend fun register(account: AccountCredentials, registrationToken: String): ApiResult<Unit> =
+        call(HttpMethod.Post, MedAppRoutes.REGISTER, HttpStatusCode.Created, none) {
             header(REGISTRATION_TOKEN_HEADER, registrationToken)
+            json(AccountPostNetworkDTO(account.login, account.password))
         }
 
     /** Состояния сервера не меняет: неудача значит «пропуска нет», а не «исход неизвестен». */
@@ -73,7 +79,7 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
             required(AccessTokenNetworkDTO.serializer()),
             command = false
         ) {
-            basicAuth(credentials.login.toString(), credentials.key)
+            basicAuth(credentials.login.toString(), credentials.password)
         }
 
     // Снимок и словари
@@ -146,12 +152,6 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
             version(version)
         }
 
-    /** `null` в успехе — пачка кончилась и уничтожена: сервер ответил нулём байтов. */
-    suspend fun consume(packageId: Uuid, intake: PackageConsumeNetworkDTO): ApiResult<PackageSnapshotNetworkDTO?> =
-        call(HttpMethod.Post, MedAppRoutes.intakes(packageId), HttpStatusCode.OK, optional(PackageSnapshotNetworkDTO.serializer())) {
-            json(intake)
-        }
-
     /** `null` в успехе — пачка кончилась и уничтожена; повтор безопасен с тем же [syncId]. */
     suspend fun synchronise(
         packageId: Uuid,
@@ -202,30 +202,30 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
     // Очередь
 
     /**
-     * Замороженный запрос очереди как есть: метод, путь, параметры и тело собраны при первой
-     * отправке, и здесь они не пересобираются (PLAN E2). Успех — любой 2xx, тело отдаётся
-     * строкой: какая форма за ним стоит, знает та команда, что запрос готовила. Пустое тело —
-     * `null`: так отвечают 204 и уничтоженная пачка.
+     * Готовый изменяющий запрос как есть — примитивами: метод, путь, параметры и тело собрала
+     * очередь, и здесь они не пересобираются (PLAN E2). Успех — любой 2xx со статусом и телом
+     * строкой: какая форма за ним стоит и какой статус ожидался, знает та команда, что запрос
+     * готовила, — сеть про очередь не знает.
      */
-    suspend fun send(request: PreparedRequest): ApiResult<String?> = try {
-        val response = http.request(request.path) {
-            method = HttpMethod.parse(request.method)
-            request.query.forEach { (name, value) -> parameter(name, value) }
-            request.body?.let {
+    suspend fun send(method: String, path: String, query: Map<String, String>, body: String?): ApiResult<RawResponse> = try {
+        val response = http.request(path) {
+            this.method = HttpMethod.parse(method)
+            query.forEach { (name, value) -> parameter(name, value) }
+            body?.let {
                 contentType(ContentType.Application.Json)
                 setBody(it)
             }
         }
         when {
-            response.status.isSuccess() -> ApiResult.Success(response.bodyAsText().takeIf { it.isNotEmpty() })
-            else -> ApiResult.Failure(refusal(response, command = true, path = request.path))
+            response.status.isSuccess() -> ApiResult.Success(RawResponse(response.status.value, response.bodyAsText()))
+            else -> ApiResult.Failure(refusal(response, command = true, path = path))
         }
     } catch (cause: AccessTokenThrottled) {
         ApiResult.Failure(ApiFailure.TooManyRequests(cause.retryAfter))
     } catch (_: AccessTokenUnavailable) {
         ApiResult.Failure(ApiFailure.Unavailable)
-    } catch (_: IOException) {
-        ApiResult.Failure(ApiFailure.OutcomeUnknown)
+    } catch (broken: IOException) {
+        ApiResult.Failure(broken.asFailure(command = true))
     }
 
     // Исполнение
@@ -258,9 +258,21 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
             ApiResult.Failure(ApiFailure.TooManyRequests(cause.retryAfter))
         } catch (_: AccessTokenUnavailable) {
             ApiResult.Failure(ApiFailure.Unavailable)
-        } catch (_: IOException) {
-            ApiResult.Failure(if (command) ApiFailure.OutcomeUnknown else ApiFailure.Unavailable)
+        } catch (broken: IOException) {
+            ApiResult.Failure(broken.asFailure(command))
         }
+    }
+
+    /**
+     * Обрыв до сервера — адрес не разрешился, соединение не установилось, рукопожатие TLS не
+     * прошло — не потерянный ответ: запрос никуда не ушёл, и у команды нет неизвестного исхода,
+     * есть отсутствие связи. Обрыв после — исход неизвестен (PLAN E3).
+     */
+    private fun IOException.asFailure(command: Boolean): ApiFailure = when {
+        !command -> ApiFailure.Unavailable
+        this is UnknownHostException || this is ConnectException || this is java.net.NoRouteToHostException ||
+            this is ConnectTimeoutException || this is SSLHandshakeException -> ApiFailure.Unavailable
+        else -> ApiFailure.OutcomeUnknown
     }
 
     /** Отказ сервера — решение по коду ответа (PLAN B5); тело добавляет только `errors[]` при 400. */

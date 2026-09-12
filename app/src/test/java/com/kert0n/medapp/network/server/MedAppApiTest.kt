@@ -9,7 +9,6 @@ import com.kert0n.medapp.network.medkit.MedKitPostNetworkDTO
 import com.kert0n.medapp.network.medkit.MembershipPostNetworkDTO
 import com.kert0n.medapp.network.pack.ClaimPatchNetworkDTO
 import com.kert0n.medapp.network.pack.ClaimPostNetworkDTO
-import com.kert0n.medapp.network.pack.PackageConsumeNetworkDTO
 import com.kert0n.medapp.network.pack.PackagePatchNetworkDTO
 import com.kert0n.medapp.network.pack.PackagePostNetworkDTO
 import com.kert0n.medapp.network.pack.PackageSyncNetworkDTO
@@ -51,7 +50,7 @@ class MedAppApiTest {
 
     /** Ответ сервера на «МЕТОД путь». */
     private val routes = mapOf(
-        "POST /v1/auth/register" to (HttpStatusCode.OK to """{"login":"$kit","key":"k"}"""),
+        "POST /v1/auth/register" to (HttpStatusCode.Created to ""),
         "POST /v1/auth/token" to (HttpStatusCode.OK to """{"accessToken":"t"}"""),
         "GET /v1/users/me" to (HttpStatusCode.OK to """{"id":"$kit","medKits":[$medKit]}"""),
         "GET /v1/med-kits" to (HttpStatusCode.OK to """[{"id":"$kit","userCount":1,"drugIds":["$pack"]}]"""),
@@ -68,7 +67,6 @@ class MedAppApiTest {
         "PATCH /v1/drugs/$pack" to (HttpStatusCode.OK to drug),
         "DELETE /v1/drugs/$pack" to (HttpStatusCode.NoContent to ""),
         "PUT /v1/med-kits/$otherKit/drugs/$pack" to (HttpStatusCode.OK to drug),
-        "POST /v1/drugs/$pack/intakes" to (HttpStatusCode.OK to drug),
         "PUT /v1/drugs/$pack/sync/$sync" to (HttpStatusCode.OK to ""),
         "GET /v1/reservations" to (HttpStatusCode.OK to "[$claim]"),
         "GET /v1/reservations/$pack" to (HttpStatusCode.OK to claim),
@@ -116,7 +114,7 @@ class MedAppApiTest {
         val newPack = PackagePostNetworkDTO(pack, "Аспирин", "10", unit, null, null, null, null, null)
 
         listOf(
-            api.register("registration"),
+            api.register(AccountCredentials.random(), "registration"),
             api.token(account),
             api.snapshot(),
             api.medKits(),
@@ -133,7 +131,6 @@ class MedAppApiTest {
             api.patchPackage(pack, PackagePatchNetworkDTO(name = "Аспирин C", version = ResourceVersion(3))),
             api.deletePackage(pack, ResourceVersion(3)),
             api.movePackage(pack, otherKit, ResourceVersion(3)),
-            api.consume(pack, PackageConsumeNetworkDTO("2", ResourceVersion(3))),
             api.synchronise(pack, sync, PackageSyncNetworkDTO("2", ResourceVersion(3))),
             api.claims(),
             api.claim(pack),
@@ -144,8 +141,8 @@ class MedAppApiTest {
             api.template(template)
         ).forEach(::assertSuccess)
 
-        assertEquals(26, requests.size)
-        assertEquals(26, requests.map { it.substringBefore('?') }.toSet().size)
+        assertEquals(25, requests.size)
+        assertEquals(25, requests.map { it.substringBefore('?') }.toSet().size)
     }
 
     @Test
@@ -176,38 +173,48 @@ class MedAppApiTest {
 
     @Test
     fun bodiesAreTheContractShapes() = runTest {
-        api().consume(pack, PackageConsumeNetworkDTO("2", ResourceVersion(3)))
+        api().synchronise(pack, sync, PackageSyncNetworkDTO("2", ResourceVersion(3)))
 
         assertEquals(
-            Json.parseToJsonElement("""{"quantity":"2","version":3}"""),
-            Json.parseToJsonElement(bodies.getValue("POST /v1/drugs/$pack/intakes"))
+            Json.parseToJsonElement("""{"consumed":"2","drugVersion":3}"""),
+            Json.parseToJsonElement(bodies.getValue("PUT /v1/drugs/$pack/sync/$sync"))
         )
     }
 
     @Test
-    fun registrationCarriesTheBuildToken() = runTest {
+    fun registrationCarriesTheBuildTokenAndTheInventedCredentials() = runTest {
         var header: String? = null
+        var body: String? = null
+        val account = AccountCredentials.random()
         MedAppApi(
             medAppHttpClient(
                 MockEngine { request ->
                     header = request.headers[REGISTRATION_TOKEN_HEADER]
-                    respond("""{"login":"$kit","key":"k"}""", HttpStatusCode.OK, json)
+                    body = (request.body as TextContent).text
+                    respond("", HttpStatusCode.Created, json)
                 },
                 "https://medapp.test"
             )
-        ).register("registration-token")
+        ).register(account, "registration-token")
 
         assertEquals("registration-token", header)
+        assertTrue("логин уехал: $body", body!!.contains("${account.login}"))
+        assertTrue("пароль уехал", body!!.contains(account.password))
+    }
+
+    /**
+     * Сервер, который на регистрацию отвечает старым `200` с выданной учёткой, обещанного `201` не
+     * дал: исход команды неизвестен, и учётка не считается заведённой (PLAN B5).
+     */
+    @Test
+    fun theOldRegistrationAnswerIsNotAcceptedAsSuccess() = runTest {
+        val outcome = always(HttpStatusCode.OK, """{"login":"$kit","key":"k"}""")
+            .register(AccountCredentials.random(), "registration-token")
+
+        assertEquals(ApiResult.Failure(ApiFailure.OutcomeUnknown), outcome)
     }
 
     /** Пачка кончилась и уничтожена: сервер отвечает 200 и нулём байтов. */
-    @Test
-    fun emptyIntakeResponseMeansThePackageIsGone() = runTest {
-        val result = always(HttpStatusCode.OK).consume(pack, PackageConsumeNetworkDTO("100"))
-
-        assertEquals(ApiResult.Success(null), result)
-    }
-
     @Test
     fun emptySyncResponseMeansThePackageIsGone() = runTest {
         val result = always(HttpStatusCode.OK)
@@ -218,8 +225,9 @@ class MedAppApiTest {
 
     /** JSON `null` — не «ноль байтов»: за уничтожение пачки его не принимают. */
     @Test
-    fun jsonNullIsNotAnEmptyIntakeResponse() = runTest {
-        val result = always(HttpStatusCode.OK, "null").consume(pack, PackageConsumeNetworkDTO("2"))
+    fun jsonNullIsNotAnEmptySyncResponse() = runTest {
+        val result = always(HttpStatusCode.OK, "null")
+            .synchronise(pack, sync, PackageSyncNetworkDTO("2", ResourceVersion(3)))
 
         assertEquals(ApiResult.Failure(ApiFailure.OutcomeUnknown), result)
     }
@@ -259,14 +267,16 @@ class MedAppApiTest {
 
     @Test
     fun brokenJsonOfACommandLeavesTheOutcomeUnknown() = runTest {
-        val result = always(HttpStatusCode.OK, "{").consume(pack, PackageConsumeNetworkDTO("2"))
+        val result = always(HttpStatusCode.OK, "{")
+            .synchronise(pack, sync, PackageSyncNetworkDTO("2", ResourceVersion(3)))
 
         assertEquals(ApiResult.Failure(ApiFailure.OutcomeUnknown), result)
     }
 
     @Test
     fun serverErrorOnACommandIsNotRepeatedAndLeavesTheOutcomeUnknown() = runTest {
-        val result = always(HttpStatusCode.InternalServerError).consume(pack, PackageConsumeNetworkDTO("2"))
+        val result = always(HttpStatusCode.InternalServerError)
+            .synchronise(pack, sync, PackageSyncNetworkDTO("2", ResourceVersion(3)))
 
         assertEquals(ApiResult.Failure(ApiFailure.OutcomeUnknown), result)
         assertEquals(1, calls.get())
@@ -284,9 +294,28 @@ class MedAppApiTest {
     fun brokenConnectionDuringACommandLeavesTheOutcomeUnknown() = runTest {
         val result = MedAppApi(
             medAppHttpClient(MockEngine { throw IOException("обрыв") }, "https://medapp.test")
-        ).consume(pack, PackageConsumeNetworkDTO("2"))
+        ).synchronise(pack, sync, PackageSyncNetworkDTO("2", ResourceVersion(3)))
 
         assertEquals(ApiResult.Failure(ApiFailure.OutcomeUnknown), result)
+    }
+
+    /** Адрес не разрешился, соединения нет, TLS не прошёл — запрос никуда не ушёл: связи нет, а не исход неизвестен. */
+    @Test
+    fun noConnectionAtAllIsUnavailableNotUnknownEvenForACommand() = runTest {
+        for (broken in listOf(
+            java.net.UnknownHostException("medapp.test"),
+            java.net.ConnectException("отказано"),
+            java.net.NoRouteToHostException("маршрута нет"),
+            javax.net.ssl.SSLHandshakeException("рукопожатие")
+        )) {
+            val api = MedAppApi(medAppHttpClient(MockEngine { throw broken }, "https://medapp.test"))
+            assertEquals(
+                "$broken",
+                ApiResult.Failure(ApiFailure.Unavailable),
+                api.synchronise(pack, sync, PackageSyncNetworkDTO("2", ResourceVersion(3)))
+            )
+            assertEquals("$broken", ApiResult.Failure(ApiFailure.Unavailable), api.send("DELETE", "/v1/drugs/$pack", emptyMap(), null))
+        }
     }
 
     /** Пропуска не получить — запрос ещё не ушёл, значит ничего не применено. */
@@ -296,10 +325,11 @@ class MedAppApiTest {
             override suspend fun read(): StoredAccount =
                 StoredAccount.Present(AccountCredentials(kit, "k"))
             override suspend fun save(credentials: AccountCredentials) = CredentialsSaved.SAVED
+            override suspend fun confirm() = CredentialsSaved.SAVED
         }
         val result = api(tokens = AccessTokens(stored)) { line ->
             if (line == "POST /v1/auth/token") HttpStatusCode.ServiceUnavailable to "" else routes[line]
-        }.consume(pack, PackageConsumeNetworkDTO("2"))
+        }.synchronise(pack, sync, PackageSyncNetworkDTO("2", ResourceVersion(3)))
 
         assertEquals(ApiResult.Failure(ApiFailure.Unavailable), result)
         assertEquals(listOf("POST /v1/auth/token"), requests)
@@ -313,25 +343,19 @@ class MedAppApiTest {
         )
     }
 
-    /** Замороженный запрос очереди уходит как есть: метод, путь, параметры и тело не пересобираются. */
+    /** Готовый запрос уходит как есть: метод, путь, параметры и тело не пересобираются. */
     @Test
     fun preparedRequestIsSentVerbatimAndAnsweredWithTheRawBody() = runTest {
         val api = api()
-        val request = com.kert0n.medapp.queue.PreparedRequest(
-            method = "PUT",
-            path = "/v1/med-kits/$otherKit/drugs/$pack",
-            query = mapOf("version" to "3"),
-            preparedAt = java.time.Instant.EPOCH
-        )
-        val result = api.send(request)
-        assertTrue("$result", result is ApiResult.Success && result.value!!.contains("\"version\":3"))
+        val result = api.send("PUT", "/v1/med-kits/$otherKit/drugs/$pack", mapOf("version" to "3"), body = null)
+        assertTrue("$result", result is ApiResult.Success && result.value.body.contains("\"version\":3"))
         assertEquals("PUT /v1/med-kits/$otherKit/drugs/$pack?version=3", requests.single())
 
-        val empty = api.send(com.kert0n.medapp.queue.PreparedRequest("DELETE", "/v1/drugs/$pack", preparedAt = java.time.Instant.EPOCH))
-        assertEquals(ApiResult.Success(null), empty)
+        val empty = api.send("DELETE", "/v1/drugs/$pack", emptyMap(), body = null)
+        assertEquals(ApiResult.Success(RawResponse(204, "")), empty)
 
         val refused = api { HttpStatusCode.PreconditionFailed to "" }
-            .send(com.kert0n.medapp.queue.PreparedRequest("DELETE", "/v1/drugs/$pack", preparedAt = java.time.Instant.EPOCH))
+            .send("DELETE", "/v1/drugs/$pack", emptyMap(), body = null)
         assertEquals(ApiResult.Failure(ApiFailure.PreconditionFailed), refused)
     }
 }

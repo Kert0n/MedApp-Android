@@ -16,7 +16,6 @@ import com.kert0n.medapp.domain.value.doses
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Test
-import com.kert0n.medapp.fixture.beginning
 
 /**
  * Нехватка и уменьшившаяся потребность зажимают выделение: каждой пачке — не больше целых доз,
@@ -57,7 +56,7 @@ class CourseShortageTest {
         val plan = week.next(week.beginning, 7)
         val shrunk = availability(PACK to tablets("4"), OTHER_PACK to tablets("0"))
         val found = twoPacks.clamped(plan.size.doses, shrunk, LATER)
-            .coverage(taken = 0.doses, from = week.beginning, availability = shrunk)
+            .coverage(CourseProgress.none, shrunk)
         assertEquals(7.doses, found.requiredDoses)
         assertEquals(2.doses, found.coveredDoses)
         assertEquals(plan[2].at, found.firstUncoveredAt)

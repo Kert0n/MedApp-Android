@@ -8,7 +8,6 @@ import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.availability
-import com.kert0n.medapp.fixture.beginning
 import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
 import kotlin.uuid.Uuid
@@ -32,7 +31,7 @@ class CourseTakenOffPlanTest {
         // Две дозы ушли из кармана: нужно на две меньше, и первый источник отдал две из трёх
         // выделенных — как отдал бы плановым приёмам.
         val corrected = twoPacks.setTakenOffPlan(2.doses, availability, LATER)
-        assertEquals(5.doses, corrected.remainingDoses(taken = 0.doses))
+        assertEquals(5.doses, corrected.remainingDoses(CourseProgress.none))
         assertEquals(listOf(1.doses, 4.doses), corrected.sources.map { it.allocatedDoses })
         assertEquals(twoPacks.revision.next(), corrected.revision)
         assertEquals(LATER, corrected.updatedAt)
@@ -42,13 +41,13 @@ class CourseTakenOffPlanTest {
     fun moreThanTheFirstSourceHoldsSpillsIntoTheNext() {
         val corrected = twoPacks.setTakenOffPlan(5.doses, availability, LATER)
         assertEquals(listOf(0.doses, 2.doses), corrected.sources.map { it.allocatedDoses })
-        assertEquals(2.doses, corrected.remainingDoses(taken = 0.doses))
+        assertEquals(2.doses, corrected.remainingDoses(CourseProgress.none))
     }
 
     @Test
     fun withoutSourcesOnlyTheNeedChanges() {
         val bare = activeCourse().setTakenOffPlan(3.doses, availability, LATER)
-        assertEquals(4.doses, bare.remainingDoses(taken = 0.doses))
+        assertEquals(4.doses, bare.remainingDoses(CourseProgress.none))
         assertTrue(bare.sources.isEmpty())
         assertEquals(activeCourse().revision.next(), bare.revision)
     }
@@ -66,7 +65,7 @@ class CourseTakenOffPlanTest {
         // Снимать бронь решал человек, и вернуть её догадкой нельзя: меняется только потребность.
         val lowered = twoPacks.setTakenOffPlan(2.doses, availability, LATER)
             .setTakenOffPlan(1.doses, availability, LATER)
-        assertEquals(6.doses, lowered.remainingDoses(taken = 0.doses))
+        assertEquals(6.doses, lowered.remainingDoses(CourseProgress.none))
         assertEquals(listOf(1.doses, 4.doses), lowered.sources.map { it.allocatedDoses })
     }
 
@@ -81,7 +80,7 @@ class CourseTakenOffPlanTest {
         val corrected = week.setTakenOffPlan(2.doses, availability, LATER)
         assertEquals(
             week.schedule.start.plusDays(4),
-            corrected.expectedEnd(0.doses, week.schedule.beginning)?.localDate
+            corrected.expectedEnd(CourseProgress.none)?.localDate
         )
     }
 

@@ -10,7 +10,9 @@ import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.SHARED_KIT
 import com.kert0n.medapp.fixture.dose
+import com.kert0n.medapp.fixture.millilitres
 import com.kert0n.medapp.fixture.pack
+import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.fixture.plannedIntake
 import com.kert0n.medapp.fixture.unplannedIntake
 import com.kert0n.medapp.network.intake.IntakeAccounting
@@ -55,11 +57,7 @@ class IntakeStorageMapperTest {
     /** Пачка факта может отличаться от плановой, и аптечка — у пачки. */
     @Test
     fun confirmedIntakeKeepsWhereTheDoseCameFrom() {
-        val taken = plannedIntake().confirm(
-            pkg = pack(id = OTHER_PACK, medKit = medKit(id = SHARED_KIT, name = "Дача")),
-            amount = dose("1.5"),
-            at = LATER
-        )
+        val taken = plannedIntake().confirm(pack(id = OTHER_PACK, medKit = medKit(id = SHARED_KIT, name = "Дача")).take(dose("1.5"), LATER).getOrThrow())
         val restored = taken.toStorageRow().toDomain(VOCABULARY) as CourseIntake
 
         assertEquals(IntakeStatus.TAKEN, restored.status)
@@ -67,6 +65,22 @@ class IntakeStorageMapperTest {
         assertEquals(OTHER_PACK, restored.taken?.pkg?.id)
         assertEquals(SHARED_KIT, restored.taken?.pkg?.medKit?.id)
         assertEquals(PACK, restored.plannedPackage?.id)
+    }
+
+    /** Сосед сменил единицу пачки на сервере: приёмы в таблетках читаются по-прежнему. */
+    @Test
+    fun historyIsReadableAfterThePackChangedItsUnit() {
+        val confirmed = plannedIntake().confirm(pack(quantity = tablets("10")).take(dose("2"), LATER).getOrThrow())
+        val row = IntakeStorageRow(
+            intake = confirmed.toStorageEntity(),
+            planned = confirmed.plannedPackage?.toStorageRow(),
+            taken = pack(quantity = millilitres("100")).toStorageRow()
+        )
+
+        val restored = row.toDomain(VOCABULARY) as CourseIntake
+
+        assertEquals(dose("2"), restored.taken?.amount)
+        assertEquals(millilitres("100"), restored.taken?.pkg?.quantity)
     }
 
     @Test
@@ -104,7 +118,7 @@ class IntakeStorageMapperTest {
             accounting = IntakeAccounting.PENDING,
             operationId = operation
         )
-        val confirmed = plannedIntake().confirm(pack(), dose("2"), LATER)
+        val confirmed = plannedIntake().confirm(pack().take(dose("2"), LATER).getOrThrow())
         val stored = confirmed.toStorageEntity(sync)
 
         assertEquals(sync, stored.syncState())

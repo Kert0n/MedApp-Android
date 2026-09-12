@@ -30,6 +30,21 @@ class VocabularyTest {
     }
 
     @Test
+    fun renamedUnitIsTheSameUnit() {
+        // Сосед переименовал «таб» в «таблетки» на сервере: количества, записанные до этого, и
+        // записанные после, считаются вместе — иначе смена имени ломала бы арифметику и историю.
+        val before = QuantityUnit(TABLETS_ID, "таб")
+        val after = QuantityUnit(TABLETS_ID, "таблетки")
+        assertEquals(before, after)
+        assertEquals(before.hashCode(), after.hashCode())
+        assertEquals(
+            Quantity(java.math.BigDecimal(5), after),
+            Quantity(java.math.BigDecimal(2), before) + Quantity(java.math.BigDecimal(3), after)
+        )
+        assertEquals(DosageForm(TABLETS_ID, "таблетки"), DosageForm(TABLETS_ID, "таблетки, покрытые оболочкой"))
+    }
+
+    @Test
     fun snapshotAnswersByIdentifierAndMissesHonestly() {
         // Промах — «снимок старее того, кто назвал единицу», а не «такой нет»: ответ `null`, и
         // что с ним делать, решает тот, кто снимок держит.

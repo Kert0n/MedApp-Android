@@ -1,7 +1,7 @@
 package com.kert0n.medapp.network.server
 
 import com.kert0n.medapp.network.account.AccessTokenNetworkDTO
-import com.kert0n.medapp.network.account.AccountRegisteredNetworkDTO
+import com.kert0n.medapp.network.account.AccountPostNetworkDTO
 import com.kert0n.medapp.network.account.AccountSnapshotNetworkDTO
 import com.kert0n.medapp.network.medkit.InvitationNetworkDTO
 import com.kert0n.medapp.network.medkit.MedKitSummaryNetworkDTO
@@ -214,15 +214,15 @@ class WireContractTest {
 
     @Test
     fun credentialsAreReadButNeverPrinted() {
-        val account = read(
-            AccountRegisteredNetworkDTO.serializer(),
-            """{"login":"$kit","key":"k3y-shown-only-once"}"""
-        )
+        val invented = AccountPostNetworkDTO(Uuid.parse(kit), "k3y-shown-only-once-43-characters-long-abcd")
         val token = read(AccessTokenNetworkDTO.serializer(), """{"accessToken":"jwt-secret"}""")
         val invitation = read(InvitationNetworkDTO.serializer(), """{"key":"invitation-secret"}""")
 
-        assertEquals("k3y-shown-only-once", account.key)
-        assertFalse(account.toString().contains("k3y-shown-only-once"))
+        assertEquals(
+            json("""{"login":"$kit","password":"k3y-shown-only-once-43-characters-long-abcd"}"""),
+            written(AccountPostNetworkDTO.serializer(), invented)
+        )
+        assertFalse(invented.toString().contains("k3y-shown-only-once"))
         assertFalse(token.toString().contains("jwt-secret"))
         assertFalse(invitation.toString().contains("invitation-secret"))
     }

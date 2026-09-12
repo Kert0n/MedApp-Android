@@ -19,6 +19,15 @@ import java.time.Instant
 class PackageSnapshot(val pack: Package, val sync: PackageSyncState)
 
 /**
+ * Знает ли снимок словаря всё, что называет этот снимок пачки. Промах — `VocabularyMiss`, как
+ * и у полного разбора: тот, кто держит словарь, дочитывает его до того, как снимок ляжет в базу.
+ */
+fun PackageSnapshotNetworkDTO.requireKnownIn(vocabulary: Vocabulary) {
+    vocabulary.unitOrMiss(pack.unitId)
+    pack.formId?.let(vocabulary::formOrMiss)
+}
+
+/**
  * Провод → домен. Единица и форма приходят идентификаторами и разрешаются по снимку словаря;
  * промах — `VocabularyMiss`, и решает его резолвер, а не этот маппер. Аптечку приносит вызывающий:
  * снимок называет её номером, а объект есть у того, кто читает базу. Личных сведений в снимке

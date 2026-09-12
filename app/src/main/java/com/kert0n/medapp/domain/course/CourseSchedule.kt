@@ -50,6 +50,9 @@ class CourseSchedule(
         }
     }
 
+    /** Момент, с которого календарь читается с самого начала: полночь первого дня в своей зоне. */
+    val beginning: Instant get() = start.atStartOfDay(zone).toInstant()
+
     override fun equals(other: Any?): Boolean =
         this === other || (
             other is CourseSchedule &&
@@ -97,19 +100,23 @@ class CourseSchedule(
     }
 
     /**
-     * Ближайшие [count] пунктов, начиная с [from], по возрастанию момента. Это и есть «когда»
-     * оставшихся доз: сколько их, говорит курс, а календарь раскладывает их по дням. Последний
-     * из них — ожидаемый конец лечения, и он сдвигается сам, когда доза пропущена.
+     * Ближайшие [count] пунктов, начиная с [from], по возрастанию момента, минуя [except] — уже
+     * отвеченные. Это и есть «когда» оставшихся доз: сколько их, говорит курс, а календарь
+     * раскладывает их по дням, пропуская занятые места. Последний из них — ожидаемый конец
+     * лечения: пропуск сдвигает его вперёд, поздний ответ по пропущенному — назад. Отвеченный
+     * пункт узнаётся по назначенным дате и времени — это его тождество (PLAN F4).
      */
-    fun next(from: Instant, count: Int): List<ScheduledOccurrence> {
+    fun next(from: Instant, count: Int, except: Set<ScheduledOccurrence> = emptySet()): List<ScheduledOccurrence> {
         require(count >= 0) { "число пунктов не бывает отрицательным: $count" }
         if (count == 0) return emptyList()
+        val taken = except.mapTo(HashSet()) { it.slot }
         val found = ArrayList<ScheduledOccurrence>(count)
         // Сутки запаса назад: момент зависит от перехода часов, отбор идёт по моменту.
         var date = maxOf(start, from.atZone(zone).toLocalDate().minusDays(1))
         while (found.size < count) {
             if (date.dayOfWeek in daysOfWeek) {
                 for (time in times) {
+                    if ((date to time) in taken) continue
                     val at = momentOf(date, time)
                     if (!at.isBefore(from)) found += ScheduledOccurrence(date, time, at)
                 }

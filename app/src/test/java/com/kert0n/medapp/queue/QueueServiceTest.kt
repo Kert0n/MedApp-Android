@@ -6,7 +6,8 @@ import com.kert0n.medapp.fixture.INTAKE
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.medKit
-import com.kert0n.medapp.network.pack.PackageSyncCommand
+import com.kert0n.medapp.queue.pack.PackageSyncCommand
+import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
 import java.time.Instant
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.test.runTest
@@ -21,8 +22,10 @@ class QueueServiceTest {
     private class Storage : QueueStorage {
         val enqueued = mutableListOf<QueuedCommand>()
         var transactions = 0
-        override suspend fun ready(): List<StoredSyncOperation> = emptyList()
-        override suspend fun take(id: Uuid, at: Instant): SyncOperation? = null
+        override suspend fun ready(now: Instant): List<StoredSyncOperation> = emptyList()
+        override suspend fun take(id: Uuid, fresh: PackageSnapshotNetworkDTO?, at: Instant): Take? = null
+        override suspend fun answered(id: Uuid, answer: com.kert0n.medapp.network.server.RawResponse, at: Instant) = Unit
+        override suspend fun defer(id: Uuid, reason: String, at: Instant, notBefore: Instant) = Unit
         override suspend fun settle(id: Uuid, outcome: Delivery, at: Instant) = Unit
         override suspend fun <T> transaction(block: suspend () -> T): T {
             transactions++

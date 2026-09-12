@@ -2,6 +2,7 @@ package com.kert0n.medapp.domain.course
 
 import com.kert0n.medapp.fixture.MOSCOW
 import com.kert0n.medapp.fixture.activeCourse
+import com.kert0n.medapp.fixture.progress
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.availability
@@ -17,7 +18,6 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.kert0n.medapp.domain.pack.Availability
-import com.kert0n.medapp.fixture.beginning
 
 /**
  * Обеспечение вычисляется и называет первый непокрытый приём (PLAN D5).
@@ -49,7 +49,7 @@ class CourseCoverageTest {
     )
 
     private fun Course.coverage(availability: Availability = this@CourseCoverageTest.availability) =
-        coverage(taken = 0.doses, from = schedule.beginning, availability = availability)
+        coverage(CourseProgress.none, availability)
 
     @Test
     fun twentyEightNeededWithFiveAndFourAllocatedCoversNineAndNamesTheFirstGap() {
@@ -132,7 +132,7 @@ class CourseCoverageTest {
     @Test
     fun everythingTakenNeedsNothing() {
         val found = twoPacks(first = 5, second = 4)
-            .coverage(taken = 28.doses, from = fourTimesADay.beginning, availability = availability)
+            .let { it.coverage(it.progress(taken = 28), availability) }
         assertEquals(0.doses, found.requiredDoses)
         assertTrue(found.isFullyCovered)
         assertNull(found.coveredUntil)
@@ -144,7 +144,7 @@ class CourseCoverageTest {
         // Потребность — от назначенного числа, а не от окна календаря: приняли пять из
         // двадцати восьми — впереди двадцать три, и первая из них ложится на шестой пункт.
         val found = twoPacks(first = 5, second = 4)
-            .coverage(taken = 5.doses, from = remaining[5].at, availability = availability)
+            .let { it.coverage(it.progress(taken = 5), availability) }
         assertEquals(23.doses, found.requiredDoses)
         assertEquals(remaining[5].at, found.coveredUntil?.let { remaining[5].at })
     }
@@ -155,12 +155,12 @@ class CourseCoverageTest {
         // ожидаемый конец сдвигается на день — календарь говорит когда, а не до какого числа.
         val week = schedule()
         val course = activeCourse(sources = listOf(source(PACK, 7)))
-        val dayTwo = week.beginning.plusSeconds(86_400)
-        val ahead = course.remainingOccurrences(taken = 0.doses, from = dayTwo)
+        val firstMissed = course.progress(missed = 1)
+        val ahead = course.remainingOccurrences(firstMissed)
         assertEquals(7, ahead.size)
         assertEquals(week.start.plusDays(1), ahead.first().localDate)
-        assertEquals(week.start.plusDays(7), course.expectedEnd(0.doses, dayTwo)?.localDate)
-        assertEquals(week.start.plusDays(6), course.expectedEnd(0.doses, week.beginning)?.localDate)
-        assertNull(course.expectedEnd(7.doses, dayTwo))
+        assertEquals(week.start.plusDays(7), course.expectedEnd(firstMissed)?.localDate)
+        assertEquals(week.start.plusDays(6), course.expectedEnd(CourseProgress.none)?.localDate)
+        assertNull(course.expectedEnd(course.progress(taken = 7)))
     }
 }

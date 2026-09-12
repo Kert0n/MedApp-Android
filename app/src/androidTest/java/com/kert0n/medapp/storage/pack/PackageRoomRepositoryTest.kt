@@ -16,7 +16,7 @@ import com.kert0n.medapp.fixture.packageRepository
 import com.kert0n.medapp.fixture.queueRepository
 import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
-import com.kert0n.medapp.network.pack.PackageSyncCommand
+import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.queue.SyncOperationStatus
@@ -98,7 +98,7 @@ class PackageRoomRepositoryTest {
     @Test
     fun settledOperationStopsAffectingTheAmount() = runTest {
         queue.enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
-        queue.settle(operation, SyncOperationStatus.DONE)
+        queue.settle(operation, SyncOperationStatus.APPLIED)
 
         assertEquals(
             tablets("20"),

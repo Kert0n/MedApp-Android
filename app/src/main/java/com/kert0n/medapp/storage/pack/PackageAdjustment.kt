@@ -72,14 +72,13 @@ sealed interface PackageAdjustment {
                 StockMovement.Recount(movementId, pack, pack.quantity, actual, pack.medKit, at, at, note)
             )
             is Disposal -> {
-                // В минус пачка не уходит, поэтому «выбросил больше, чем было» списывает остаток
-                // целиком. В историю идёт то, что действительно ушло: иначе отчёт называл бы
-                // расход, которого не было.
-                val left = pack.quantity.minusOrZero(amount)
+                // В историю идёт то, что действительно ушло, — разница остатков до и после
+                // перехода: сколько уходит, когда выбросили больше, чем было, решает пачка.
+                val disposed = pack.dispose(amount)
                 Applied(
-                    pack.correctTo(left),
+                    disposed,
                     StockMovement.Disposal(
-                        movementId, pack, pack.quantity - left, reason, pack.medKit, at, at, note
+                        movementId, pack, pack.quantity - disposed.quantity, reason, pack.medKit, at, at, note
                     )
                 )
             }

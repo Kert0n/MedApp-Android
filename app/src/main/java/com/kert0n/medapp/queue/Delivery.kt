@@ -1,22 +1,36 @@
 package com.kert0n.medapp.queue
 
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
+import java.time.Instant
 
 /**
  * Чем кончилась отправка операции — ровно те случаи, которые хранилище записывает по-разному.
- * Неопределённости среди них нет: обрыв — это [Retry], а не состояние.
+ * Неопределённости среди них нет: обрыв — это [Retry], а не состояние; «устарело» — известный
+ * исход, после которого запрос готовится заново ([Stale]), и от [Retry] он отличается тем, что
+ * повторяется **новый** запрос по полученному состоянию, а не тот же.
  */
 sealed interface Delivery {
 
-    /**
-     * Отправка закончена: сервер применил команду или отверг её по предусловию — [refusal]
-     * называет отказ. [snapshot] — истина по пачке, прочитанная ответом или снимком следом;
-     * `null` у команд, за которыми пачки на сервере больше нет, и у команд аптечки.
-     */
-    data class Done(val snapshot: PackageSnapshotNetworkDTO?, val refusal: String? = null) : Delivery
+    /** Сервер сделал, что просили. [state] — истина по пачке: снимок, «пачки нет», ничего у аптечки. */
+    data class Applied(val state: PackageState) : Delivery
 
-    /** Ответа не было: связь, сервер, ограничение частоты. Операция ждёт повтора тем же запросом. */
-    data class Retry(val error: String) : Delivery
+    /**
+     * Версия устарела, и команда хочет заново: снимок применяется, запрос сбрасывается, операция
+     * снова ждёт и готовится по свежему состоянию под тем же номером (PLAN E3). [notBefore] —
+     * когда сервер отвергает свежую версию раз за разом: дальше не сейчас, а по задержке.
+     */
+    data class Stale(val snapshot: PackageSnapshotNetworkDTO, val notBefore: Instant? = null) : Delivery
+
+    /** Сервер делать не будет. [state] — истина, прочитанная следом, где её было чем прочитать. */
+    data class Refused(val reason: RefusalReason, val state: PackageState) : Delivery
+
+    /**
+     * Ответа не было: связь, сервер, ограничение частоты, ответ не по форме. Повтор тем же
+     * запросом, не раньше [notBefore] — срок живёт в базе вместе с операцией, а не в памяти
+     * прохода. Обрыв до сервера — не попытка ([attempted] = `false`): задержка от него не растёт,
+     * и при связи очередь уходит сразу.
+     */
+    data class Retry(val error: String, val notBefore: Instant? = null, val attempted: Boolean = true) : Delivery
 
     /** Пачки или аптечки на сервере для нас больше нет: отправлять некуда. */
     data object AccessLost : Delivery

@@ -1,6 +1,7 @@
 package com.kert0n.medapp.storage.medkit
 
 import com.kert0n.medapp.domain.medkit.MedKit
+import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
 import java.time.Instant
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.Flow
@@ -21,4 +22,11 @@ interface MedKitStorageRepository {
 
     /** Снимок трогает только число участников: остального сервер о нашей аптечке не знает. */
     suspend fun applyServerParticipants(id: Uuid, participantCount: Long, syncedAt: Instant)
+
+    /**
+     * Момент передачи ответственности серверу (PLAN E5): аптечка становится опубликованной, а
+     * ответы на создание её пачек — первым подтверждённым остатком и версиями — одной транзакцией.
+     * До неё истина — устройство и очереди нет; после — сервер, и изменения идут командами.
+     */
+    suspend fun published(medKit: MedKit, snapshots: List<PackageSnapshotNetworkDTO>, at: Instant)
 }

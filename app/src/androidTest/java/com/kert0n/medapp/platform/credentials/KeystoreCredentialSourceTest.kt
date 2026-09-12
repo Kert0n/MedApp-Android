@@ -35,7 +35,7 @@ class KeystoreCredentialSourceTest {
     private val alias = "medapp.test.${Uuid.random()}"
     private val credentials = AccountCredentials(
         login = Uuid.parse("00000000-0000-4000-8000-000000000071"),
-        key = "k3y-shown-only-once-43-characters-long-abcd"
+        password = "k3y-shown-only-once-43-characters-long-abcd"
     )
 
     private lateinit var scope: CoroutineScope
@@ -71,28 +71,52 @@ class KeystoreCredentialSourceTest {
         assertEquals(StoredAccount.Absent, source.read())
     }
 
+    /** Записанное само по себе не значит «сервер знает»: подтверждение приходит отдельно. */
     @Test
-    fun savedAccountIsReadBack() = runTest {
+    fun savedAccountIsPendingUntilItIsConfirmed() = runTest {
         source.save(credentials)
+
+        assertEquals(StoredAccount.Pending(credentials), source.read())
+
+        source.confirm()
 
         assertEquals(StoredAccount.Present(credentials), source.read())
     }
 
+    /** Подтверждать нечего, пока учётка не записана: признак сам по себе ничего не открывает. */
     @Test
-    fun keyIsStoredOnlyAsCiphertext() = runTest {
+    fun confirmationWithoutAnAccountChangesNothing() = runTest {
+        source.confirm()
+
+        assertEquals(StoredAccount.Absent, source.read())
+    }
+
+    /** Новые данные поверх подтверждённых снова ждут подтверждения. */
+    @Test
+    fun savingAgainTakesTheConfirmationAway() = runTest {
+        source.save(credentials)
+        source.confirm()
+
+        source.save(credentials)
+
+        assertEquals(StoredAccount.Pending(credentials), source.read())
+    }
+
+    @Test
+    fun passwordIsStoredOnlyAsCiphertext() = runTest {
         source.save(credentials)
 
         val stored = store.data.first().asMap().values.joinToString()
-        assertFalse(stored.contains(credentials.key))
+        assertFalse(stored.contains(credentials.password))
     }
 
     @Test
     fun everySaveGetsItsOwnInitialisationVector() = runTest {
         source.save(credentials)
-        val first = raw("key_iv")
+        val first = raw("password_iv")
         source.save(credentials)
 
-        assertNotEquals(first, raw("key_iv"))
+        assertNotEquals(first, raw("password_iv"))
     }
 
     /** Сброс хранилища — утрата учётки, о которой спрашивают, а не повод регистрироваться заново. */
@@ -107,7 +131,7 @@ class KeystoreCredentialSourceTest {
     @Test
     fun tamperedCiphertextIsUnreadable() = runTest {
         source.save(credentials)
-        store.edit { it[stringPreferencesKey("key_ciphertext")] = "AAAAAAAAAAAAAAAAAAAAAA==" }
+        store.edit { it[stringPreferencesKey("password_ciphertext")] = "AAAAAAAAAAAAAAAAAAAAAA==" }
 
         assertEquals(StoredAccount.Unreadable, source.read())
     }
@@ -125,11 +149,11 @@ class KeystoreCredentialSourceTest {
     }
 
     /**
-     * Ключ, который не удалось записать, — исход, а не исключение: сервер показал его один раз,
-     * и решение принимает человек, а не молчаливый повтор регистрации.
+     * Учётка, которую не удалось записать, — исход, а не исключение: на сервере её при этом нет,
+     * и решение, повторять ли настройку, принимает человек.
      */
     @Test
-    fun keyThatCannotBeWrittenIsReportedAsLost() = runTest {
+    fun credentialsThatCannotBeWrittenAreReportedAsLost() = runTest {
         // Обычный файл на месте каталога: DataStore не создаст под ним свой файл.
         blocked.writeBytes(ByteArray(0))
         val unwritable = KeystoreCredentialSource(
