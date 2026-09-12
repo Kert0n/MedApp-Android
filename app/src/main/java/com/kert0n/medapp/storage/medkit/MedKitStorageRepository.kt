@@ -4,6 +4,7 @@ import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.medkit.MedKitProjection
 import com.kert0n.medapp.network.pack.PackageSnapshot
 import java.time.Instant
+import java.time.LocalDate
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.Flow
 
@@ -13,8 +14,14 @@ import kotlinx.coroutines.flow.Flow
  */
 interface MedKitStorageRepository {
 
-    /** Потоки несут проекции — величины для экрана; сущность отдаёт `find` в транзакции сценария (PLAN H1). */
-    fun observeAll(): Flow<List<MedKitProjection>>
+    /**
+     * Потоки несут проекции — величины для экрана; сущность отдаёт `find` в транзакции сценария
+     * (PLAN H1). Вместе с аптечкой приходит её содержимое: сколько упаковок и сколько просрочено,
+     * — это первое, что человек видит в списке (PLAN H3 №2).
+     *
+     * `today` аргументом, потому что база системных часов не читает.
+     */
+    fun observeAll(today: LocalDate): Flow<List<MedKitProjection>>
 
     fun observe(id: Uuid): Flow<MedKitProjection?>
 

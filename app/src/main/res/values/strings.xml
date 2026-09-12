@@ -30,7 +30,12 @@
     <string name="med_kit_edit">Правка аптечки</string>
     <string name="med_kit_name">Название</string>
     <string name="med_kit_location">Место хранения (необязательно)</string>
-    <string name="med_kit_shared">Общая, участников: %1$d</string>
+    <string name="med_kit_shared">Общая · %1$d участника</string>
+    <string name="med_kit_packages">%1$d упаковок</string>
+    <string name="med_kit_empty_inside">Пусто</string>
+    <string name="med_kit_expired">%1$d просрочены</string>
+    <string name="med_kit_expired_description">Есть просроченные упаковки</string>
+    <string name="med_kit_shared_description">Общая аптечка</string>
     <string name="action_save">Сохранить</string>
     <string name="action_cancel">Отмена</string>
     <string name="action_back">Назад</string>

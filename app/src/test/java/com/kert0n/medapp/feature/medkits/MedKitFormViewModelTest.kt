@@ -9,6 +9,7 @@ import com.kert0n.medapp.presentation.medkit.MedKitFormPresentationDTO
 import com.kert0n.medapp.storage.medkit.MedKitStorageRepository
 import java.time.Clock
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneOffset
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.Flow
@@ -37,7 +38,7 @@ class MedKitFormViewModelTest {
         val saved = mutableListOf<MedKit>()
         val described = mutableListOf<Triple<Uuid, String, String?>>()
 
-        override fun observeAll(): Flow<List<MedKitProjection>> = flowOf(emptyList())
+        override fun observeAll(today: LocalDate): Flow<List<MedKitProjection>> = flowOf(emptyList())
         override fun observe(id: Uuid): Flow<MedKitProjection?> = emptyFlow()
         override suspend fun find(id: Uuid): MedKit? = stored
         override fun observeSyncedAt(id: Uuid): Flow<Instant?> = emptyFlow()

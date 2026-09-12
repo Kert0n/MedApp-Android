@@ -14,5 +14,12 @@ data class MedKitPresentationDTO(
     val createdAt: Instant,
     val syncedAt: Instant?,
     val isShared: Boolean,
-    val acceptsInvitations: Boolean
-)
+    val acceptsInvitations: Boolean,
+    val packages: Int,
+    val expired: Int
+) {
+    /** Просрочку человек видит первой, поэтому у неё свой вопрос, а не сравнение чисел на экране. */
+    val hasExpired: Boolean get() = expired > 0
+
+    val isEmpty: Boolean get() = packages == 0
+}

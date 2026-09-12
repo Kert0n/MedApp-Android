@@ -5,7 +5,9 @@ import kotlin.uuid.Uuid
 
 /**
  * Аптечка глазами экрана — величина с равенством по содержимому, без переходов (PLAN H1).
- * Строит её сама аптечка ([MedKit.projection]); сущность остаётся в транзакции.
+ * Строит её сама аптечка ([MedKit.projection]); сущность остаётся в транзакции. Содержимое
+ * приходит аргументом: сколько в аптечке пачек, знает не она, а хранение — как и доступность у
+ * упаковки.
  */
 data class MedKitProjection(
     val id: Uuid,
@@ -15,5 +17,6 @@ data class MedKitProjection(
     val participantCount: Long,
     val createdAt: Instant,
     val isShared: Boolean,
-    val acceptsInvitations: Boolean
+    val acceptsInvitations: Boolean,
+    val contents: MedKitContents
 )

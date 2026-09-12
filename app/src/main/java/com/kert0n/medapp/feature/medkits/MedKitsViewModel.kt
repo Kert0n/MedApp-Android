@@ -6,6 +6,8 @@ import com.kert0n.medapp.presentation.medkit.MedKitPresentationDTO
 import com.kert0n.medapp.presentation.medkit.toPresentationDTO
 import com.kert0n.medapp.storage.medkit.MedKitStorageRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.time.Clock
+import java.time.LocalDate
 import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -20,9 +22,13 @@ import kotlinx.coroutines.flow.stateIn
  * ожидание, а ответ «пока ничего не заведено».
  */
 @HiltViewModel
-class MedKitsViewModel @Inject constructor(medKits: MedKitStorageRepository) : ViewModel() {
+class MedKitsViewModel @Inject constructor(
+    medKits: MedKitStorageRepository,
+    clock: Clock
+) : ViewModel() {
 
-    val state: StateFlow<List<MedKitPresentationDTO>?> = medKits.observeAll()
+    // Просрочка считается на сегодня, и сегодня знают часы, а не база.
+    val state: StateFlow<List<MedKitPresentationDTO>?> = medKits.observeAll(LocalDate.now(clock))
         .map { kits -> kits.map { it.toPresentationDTO() } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 }
