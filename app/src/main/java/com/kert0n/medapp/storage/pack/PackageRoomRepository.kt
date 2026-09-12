@@ -17,6 +17,7 @@ import com.kert0n.medapp.storage.course.CourseReallocation
 import com.kert0n.medapp.storage.course.toSourceStorageEntities
 import com.kert0n.medapp.storage.course.toStorageEntity as toCourseStorageEntity
 import com.kert0n.medapp.storage.database.MedAppDatabase
+import com.kert0n.medapp.storage.database.chunkedForQuery
 import com.kert0n.medapp.queue.StoredSyncOperation
 import com.kert0n.medapp.storage.server.SyncOperationDao
 import com.kert0n.medapp.storage.server.SyncOperationStorageRow
@@ -143,7 +144,7 @@ class PackageRoomRepository @Inject constructor(
             val words = vocabulary.snapshot()
             val found = packages.matching(query, today).map { it.toDomain(words) }
             val ids = found.map { it.id }
-            val allocations = packages.allocationsOf(ids)
+            val allocations = ids.chunkedForQuery().flatMap { packages.allocationsOf(it) }
             val unclosed = unclosedOf(ids)
             val projected = found.map { pkg ->
                 projectionOf(pkg, allocations.firstOrNull { it.packageId == pkg.id }, unclosed[pkg.id].orEmpty(), words)
@@ -178,18 +179,15 @@ class PackageRoomRepository @Inject constructor(
 
     /**
      * Незакрытые операции всего списка — одним чтением на порцию: спрашивать очередь про каждую
-     * пачку значило бы двести запросов там, где хватает одного. Порции — предел переменных
-     * SQLite; порядок по `sequence` внутри пачки группировка сохраняет.
+     * пачку значило бы двести запросов там, где хватает одного. Порядок по `sequence` внутри
+     * пачки группировка сохраняет.
      */
     private suspend fun unclosedOf(ids: List<Uuid>): Map<Uuid, List<SyncOperationStorageRow>> =
-        ids.chunked(SQLITE_VARIABLE_LIMIT)
+        ids.chunkedForQuery()
             .flatMap { queue.unclosedOfPackages(it) }
             .groupBy { requireNotNull(it.operation.packageId) { "операция пачки называет свою пачку" } }
 
     private companion object {
-
-        /** Предел переменных в запросе SQLite: длиннее списка `IN` база не примет. */
-        const val SQLITE_VARIABLE_LIMIT = 500
 
 
         /** Из чего складывается доступность: пачка с её сведениями и бронями, очередь, выделения. */

@@ -168,6 +168,30 @@ class PackageRoomRepositoryTest {
     }
 
     /**
+     * Список длиннее одной порции читается по частям, и части не теряются: незакрытая команда
+     * каждой пачки входит в её оценку, в какую бы порцию пачка ни попала. Длину списка задают
+     * данные — пачки аптечки, — а не код, и запрос `IN (...)` ограничен числом переменных.
+     *
+     * Красная проверка: взять только первую порцию — пачки из остальных остаются с полным
+     * остатком, и оценка врёт ровно на невидимые команды.
+     */
+    @Test
+    fun aListLongerThanOneChunkKeepsEveryPackagesQueue() = runTest {
+        val many = 600 // больше одной порции
+        repeat(many) { i ->
+            val id = Uuid.random()
+            repository.add(pack(id = id, name = "Пачка $i", quantity = tablets("5")))
+            queue.enqueue(Uuid.random(), PackageSyncCommand.Consume(id, dose("1"), Uuid.random()), at)
+        }
+
+        val listed = repository.list(PackageQuery(), today).first().filter { it.id != PACK }
+
+        assertEquals(many, listed.size)
+        // У каждой пачки расход на единицу учтён: 5 − 1. Потерянная порция оставила бы пятёрки.
+        assertEquals(emptyList<Uuid>(), listed.filter { it.availability.effective != tablets("4") }.map { it.id })
+    }
+
+    /**
      * Обвязка синхронизации — своим методом: версии и момент сверки принадлежат доставке, а не
      * пачке, и в проекцию не входят (PLAN E4, H3 №28).
      */
