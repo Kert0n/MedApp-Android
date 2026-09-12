@@ -136,7 +136,8 @@ fun MedKitContentsScreen(
                         PackageCard(
                             pkg = pkg,
                             onOpen = { onOpen(pkg.id) },
-                            medKitName = state.medKitNames[pkg.medKitId]
+                            medKitName = state.medKitNames[pkg.medKitId],
+                            today = state.today
                         )
                     }
                 }

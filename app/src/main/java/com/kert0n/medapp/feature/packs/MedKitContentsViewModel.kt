@@ -69,7 +69,8 @@ class MedKitContentsViewModel @Inject constructor(
                     else kits.associate { it.id to it.name },
                     categories = choices.categories,
                     forms = choices.forms,
-                    query = query
+                    query = query,
+                    today = today
                 )
             }
         }
@@ -117,7 +118,9 @@ class MedKitContentsViewModel @Inject constructor(
         val medKitNames: Map<Uuid, String> = emptyMap(),
         val categories: List<String> = emptyList(),
         val forms: List<FormPresentationDTO> = emptyList(),
-        val query: PackageQuery = PackageQuery()
+        val query: PackageQuery = PackageQuery(),
+        /** Просрочка считается на сегодня, и сегодня знают часы, а не база. */
+        val today: LocalDate = LocalDate.MIN
     ) {
         /** Ищут или сужают — значит пустота значит «не нашлось», а не «здесь ничего нет». */
         val isNarrowed: Boolean get() = query.searchText.isNotEmpty() || query.filter != null

@@ -70,6 +70,8 @@
     <string name="med_kit_contents">Аптечка</string>
     <string name="pack_left">%1$s %2$s</string>
     <string name="pack_expires_until">до %1$s</string>
+    <string name="pack_expires_soon">Истекает %1$s</string>
+    <string name="pack_expires_soon_description">Срок годности истекает на днях</string>
     <string name="pack_expiry_unknown">срок не указан</string>
     <string name="pack_title">Упаковка</string>
     <string name="pack_gone">Этой упаковки больше нет.</string>
