@@ -101,7 +101,10 @@ class QueueWorker @Inject constructor(
 
     /** Подготовка по свежему состоянию, отправка, запись ответа и его применение — одна операция. */
     private suspend fun attempt(operation: SyncOperation, packageId: Uuid?, pass: Drain): Step {
-        val fresh = if (operation.prepared == null && packageId != null && packageId !in pass.freshPackages &&
+        // «Унёс домой» читает полку всегда: подтверждённое ею число к моменту снятия — половина
+        // остатка коробки, а снимки прохода на местную полку числа не кладут (PLAN E6).
+        val fresh = if (operation.prepared == null && packageId != null &&
+            (packageId !in pass.freshPackages || operation.command is PackageSyncCommand.Withdraw) &&
             operation.command !is PackageSyncCommand.Create
         ) {
             when (val read = snapshotRead(packageId)) {

@@ -93,7 +93,7 @@ class PackageRelocation @Inject constructor(
     }
 
     /** Команда «унёс домой» — отдельно от записи: разбор полки ставит полку зависимой от неё. */
-    internal fun withdrawal(pkg: Package): QueuedCommand = command(PackageSyncCommand.Withdraw(pkg.id, pkg.medKit.id))
+    internal fun withdrawal(pkg: Package): QueuedCommand = command(PackageSyncCommand.Withdraw(pkg.id, pkg.medKit.id, pkg.quantity))
 
     /**
      * Локальная половина «унёс домой»: коробка на моей полке, чужих броней у местной коробки нет,

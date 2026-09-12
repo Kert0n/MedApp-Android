@@ -125,7 +125,8 @@ object SyncCommandStorageConverter {
         PACKAGE_DELETE -> PackageSyncCommand.Delete(packageId = fields.uuid("packageId"))
         PACKAGE_WITHDRAW -> PackageSyncCommand.Withdraw(
             packageId = fields.uuid("packageId"),
-            fromMedKitId = fields.uuid("fromMedKitId")
+            fromMedKitId = fields.uuid("fromMedKitId"),
+            carried = fields.quantity("carried", vocabulary)
         )
         PACKAGE_CONSUME -> PackageSyncCommand.Consume(
             packageId = fields.uuid("packageId"),
@@ -166,8 +167,10 @@ object SyncCommandStorageConverter {
             is PackageSyncCommand.Move ->
                 put("targetMedKitId", JsonPrimitive(command.targetMedKitId.toString()))
             is PackageSyncCommand.Delete -> Unit
-            is PackageSyncCommand.Withdraw ->
+            is PackageSyncCommand.Withdraw -> {
                 put("fromMedKitId", JsonPrimitive(command.fromMedKitId.toString()))
+                putQuantity("carried", command.carried)
+            }
             is PackageSyncCommand.Consume -> {
                 putQuantity("amount", command.amount.quantity)
                 put("intakeId", JsonPrimitive(command.intakeId.toString()))

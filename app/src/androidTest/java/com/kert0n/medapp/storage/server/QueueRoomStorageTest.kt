@@ -270,7 +270,7 @@ class QueueRoomStorageTest {
      */
     @Test
     fun aBoxThrownAwayAtHomeIsStillTakenOffTheServer() = runTest {
-        database.syncOperations().enqueue(operation, PackageSyncCommand.Withdraw(PACK, HOME_KIT), at)
+        database.syncOperations().enqueue(operation, PackageSyncCommand.Withdraw(PACK, HOME_KIT, tablets("20")), at)
         database.packages().delete(PACK)
 
         val taken = (storage.take(operation, snapshot, at) as Take.Sending).operation
@@ -278,6 +278,24 @@ class QueueRoomStorageTest {
         assertEquals("DELETE", taken.prepared?.method)
         assertEquals(ResourceVersion(4), taken.prepared?.drugVersion)
         assertNull(database.packages().find(PACK))
+    }
+
+    /**
+     * Унесли при 20, дома выпили одну, а полка к снятию подтвердила 17. Когда сервер коробку забыл,
+     * у нас она местная и с 16: чужой расход и свой домашний учтены оба (PLAN E6).
+     */
+    @Test
+    fun carryingHomeCountsWhatTheShelfConfirmedAndWhatWasTakenAtHome() = runTest {
+        database.medKits().upsert(medKit().toMedKitStorageEntity())
+        database.packages().save(pack(quantity = tablets("19"), form = TABLET_FORM), PackageSyncState(PACK, ResourceVersion(3), null, at))
+        database.syncOperations().enqueue(operation, PackageSyncCommand.Withdraw(PACK, com.kert0n.medapp.fixture.SHARED_KIT, tablets("20")), at)
+
+        storage.take(operation, snapshot, at)
+        storage.settle(operation, Delivery.Applied(PackageState.Gone), at.plusSeconds(1))
+
+        val row = requireNotNull(database.packages().find(PACK))
+        assertEquals(tablets("16"), row.toDomain(VOCABULARY).quantity)
+        assertNull(row.pack.syncState().version)
     }
 
     /** Курс, держащий пачку: назначение и источник, как их пишет активация. */

@@ -309,7 +309,7 @@ class MedKitRemovalTest {
         assertEquals(listOf(PACK), sourcesOfCourse())
         val queued = commands()
         assertEquals(
-            setOf(PackageSyncCommand.Withdraw(PACK, HOME_KIT), PackageSyncCommand.Withdraw(OTHER_PACK, HOME_KIT)),
+            setOf(PackageSyncCommand.Withdraw(PACK, HOME_KIT, tablets("20")), PackageSyncCommand.Withdraw(OTHER_PACK, HOME_KIT, tablets("1"))),
             queued.filterIsInstance<PackageSyncCommand.Withdraw>().toSet()
         )
         assertEquals(MedKitSyncCommand.Delete(HOME_KIT), queued.last())

@@ -176,10 +176,14 @@ sealed interface PackageSyncCommand : SyncCommand {
      * другой: остаток не меняется, «пачки нет» — желаемое, а не конец коробки, а отказ возвращает
      * её на полку, откуда взяли. Для остальных коробка исчезает, и сервер о ней больше не знает;
      * публиковать местную полку незачем.
+     *
+     * [carried] — остаток, с которым коробку унесли. Когда полка ответит, её подтверждённое число
+     * и сделанное дома после решения сводятся от него (`Package.rebased`).
      */
     data class Withdraw(
         override val packageId: Uuid,
-        val fromMedKitId: Uuid
+        val fromMedKitId: Uuid,
+        val carried: Quantity
     ) : PackageSyncCommand
 
     /**

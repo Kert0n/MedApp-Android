@@ -10,6 +10,7 @@ import com.kert0n.medapp.fixture.SHARED_KIT
 import com.kert0n.medapp.fixture.factsOf
 import com.kert0n.medapp.fixture.expiry
 import com.kert0n.medapp.fixture.withShared
+import com.kert0n.medapp.fixture.left
 import com.kert0n.medapp.fixture.medKit
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.tablets
@@ -83,6 +84,17 @@ class PackageStateTransitionsTest {
         val movementId = Uuid.random()
         val lost = pack(quantity = tablets("7")).lost(movementId, LATER)
         assertEquals(StockMovement.AccessLoss(movementId, pack().ref, tablets("7"), observedAt = LATER), lost.trace)
+    }
+
+    /**
+     * Унесли при 20, дома выпили одну — у нас 19; полка к снятию подтвердила 17: сосед выпил три.
+     * Коробка хранит оба изменения — 16 (PLAN E6).
+     */
+    @Test
+    fun aBoxCarriedHomeKeepsBothTheShelfsAndItsOwnChanges() {
+        val atHome = pack(quantity = tablets("19"))
+        assertEquals(tablets("16"), atHome.rebased(from = tablets("20"), onto = tablets("17")).left().quantity)
+        assertTrue(atHome.rebased(from = tablets("20"), onto = tablets("1")) is PackageAfter.Ended)
     }
 
     @Test

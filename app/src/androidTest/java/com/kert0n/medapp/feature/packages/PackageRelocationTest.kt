@@ -170,7 +170,7 @@ class PackageRelocationTest {
         assertEquals(PackageRelocation.Outcome.MOVED, relocation.move(PACK, SHARED_KIT))
 
         assertMovedAndStillASource()
-        assertEquals(listOf(PackageSyncCommand.Withdraw(PACK, HOME_KIT)), commands())
+        assertEquals(listOf(PackageSyncCommand.Withdraw(PACK, HOME_KIT, tablets("20"))), commands())
         assertEquals(PackageStatus.CHANGING, requireNotNull(database.packageRepository().find(PACK)).status)
     }
 

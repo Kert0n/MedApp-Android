@@ -111,7 +111,7 @@ class PackageSyncCommandPreparationTest {
             PackageSyncCommand.Move(PACK, SHARED_KIT).prepared().let { "${it.method} ${it.path}" }
         )
         assertEquals("DELETE", PackageSyncCommand.Delete(PACK).prepared().method)
-        val withdraw = PackageSyncCommand.Withdraw(PACK, SHARED_KIT).prepared()
+        val withdraw = PackageSyncCommand.Withdraw(PACK, SHARED_KIT, tablets("20")).prepared()
         assertEquals("DELETE /v1/drugs/$PACK", "${withdraw.method} ${withdraw.path}")
         assertEquals(mapOf("version" to "3"), withdraw.query)
         assertEquals("DELETE /v1/reservations/$PACK", PackageSyncCommand.ReleaseClaim(PACK).prepared().let { "${it.method} ${it.path}" })

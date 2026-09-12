@@ -6,6 +6,8 @@ import com.kert0n.medapp.domain.medkit.MedKitStatus
 import com.kert0n.medapp.domain.pack.PackageStatus
 import com.kert0n.medapp.storage.medkit.toStorageEntity as toMedKitStorageEntity
 import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.pack.PackageAfter
+import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.pack.PackageEnding
 import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.network.pack.PackageSyncState
@@ -99,8 +101,10 @@ class QueueRoomStorage @Inject constructor(
         if (!carriedAway) fresh?.let { layDown(it, at) }
         if (operation.prepared == null) {
             val request = when (command) {
-                is PackageSyncCommand.Withdraw if carriedAway && fresh != null ->
-                    command.toPreparedRequest(operation.id, fresh.sync, confirmed = null, mine = null, at = at)
+                // Снимают по версии полки, а её подтверждённое число запоминается в запросе: из него
+                // и из сделанного дома сложится остаток, когда полка ответит (PLAN E6).
+                is PackageSyncCommand.Withdraw if fresh != null ->
+                    command.toPreparedRequest(operation.id, fresh.sync, confirmed = fresh.pack.quantity, mine = null, at = at)
                 is PackageSyncCommand -> {
                     val row = packages.find(command.packageId)
                         ?: return@withTransaction closedByPreparation(operation, Delivery.AccessLost, at)
@@ -179,7 +183,7 @@ class QueueRoomStorage @Inject constructor(
 
     private suspend fun apply(id: Uuid, effect: Settlement.Effect, at: Instant) {
         when (effect) {
-            is Settlement.Effect.LayDown -> layDown(effect.snapshot, at)
+            is Settlement.Effect.LayDown -> layDown(effect.snapshot, at, carried = withdrawalOf(id)?.carried)
             // Коробки у нас больше нет; чем это объясняется, названо в самом эффекте, а переход
             // приносит пачка (PLAN D7).
             is Settlement.Effect.PackageEnded -> ended(effect.packageId, at) { it.endedAs(effect.ending, at) }
@@ -190,17 +194,38 @@ class QueueRoomStorage @Inject constructor(
             is Settlement.Effect.Account -> intakes.setAccounting(id, effect.accounting)
             is Settlement.Effect.Cascade -> cascade(id, effect)
             is Settlement.Effect.Settled -> settled(id)
-            is Settlement.Effect.Withdrawn -> withdrawn(effect.packageId)
+            is Settlement.Effect.Withdrawn -> withdrawn(id, effect.packageId, at)
             is Settlement.Effect.Returned -> returned(effect.packageId, effect.medKitId)
         }
     }
 
-    /** Сервер коробку забыл: у нас она местная — без версий, момента сверки и броней (PLAN E6). */
-    private suspend fun withdrawn(packageId: Uuid) {
+    /**
+     * Сервер коробку забыл: у нас она местная — без версий, момента сверки и броней. Остаток —
+     * подтверждённое полкой к снятию и сделанное дома после решения (PLAN E6).
+     */
+    private suspend fun withdrawn(id: Uuid, packageId: Uuid, at: Instant) {
         val row = packages.find(packageId) ?: return
+        val words = vocabulary.snapshot()
+        val pkg = row.toDomain(words)
+        val confirmed = operationOf(id)?.prepared?.quantityBefore
+        val carried = withdrawalOf(id)?.carried
         packages.deleteClaims(packageId)
-        packages.save(row.toDomain(vocabulary.snapshot()), PackageSyncState(packageId))
+        val after = if (confirmed != null && carried != null && confirmed.unit == pkg.quantity.unit) {
+            pkg.rebased(from = carried, onto = confirmed)
+        } else {
+            PackageAfter.Left(pkg)
+        }
+        when (after) {
+            is PackageAfter.Left -> packages.save(after.pkg, PackageSyncState(packageId))
+            is PackageAfter.Ended -> packages.end(after.ending, courses, movements, words, at)
+        }
     }
+
+    private suspend fun operationOf(id: Uuid): SyncOperation? =
+        (queue.find(id)?.toDomain(vocabulary.snapshot()) as? StoredSyncOperation.Readable)?.operation
+
+    private suspend fun withdrawalOf(id: Uuid): PackageSyncCommand.Withdraw? =
+        operationOf(id)?.command as? PackageSyncCommand.Withdraw
 
     /**
      * Унести домой не вышло: коробка возвращается на полку, откуда её взяли. Той полки уже нет —
@@ -296,9 +321,23 @@ class QueueRoomStorage @Inject constructor(
         medKits.delete(medKitId)
     }
 
-    /** Разрешённый снимок поверх подтверждённого остатка и броней; разрешать здесь нечего. */
-    private suspend fun layDown(snapshot: PackageSnapshot, at: Instant) {
+    /**
+     * Разрешённый снимок поверх подтверждённого остатка и броней; разрешать здесь нечего. Коробка,
+     * которую не вышло унести ([carried] — с чем уносили), уже вернулась на полку: число полки
+     * ложится, и сделанное дома после решения переносится на него (PLAN E6).
+     */
+    private suspend fun layDown(snapshot: PackageSnapshot, at: Instant, carried: Quantity? = null) {
+        val words = vocabulary.snapshot()
+        val atHome = carried?.let { packages.find(snapshot.pack.id)?.toDomain(words)?.quantity }
         packages.applySnapshot(snapshot, observedAt = at)
+        if (carried == null || atHome == null) return
+        val row = packages.find(snapshot.pack.id) ?: return
+        val laid = row.toDomain(words)
+        if (laid.quantity.unit != carried.unit || atHome.unit != carried.unit) return
+        when (val after = laid.rebased(from = carried, onto = atHome)) {
+            is PackageAfter.Left -> packages.save(after.pkg, row.pack.syncState())
+            is PackageAfter.Ended -> packages.end(after.ending, courses, movements, words, at)
+        }
     }
 
     /** Зависимость значит «нужен эффект»: не будет его у родителя — не будет и у зависимых, и у их зависимых. */

@@ -98,7 +98,7 @@ class SettlementTest {
      */
     @Test
     fun aWithdrawnBoxStaysLocalOrReturnsToItsShelf() {
-        val withdraw = PackageSyncCommand.Withdraw(PACK, SHARED_KIT)
+        val withdraw = PackageSyncCommand.Withdraw(PACK, SHARED_KIT, tablets("20"))
         assertEquals(
             listOf(Effect.Account(IntakeAccounting.REMOTE_APPLIED), Effect.Withdrawn(PACK), Effect.Settled),
             Delivery.Applied(PackageState.Gone).settlement(withdraw).effects

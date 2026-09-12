@@ -44,7 +44,7 @@ class SyncCommandStorageConverterTest {
         PackageSyncCommand.CorrectStock(PACK, tablets("18.5")),
         PackageSyncCommand.Move(PACK, SHARED_KIT),
         PackageSyncCommand.Delete(PACK),
-        PackageSyncCommand.Withdraw(PACK, SHARED_KIT),
+        PackageSyncCommand.Withdraw(PACK, SHARED_KIT, tablets("20")),
         PackageSyncCommand.Consume(PACK, dose("1.5"), INTAKE),
         PackageSyncCommand.Consume(PACK, dose("1.5"), INTAKE, claimAfter = tablets("4")),
         PackageSyncCommand.SetClaim(PACK, tablets("6")),
@@ -117,7 +117,7 @@ class SyncCommandStorageConverterTest {
         // Унесённая домой коробка действует на полке, откуда её унесли: там её и снимают.
         assertEquals(
             HOME_KIT,
-            SyncCommandStorageConverter.medKitIdOf(PackageSyncCommand.Withdraw(PACK, HOME_KIT))
+            SyncCommandStorageConverter.medKitIdOf(PackageSyncCommand.Withdraw(PACK, HOME_KIT, tablets("20")))
         )
     }
 

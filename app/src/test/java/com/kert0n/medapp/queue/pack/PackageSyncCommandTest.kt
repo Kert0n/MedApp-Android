@@ -48,7 +48,7 @@ class PackageSyncCommandTest {
             PackageSyncCommand.CorrectStock(PACK, tablets("19")),
             PackageSyncCommand.Move(PACK, SHARED_KIT),
             PackageSyncCommand.Delete(PACK),
-            PackageSyncCommand.Withdraw(PACK, SHARED_KIT),
+            PackageSyncCommand.Withdraw(PACK, SHARED_KIT, tablets("20")),
             PackageSyncCommand.Consume(PACK, dose("2"), INTAKE),
             PackageSyncCommand.SetClaim(PACK, tablets("10")),
             PackageSyncCommand.ReleaseClaim(PACK)
@@ -63,7 +63,7 @@ class PackageSyncCommandTest {
      */
     @Test
     fun carryingHomeKeepsTheAmountAndTakesAnAbsentBoxAsDone() {
-        val withdraw = PackageSyncCommand.Withdraw(PACK, SHARED_KIT)
+        val withdraw = PackageSyncCommand.Withdraw(PACK, SHARED_KIT, tablets("20"))
         assertEquals(null, withdraw.appliedTo(tablets("20")))
         assertEquals(com.kert0n.medapp.queue.NotFoundPolicy.APPLIED, withdraw.onNotFound)
         assertEquals(com.kert0n.medapp.queue.StalePolicy.REFUSE, withdraw.onStale)
