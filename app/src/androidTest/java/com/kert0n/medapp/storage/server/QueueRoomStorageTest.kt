@@ -37,6 +37,7 @@ import com.kert0n.medapp.storage.intake.toStorageEntity as toIntakeStorageEntity
 import com.kert0n.medapp.storage.medkit.toStorageEntity as toMedKitStorageEntity
 import com.kert0n.medapp.storage.pack.toDetailsStorageEntity
 import com.kert0n.medapp.storage.pack.toStorageEntity
+import java.math.BigDecimal
 import java.time.Instant
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.CompletableDeferred
@@ -335,7 +336,11 @@ class QueueRoomStorageTest {
         assertEquals(listOf(operation), storage.ready(at.plusSeconds(31)).map { it.id })
     }
 
-    /** Запоздалый снимок свежий не перекрывает: меньшая версия большую не откатывает (PLAN E1). */
+    /**
+     * Запоздалый снимок свежий не перекрывает: меньшая версия большую не откатывает (PLAN E1).
+     * Половина, которая не запоздала, при этом ложится: версии независимы, и картина броней с
+     * версией 2 поверх известной 1 — новость, даже когда состояние пачки старее (PLAN B3).
+     */
     @Test
     fun anOlderSnapshotDoesNotOverwriteANewerOne() = runTest {
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
@@ -347,7 +352,27 @@ class QueueRoomStorageTest {
         val row = requireNotNull(database.packages().find(PACK))
         assertEquals(tablets("20"), row.toDomain(VOCABULARY).quantity)
         assertEquals(ResourceVersion(3), row.pack.syncState().version)
+        assertEquals(BigDecimal("4.000000"), requireNotNull(row.toDomain(VOCABULARY).claims).total)
+        assertEquals(ResourceVersion(2), row.pack.syncState().claimsVersion)
         assertEquals(SyncOperationStatus.APPLIED, (requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable).operation.status)
+    }
+
+    /** Запоздалая картина броней не откатывает свежую, даже когда состояние пачки ложится (B3, E1). */
+    @Test
+    fun anOlderClaimsHalfDoesNotOverwriteANewerOne() = runTest {
+        database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
+        storage.take(operation, snapshot, at)
+        val staleClaims = resolved(
+            snapshotJson.replace("\"version\":4", "\"version\":5")
+                .replace("\"total\":\"4.000000\",\"mine\":\"4.000000\",\"version\":2", "\"total\":\"9.000000\",\"version\":1")
+        )
+
+        storage.settle(operation, Delivery.Applied(PackageState.Present(staleClaims)), at.plusSeconds(1))
+
+        val row = requireNotNull(database.packages().find(PACK))
+        assertEquals(ResourceVersion(5), row.pack.syncState().version)
+        assertEquals(BigDecimal("4.000000"), requireNotNull(row.toDomain(VOCABULARY).claims).total)
+        assertEquals(ResourceVersion(2), row.pack.syncState().claimsVersion)
     }
 
     /**

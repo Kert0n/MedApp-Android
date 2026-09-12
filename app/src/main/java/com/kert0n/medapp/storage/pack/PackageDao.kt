@@ -38,35 +38,58 @@ interface PackageDao {
     }
 
     /**
-     * Снимок переписывает серверную строку целиком и не касается личных сведений: они лежат в
-     * другой таблице. Недостающая строка деталей создаётся моментом первого наблюдения —
-     * обязательное `addedAt` домена не бывает пустым (PLAN E4, F1). Меньшая версия большую не
-     * откатывает (PLAN E1): запоздалый снимок ложится, только если он не старее того, что есть.
-     * `false` — снимок старее и не применён.
-     */
-    /**
-     * Разрешённый снимок целиком: серверная часть и картина броней вместе, потому что порознь с
-     * провода они не приходят. Запоздалый снимок не перекрывает свежий — ни состояние, ни брони.
+     * Разрешённый снимок целиком: серверная часть и картина броней приходят с провода вместе.
+     * Применяются они **порознь** — версии у них свои и независимые, и запоздать может любая
+     * половина (PLAN B3, E1). Каждая ложится, только если не старее известного.
+     *
+     * Картина броней без своей версии не кладётся: пустая версия значит «не читалась» (E4).
      */
     @Transaction
-    suspend fun applySnapshot(pack: PackageStorageEntity, claims: ClaimsStorageEntity?, observedAt: Instant): Boolean {
-        if (!applyServerSnapshot(pack, observedAt)) return false
-        claims?.let { upsertClaims(it) }
-        return true
+    suspend fun applySnapshot(
+        pack: PackageStorageEntity,
+        claims: ClaimsStorageEntity?,
+        observedAt: Instant
+    ): SnapshotApplied {
+        val known = versionsOf(pack.id)
+        val packLaysDown = pack.version.laysOver(known?.version)
+        val claimsLayDown = pack.claimsVersion != null && pack.claimsVersion.laysOver(known?.claimsVersion)
+        if (packLaysDown) writeServerPart(pack, observedAt)
+        if (claimsLayDown) claims?.let { upsertClaims(it) }
+        // Упсерт серверной части пишет строку целиком, а колонка броней принадлежит другой
+        // половине: её версию — свою или прежнюю — ставит этот запрос, и только он.
+        setClaimsVersion(pack.id, if (claimsLayDown) pack.claimsVersion else known?.claimsVersion)
+        return SnapshotApplied(pack = packLaysDown, claims = claimsLayDown)
     }
 
+    /**
+     * Серверная строка пачки с той обвязкой, которую назвал вызывающий: здесь половины не
+     * разъезжаются — обе версии пришли одним [PackageStorageEntity]. Личных сведений снимок не
+     * касается: они лежат в другой таблице (PLAN E4, F1). `false` — снимок старее того, что
+     * есть, и не применён.
+     */
     @Transaction
     suspend fun applyServerSnapshot(pack: PackageStorageEntity, observedAt: Instant): Boolean {
-        val known = serverVersionOf(pack.id)
-        val incoming = pack.version
-        if (known != null && incoming != null && incoming < known) return false
-        upsertServerPart(pack)
-        insertDetailsIfMissing(observedPackageDetails(pack.id, observedAt))
+        if (!pack.version.laysOver(versionsOf(pack.id)?.version)) return false
+        writeServerPart(pack, observedAt)
         return true
     }
 
-    @Query("SELECT version FROM packages WHERE id = :id")
-    suspend fun serverVersionOf(id: Uuid): Long?
+    /**
+     * Недостающая строка деталей создаётся моментом первого наблюдения — обязательное `addedAt`
+     * домена не бывает пустым (PLAN F1).
+     */
+    @Transaction
+    suspend fun writeServerPart(pack: PackageStorageEntity, observedAt: Instant) {
+        upsertServerPart(pack)
+        insertDetailsIfMissing(observedPackageDetails(pack.id, observedAt))
+    }
+
+    @Query("SELECT version, claims_version FROM packages WHERE id = :id")
+    suspend fun versionsOf(id: Uuid): PackageVersionsStorageRow?
+
+    /** Версию картины броней двигает только её половина снимка — своим запросом (PLAN B3, E1). */
+    @Query("UPDATE packages SET claims_version = :version WHERE id = :id")
+    suspend fun setClaimsVersion(id: Uuid, version: Long?)
 
 
     /**
@@ -160,3 +183,9 @@ interface PackageDao {
     @Query("DELETE FROM packages WHERE id = :id")
     suspend fun delete(id: Uuid)
 }
+
+/**
+ * Ложится ли пришедшая версия поверх известной: запоздалый снимок свежий не перекрывает
+ * (PLAN E1). Неизвестная версия — с любой стороны — не возражает: откатывать нечего.
+ */
+private fun Long?.laysOver(known: Long?): Boolean = this == null || known == null || this >= known
