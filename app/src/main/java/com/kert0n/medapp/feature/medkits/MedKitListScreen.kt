@@ -22,18 +22,23 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kert0n.medapp.R
 import com.kert0n.medapp.ui.EmptyState
+import com.kert0n.medapp.ui.SearchEntry
 import com.kert0n.medapp.ui.LoadingState
 import kotlin.uuid.Uuid
 
 /**
  * Список аптечек (PLAN H3 №2). Пока ни одной не заведено, экран не притворяется списком: он
  * говорит, что такое аптечка, и предлагает завести первую.
+ *
+ * Поиск отсюда ведёт ко всем лекарствам сразу (экран 5): ища конкретное лекарство, человек не
+ * помнит, в какой оно аптечке, — это одно чтение в двух областях, и вторая область здесь.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MedKitListScreen(
     onOpen: (Uuid) -> Unit,
     onAdd: () -> Unit,
+    onSearch: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: MedKitsViewModel = hiltViewModel()
 ) {
@@ -67,6 +72,14 @@ fun MedKitListScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                // Поиск отсюда ищет по всем аптечкам: когда человек ищет лекарство, он не помнит,
+                // в какой оно коробке (PLAN H3, REQ-029).
+                item {
+                    SearchEntry(
+                        hint = stringResource(R.string.search_medicines_everywhere),
+                        onClick = onSearch
+                    )
+                }
                 items(kits, key = { it.id }) { kit -> MedKitCard(kit, onOpen = { onOpen(kit.id) }) }
             }
         }

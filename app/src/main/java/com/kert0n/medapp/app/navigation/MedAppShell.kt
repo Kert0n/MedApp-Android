@@ -83,7 +83,8 @@ private fun MedAppNavHost(navController: NavHostController, modifier: Modifier =
         composable<Route.MedKits> {
             MedKitListScreen(
                 onOpen = { navController.navigate(Route.MedKitContents(it)) },
-                onAdd = { navController.navigate(Route.MedKitForm()) }
+                onAdd = { navController.navigate(Route.MedKitForm()) },
+                onSearch = { navController.navigate(Route.AllMedicines) }
             )
         }
         composable<Route.Plan> { NotReadyYet() }
@@ -110,6 +111,14 @@ private fun MedAppNavHost(navController: NavHostController, modifier: Modifier =
                 onDone = { navController.popBackStack() },
                 packageId = route.packageId,
                 onChangeAmount = { navController.navigate(Route.PackageAmount(it)) }
+            )
+        }
+        composable<Route.AllMedicines> {
+            MedKitContentsScreen(
+                medKitId = null,
+                onBack = { navController.popBackStack() },
+                onOpen = { navController.navigate(Route.PackageCard(it)) },
+                onAdd = { navController.navigate(Route.PackageForm()) }
             )
         }
         composable<Route.PackageCard>(typeMap = RouteTypes) { entry ->

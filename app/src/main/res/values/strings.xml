@@ -113,6 +113,25 @@
     <string name="amount_zero_confirm">Записать и в архив</string>
     <string name="pack_action_recount">Пересчитать или выбросить</string>
 
+    <!-- Поиск, фильтр, сортировка -->
+    <string name="all_medicines_title">Все лекарства</string>
+    <string name="search_medicines_everywhere">Найти лекарство во всех аптечках</string>
+    <string name="search_medicines">Поиск лекарства</string>
+    <string name="search_clear">Очистить поиск</string>
+    <string name="search_reset">Сбросить</string>
+    <string name="pack_nothing_found">Ничего не нашлось. Попробуйте другое слово или сбросьте фильтр.</string>
+    <string name="pack_none_anywhere">Лекарств пока нет ни в одной аптечке.</string>
+    <string name="filter_expired">Просроченные</string>
+    <string name="filter_expiring">Истекают</string>
+    <string name="filter_on_course">На курсе</string>
+    <string name="filter_category">Категория</string>
+    <string name="filter_form">Форма</string>
+    <string name="sort_by">Порядок: %1$s</string>
+    <string name="sort_name">по названию</string>
+    <string name="sort_expiry">по сроку</string>
+    <string name="sort_added">по дате добавления</string>
+    <string name="sort_quantity">по остатку</string>
+
     <!-- Перенос упаковки -->
     <string name="transfer_title">Перенести упаковку</string>
     <string name="transfer_action">Перенести</string>

@@ -39,6 +39,10 @@ sealed interface Route {
     @Serializable
     data class MedKitContents(val medKitId: Uuid) : Route
 
+    /** Поиск по всем доступным аптечкам (экран 5): тот же список без названной аптечки. */
+    @Serializable
+    data object AllMedicines : Route
+
     /**
      * Заведение (экран 7) и правка (экран 8) упаковки: поля те же, и маршрут один. [medKitId] —
      * аптечка, из которой человек пришёл, `null` — он ещё не выбрал её; [packageId] назван, когда

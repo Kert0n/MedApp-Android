@@ -19,10 +19,17 @@ import com.kert0n.medapp.presentation.value.toPresentationDTO
  * Упаковка в списке (PLAN H3 №4). Человек ищет глазами не строку, а лекарство: сколько осталось и
  * до какого срока, — поэтому обе величины стоят в карточке, а не открываются нажатием.
  *
- * Срок показан той же записью, какой он напечатан на коробке: «до 03.2027».
+ * Срок показан той же записью, какой он напечатан на коробке: «до 03.2027». В списке всех
+ * лекарств (экран 5) добавляется [medKitName] — иначе одинаковые названия из разных аптечек не
+ * различить.
  */
 @Composable
-fun PackageCard(pkg: PackagePresentationDTO, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+fun PackageCard(
+    pkg: PackagePresentationDTO,
+    onOpen: () -> Unit,
+    modifier: Modifier = Modifier,
+    medKitName: String? = null
+) {
     ElevatedCard(onClick = onOpen, modifier = modifier.fillMaxWidth()) {
         Column(
             Modifier.padding(16.dp),
@@ -34,6 +41,13 @@ fun PackageCard(pkg: PackagePresentationDTO, onOpen: () -> Unit, modifier: Modif
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            medKitName?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             Text(
                 text = pkg.expiresOn?.let {
                     stringResource(R.string.pack_expires_until, it.toPresentationDTO().text)

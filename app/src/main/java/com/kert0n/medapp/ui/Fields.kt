@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -17,6 +18,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
@@ -155,6 +157,34 @@ fun DateField(
             TextButton(onClick = { open = false }) { Text(stringResource(R.string.action_cancel)) }
         }
     ) { DatePicker(picker) }
+}
+
+/**
+ * Строка поиска, которая сама ничего не ищет: она ведёт туда, где ищут. Нужна там, где результат
+ * — другой экран (PLAN H3: поиск на списке аптечек показывает все лекарства), и притворяться
+ * полем ввода ей нельзя — человек напечатал бы в неё и не понял, почему ничего не происходит.
+ */
+@Composable
+fun SearchEntry(hint: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp)
+    ) {
+        Row(
+            Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(painterResource(R.drawable.ic_search), contentDescription = null)
+            Text(
+                hint,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }
 
 /**
