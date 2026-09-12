@@ -54,4 +54,8 @@ sealed interface Route {
     /** Пересчёт и утилизация (экран 9): количество меняется здесь и только здесь. */
     @Serializable
     data class PackageAmount(val packageId: Uuid) : Route
+
+    /** Перенос упаковки в другую аптечку (экран 11). */
+    @Serializable
+    data class PackageTransfer(val packageId: Uuid) : Route
 }

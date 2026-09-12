@@ -31,6 +31,7 @@ import com.kert0n.medapp.feature.packs.MedKitContentsScreen
 import com.kert0n.medapp.feature.packs.PackageAmountScreen
 import com.kert0n.medapp.feature.packs.PackageFormScreen
 import com.kert0n.medapp.feature.packs.PackageScreen
+import com.kert0n.medapp.feature.packs.PackageTransferScreen
 import com.kert0n.medapp.feature.medkits.MedKitListScreen
 import com.kert0n.medapp.ui.EmptyState
 
@@ -119,12 +120,17 @@ private fun MedAppNavHost(navController: NavHostController, modifier: Modifier =
                 onEdit = { medKitId ->
                     navController.navigate(Route.PackageForm(medKitId, route.packageId))
                 },
-                onChangeAmount = { navController.navigate(Route.PackageAmount(route.packageId)) }
+                onChangeAmount = { navController.navigate(Route.PackageAmount(route.packageId)) },
+                onTransfer = { navController.navigate(Route.PackageTransfer(route.packageId)) }
             )
         }
         composable<Route.PackageAmount>(typeMap = RouteTypes) { entry ->
             val route = entry.toRoute<Route.PackageAmount>()
             PackageAmountScreen(route.packageId, onDone = { navController.popBackStack() })
+        }
+        composable<Route.PackageTransfer>(typeMap = RouteTypes) { entry ->
+            val route = entry.toRoute<Route.PackageTransfer>()
+            PackageTransferScreen(route.packageId, onDone = { navController.popBackStack() })
         }
     }
 }

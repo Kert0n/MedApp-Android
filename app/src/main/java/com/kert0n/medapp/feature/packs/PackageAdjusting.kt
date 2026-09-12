@@ -1,8 +1,9 @@
 package com.kert0n.medapp.feature.packs
 
-import com.kert0n.medapp.domain.medkit.MedKitRef
 import com.kert0n.medapp.domain.stock.StockMovement
 import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.queue.Transactions
+import com.kert0n.medapp.storage.medkit.MedKitStorageRepository
 import com.kert0n.medapp.storage.pack.PackageAdjustment
 import com.kert0n.medapp.storage.pack.PackageStorageRepository
 import java.time.Clock
@@ -22,6 +23,8 @@ import kotlin.uuid.Uuid
  */
 class PackageAdjusting @Inject constructor(
     private val packages: PackageStorageRepository,
+    private val medKits: MedKitStorageRepository,
+    private val transactions: Transactions,
     private val clock: Clock
 ) {
 
@@ -43,10 +46,25 @@ class PackageAdjusting @Inject constructor(
         at = clock.instant()
     )
 
-    /** Перенос меняет место, а не остаток: в истории у него два конца (PLAN D7). */
-    suspend fun moveTo(packageId: Uuid, target: MedKitRef, note: String? = null): Boolean =
-        packages.adjust(
-            PackageAdjustment.Transfer(packageId, target, movementId = Uuid.random(), note = note),
-            at = clock.instant()
-        )
+    /**
+     * Перенос меняет место, а не остаток: в истории у него два конца, и разойтись они не могут
+     * (PLAN D7). Аптечка назначения читается в той же транзакции, что и сам перенос: удалённая
+     * между выбором и подтверждением — это «переносить некуда», а не пачка в несуществующем месте.
+     *
+     * Перенос между местными аптечками — целиком дело устройства (PLAN E6); перенос в общую
+     * требует связи и появится вместе с публикацией.
+     */
+    suspend fun moveTo(packageId: Uuid, targetId: Uuid, note: String? = null): Boolean =
+        transactions.run {
+            val target = medKits.find(targetId) ?: return@run false
+            packages.adjust(
+                PackageAdjustment.Transfer(
+                    packageId,
+                    target.ref,
+                    movementId = Uuid.random(),
+                    note = note
+                ),
+                at = clock.instant()
+            )
+        }
 }

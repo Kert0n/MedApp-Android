@@ -59,6 +59,7 @@ fun PackageScreen(
     onBack: () -> Unit,
     onEdit: (Uuid) -> Unit,
     onChangeAmount: () -> Unit,
+    onTransfer: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: PackageViewModel = hiltViewModel()
 ) {
@@ -99,7 +100,11 @@ fun PackageScreen(
                 WhatItIs(pkg)
                 DatesAndPrice(pkg, state.today)
                 WhereItLies(state.medKit?.name, pkg)
-                Actions(onEdit = { onEdit(pkg.medKitId) }, onChangeAmount = onChangeAmount)
+                Actions(
+                    onEdit = { onEdit(pkg.medKitId) },
+                    onChangeAmount = onChangeAmount,
+                    onTransfer = onTransfer
+                )
             }
         }
     }
@@ -199,9 +204,10 @@ private fun WhereItLies(medKitName: String?, pkg: PackagePresentationDTO) {
  * пересчёт и утилизация, место — перенос, и у каждого из них свой след в истории (PLAN D7).
  */
 @Composable
-private fun Actions(onEdit: () -> Unit, onChangeAmount: () -> Unit) {
+private fun Actions(onEdit: () -> Unit, onChangeAmount: () -> Unit, onTransfer: () -> Unit) {
     Section(stringResource(R.string.pack_actions)) {
         Action(R.drawable.ic_calculate, R.string.pack_action_recount, onChangeAmount)
+        Action(R.drawable.ic_move_down, R.string.pack_action_transfer, onTransfer)
         Action(R.drawable.ic_edit, R.string.pack_action_edit, onEdit)
     }
 }

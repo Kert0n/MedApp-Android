@@ -113,6 +113,14 @@
     <string name="amount_zero_confirm">Записать и в архив</string>
     <string name="pack_action_recount">Пересчитать или выбросить</string>
 
+    <!-- Перенос упаковки -->
+    <string name="transfer_title">Перенести упаковку</string>
+    <string name="transfer_action">Перенести</string>
+    <string name="transfer_nowhere">Переносить некуда: другой аптечки пока нет. Заведите её — и упаковку можно будет переложить.</string>
+    <string name="transfer_only_shared">Переносить некуда: остальные ваши аптечки общие, а перенос в общую требует связи с сервером.</string>
+    <string name="transfer_shared_need_network">Общие аптечки не показаны: перенос в общую требует связи с сервером.</string>
+    <string name="pack_action_transfer">Перенести в другую аптечку</string>
+
     <!-- Отказы формы упаковки -->
     <string name="pack_med_kit_missing">Выберите аптечку: упаковка лежит в каком-то одном месте.</string>
     <string name="pack_unit_missing">Выберите единицу: без неё количество ничего не измеряет.</string>

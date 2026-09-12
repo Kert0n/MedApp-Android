@@ -46,6 +46,8 @@ class PackageScreenTest {
 
     private var changingAmount = false
 
+    private var transferring = false
+
     private fun show(pkg: Package) {
         val viewModel = PackageViewModel(
             packages = FakePackages(pkg),
@@ -59,6 +61,7 @@ class PackageScreenTest {
                     onBack = {},
                     onEdit = { edited = it },
                     onChangeAmount = { changingAmount = true },
+                    onTransfer = { transferring = true },
                     viewModel = viewModel
                 )
             }
@@ -157,5 +160,15 @@ class PackageScreenTest {
         compose.onNodeWithText("Пересчитать или выбросить").performScrollTo().performClick()
 
         assertTrue(changingAmount)
+    }
+
+    /** Переложить коробку — тоже действие над упаковкой, и начинается оно отсюда (PLAN H3 №11). */
+    @Test
+    fun theCardLeadsToTransfer() {
+        show(pack())
+
+        compose.onNodeWithText("Перенести в другую аптечку").performScrollTo().performClick()
+
+        assertTrue(transferring)
     }
 }

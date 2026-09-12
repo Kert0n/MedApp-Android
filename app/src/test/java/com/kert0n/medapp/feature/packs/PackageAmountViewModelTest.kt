@@ -2,10 +2,13 @@ package com.kert0n.medapp.feature.packs
 
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.stock.StockMovement
+import com.kert0n.medapp.fixture.DirectTransactions
+import com.kert0n.medapp.fixture.FakeMedKits
 import com.kert0n.medapp.fixture.FakePackages
 import com.kert0n.medapp.fixture.FakeVocabulary
 import com.kert0n.medapp.fixture.MainDispatcherRule
 import com.kert0n.medapp.fixture.PACK
+import com.kert0n.medapp.fixture.medKit
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.presentation.pack.PackageAmountError
@@ -42,7 +45,12 @@ class PackageAmountViewModelTest {
     ): PackageAmountViewModel {
         val viewModel = PackageAmountViewModel(
             packages = packages,
-            adjusting = PackageAdjusting(packages, Clock.fixed(now, ZoneOffset.UTC)),
+            adjusting = PackageAdjusting(
+                packages = packages,
+                medKits = FakeMedKits(medKit()),
+                transactions = DirectTransactions,
+                clock = Clock.fixed(now, ZoneOffset.UTC)
+            ),
             vocabulary = FakeVocabulary()
         )
         // Состояние живёт, пока на него смотрят: у экрана это подписка, у проверки — эта строка.

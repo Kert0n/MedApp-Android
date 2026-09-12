@@ -8,9 +8,12 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.fixture.DirectTransactions
+import com.kert0n.medapp.fixture.FakeMedKits
 import com.kert0n.medapp.fixture.FakePackages
 import com.kert0n.medapp.fixture.FakeVocabulary
 import com.kert0n.medapp.fixture.PACK
+import com.kert0n.medapp.fixture.medKit
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.ui.theme.MedAppTheme
@@ -39,8 +42,10 @@ class PackageAmountScreenTest {
         val viewModel = PackageAmountViewModel(
             packages = packages,
             adjusting = PackageAdjusting(
-                packages,
-                Clock.fixed(Instant.parse("2026-09-12T12:00:00Z"), ZoneOffset.UTC)
+                packages = packages,
+                medKits = FakeMedKits(medKit()),
+                transactions = DirectTransactions,
+                clock = Clock.fixed(Instant.parse("2026-09-12T12:00:00Z"), ZoneOffset.UTC)
             ),
             vocabulary = FakeVocabulary()
         )
