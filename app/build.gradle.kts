@@ -140,8 +140,8 @@ android {
      * проверяется в androidTest (PLAN J1). Второй набор строителей разошёлся бы с первым.
      */
     sourceSets {
-        getByName("test").kotlin.srcDir("src/sharedTest/java")
-        getByName("androidTest").kotlin.srcDir("src/sharedTest/java")
+        getByName("test").kotlin.directories.add("src/sharedTest/java")
+        getByName("androidTest").kotlin.directories.add("src/sharedTest/java")
     }
 }
 
