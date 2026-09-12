@@ -25,7 +25,8 @@ class RouteTest {
         serializer<Route.Plan>(),
         serializer<Route.Scanner>(),
         serializer<Route.Analytics>(),
-        serializer<Route.Settings>()
+        serializer<Route.Settings>(),
+        serializer<Route.MedKitForm>()
     )
 
     @Test

@@ -35,6 +35,14 @@ class MedKitRoomRepository @Inject constructor(
 
     override suspend fun delete(id: Uuid): Boolean = medKits.delete(id) > 0
 
+    override suspend fun describe(id: Uuid, name: String, location: String?): Boolean =
+        database.withTransaction {
+            val stored = medKits.find(id) ?: return@withTransaction false
+            // Момент сверки принадлежит снимку сервера, а не правке человека (PLAN E4).
+            medKits.upsert(stored.toDomain().describe(name, location).toStorageEntity(stored.syncedAt))
+            true
+        }
+
     override suspend fun applyServerParticipants(
         id: Uuid,
         participantCount: Long,

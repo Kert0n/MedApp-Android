@@ -1,5 +1,6 @@
 package com.kert0n.medapp.app.navigation
 
+import kotlin.uuid.Uuid
 import kotlinx.serialization.Serializable
 
 /**
@@ -11,7 +12,7 @@ import kotlinx.serialization.Serializable
  * объект, положенный в него, к моменту восстановления был бы устаревшей копией того, что лежит в
  * базе. Ключ приглашения там же оказался бы в логах навигации.
  *
- * Пять мест — нижняя навигация; экраны вглубь добавляются своими PR и носят идентификаторы.
+ * Пять мест — нижняя навигация; экраны вглубь носят идентификаторы того, что показывают.
  */
 sealed interface Route {
 
@@ -29,4 +30,8 @@ sealed interface Route {
 
     @Serializable
     data object Settings : Route
+
+    /** Заведение и правка аптечки; `null` — новая, её идентификатор придумает сценарий. */
+    @Serializable
+    data class MedKitForm(val medKitId: Uuid? = null) : Route
 }

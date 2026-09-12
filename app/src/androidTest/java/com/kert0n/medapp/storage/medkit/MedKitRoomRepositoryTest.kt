@@ -26,7 +26,9 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -84,6 +86,38 @@ class MedKitRoomRepositoryTest {
         medKits.applyServerParticipants(HOME_KIT, participantCount = 2, syncedAt = at)
 
         assertEquals(at, medKits.observeSyncedAt(HOME_KIT).first())
+    }
+
+    /**
+     * Переименование меняет названные сведения и только их: публикация и число участников
+     * остаются нынешними, хотя экран мог прочитать аптечку до того, как к ней присоединились
+     * (PLAN F5).
+     *
+     * Красная проверка: сохранять правку полной записью — общая аптечка станет локальной с одним
+     * участником.
+     */
+    @Test
+    fun describingChangesOnlyWhatWasNamed() = runTest {
+        // Участники бывают у опубликованной: у локальной их по определению один (инвариант MedKit).
+        medKits.save(medKit().publish(), syncedAt = at)
+        medKits.applyServerParticipants(HOME_KIT, participantCount = 3, syncedAt = at)
+
+        assertTrue(medKits.describe(HOME_KIT, "Домашняя аптечка", "Верхний ящик"))
+
+        val described = requireNotNull(medKits.find(HOME_KIT))
+        assertEquals("Домашняя аптечка", described.name)
+        assertEquals("Верхний ящик", described.location)
+        assertEquals(3L, described.participantCount)
+        assertEquals(MedKit.Publication.PUBLISHED, described.publication)
+        assertEquals(at, medKits.observeSyncedAt(HOME_KIT).first())
+    }
+
+    /** Аптечки больше нет — писать переход некуда, и это ответ, а не сбой. */
+    @Test
+    fun describingAMedKitThatIsGoneWritesNothing() = runTest {
+        val gone = Uuid.parse("00000000-0000-4000-8000-0000000000aa")
+
+        assertFalse(medKits.describe(gone, "Неважно", null))
     }
 
     /** Снимок, называющий другую аптечку, откатывает и переключение: половины передачи не бывает. */

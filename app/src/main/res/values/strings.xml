@@ -22,6 +22,22 @@
         недоступна. Локальные аптечки, курсы и история целы. Общие аптечки придётся подключить
         заново по приглашению — но сначала нужно решить, заводить ли новую учётную запись.</string>
 
+    <!-- Аптечки -->
+    <string name="med_kits_title">Аптечки</string>
+    <string name="med_kits_empty">Аптечек пока нет. Заведите первую — это место, где лежат лекарства: ящик, полка, сумка в машине.</string>
+    <string name="med_kits_add">Завести аптечку</string>
+    <string name="med_kit_new">Новая аптечка</string>
+    <string name="med_kit_edit">Правка аптечки</string>
+    <string name="med_kit_name">Название</string>
+    <string name="med_kit_location">Место хранения (необязательно)</string>
+    <string name="med_kit_shared">Общая, участников: %1$d</string>
+    <string name="action_save">Сохранить</string>
+    <string name="action_cancel">Отмена</string>
+    <string name="action_back">Назад</string>
+    <string name="med_kit_name_empty">Название нужно: без него аптечку не отличить от других.</string>
+    <string name="med_kit_name_too_long">Название длиннее %1$d символов.</string>
+    <string name="med_kit_location_too_long">Место хранения длиннее %1$d символов.</string>
+
     <!-- Экраны, которых ещё нет -->
     <string name="screen_not_ready">Этот экран ещё не готов.</string>
 </resources>

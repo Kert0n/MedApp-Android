@@ -23,6 +23,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.kert0n.medapp.R
+import kotlin.reflect.typeOf
+import kotlin.uuid.Uuid
+import androidx.navigation.toRoute
+import com.kert0n.medapp.feature.medkits.MedKitFormScreen
+import com.kert0n.medapp.feature.medkits.MedKitListScreen
 import com.kert0n.medapp.ui.EmptyState
 
 /**
@@ -70,13 +75,25 @@ private fun MedAppBottomBar(navController: NavController) {
 @Composable
 private fun MedAppNavHost(navController: NavHostController, modifier: Modifier = Modifier) {
     NavHost(navController, startDestination = Route.MedKits, modifier = modifier) {
-        composable<Route.MedKits> { NotReadyYet() }
+        composable<Route.MedKits> {
+            MedKitListScreen(
+                onOpen = { /* содержимое аптечки — следующий коммит */ },
+                onAdd = { navController.navigate(Route.MedKitForm()) }
+            )
+        }
         composable<Route.Plan> { NotReadyYet() }
         composable<Route.Scanner> { NotReadyYet() }
         composable<Route.Analytics> { NotReadyYet() }
         composable<Route.Settings> { NotReadyYet() }
+        composable<Route.MedKitForm>(typeMap = RouteTypes) { entry ->
+            val route = entry.toRoute<Route.MedKitForm>()
+            MedKitFormScreen(route.medKitId, onDone = { navController.popBackStack() })
+        }
     }
 }
+
+/** Чем маршруты возят идентификаторы: один набор на всё приложение. */
+private val RouteTypes = mapOf(typeOf<Uuid?>() to UuidNavType)
 
 @Composable
 private fun NotReadyYet() = EmptyState(text = stringResource(R.string.screen_not_ready))

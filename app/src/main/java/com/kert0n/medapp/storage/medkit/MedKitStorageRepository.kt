@@ -34,6 +34,13 @@ interface MedKitStorageRepository {
      */
     suspend fun delete(id: Uuid): Boolean
 
+    /**
+     * Переименование и место хранения — и только они: публикация, число участников и момент
+     * сверки остаются нынешними. Переход применяется к тому, что лежит в базе, а не к тому, что
+     * экран прочитал когда-то раньше (PLAN F5). `false` — аптечки больше нет.
+     */
+    suspend fun describe(id: Uuid, name: String, location: String?): Boolean
+
     /** Снимок трогает только число участников: остального сервер о нашей аптечке не знает. */
     suspend fun applyServerParticipants(id: Uuid, participantCount: Long, syncedAt: Instant)
 
