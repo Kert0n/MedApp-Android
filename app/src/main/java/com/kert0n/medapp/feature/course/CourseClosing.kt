@@ -30,7 +30,7 @@ class CourseClosing @Inject constructor(
      * той же транзакцией; коробки уже нет — снимать бронь не с чего.
      */
     suspend fun close(course: Course, closing: CourseCompletion.Closing, at: Instant, except: PackageRef? = null) {
-        courses.close(closing.record, closing.cancelled)
+        courses.close(closing)
         for (source in course.sources) {
             if (source.pkg == except) continue
             val pkg = packages.find(source.pkg.id) ?: continue

@@ -12,6 +12,7 @@ import com.kert0n.medapp.fixture.Scenarios
 import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.VOCABULARY
 import com.kert0n.medapp.fixture.activeCourse
+import com.kert0n.medapp.fixture.closing
 import com.kert0n.medapp.fixture.courseRecord
 import com.kert0n.medapp.fixture.courseRepository
 import com.kert0n.medapp.fixture.inMemoryDatabase
@@ -122,8 +123,10 @@ class PackageRelocationTest {
     fun localToSharedWithoutACourseSendsOnlyTheCreation() = runTest {
         publish(SHARED_KIT)
         database.courseRepository().close(
-            requireNotNull(database.courseRepository().findRecord(COURSE))
-                .close(com.kert0n.medapp.domain.course.CourseRecord.Outcome.CANCELLED, LATER)
+            closing(
+                requireNotNull(database.courseRepository().findRecord(COURSE))
+                    .close(com.kert0n.medapp.domain.course.CourseRecord.Outcome.CANCELLED, LATER)
+            )
         )
 
         relocation.move(PACK, SHARED_KIT)

@@ -2,6 +2,7 @@ package com.kert0n.medapp.storage.course
 
 import androidx.room.withTransaction
 import com.kert0n.medapp.domain.course.Course
+import com.kert0n.medapp.domain.course.CourseCompletion
 import com.kert0n.medapp.domain.course.CourseDraft
 import com.kert0n.medapp.domain.course.CourseDraftProjection
 import com.kert0n.medapp.domain.course.CourseProjection
@@ -140,13 +141,11 @@ class CourseRoomRepository @Inject constructor(
         Unit
     }
 
-    override suspend fun close(
-        record: CourseRecord,
-        cancelled: List<CourseIntake>
-    ) = database.withTransaction {
+    override suspend fun close(closing: CourseCompletion.Closing) = database.withTransaction {
+        val record = closing.record
         check(!record.isOpen) { "закрывается законченное лечение, а не идущее" }
         courses.upsertRecord(record.toStorageEntity())
-        for (intake in cancelled) {
+        for (intake in closing.cancelled) {
             val cancellation = requireNotNull(intake.answer as? IntakeAnswer.Cancelled) {
                 "конец лечения отменяет пункт, а не отвечает на него"
             }

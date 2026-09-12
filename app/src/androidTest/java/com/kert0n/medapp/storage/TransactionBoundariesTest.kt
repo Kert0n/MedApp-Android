@@ -16,6 +16,7 @@ import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.SHARED_KIT
 import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.course
+import com.kert0n.medapp.fixture.closing
 import com.kert0n.medapp.fixture.courseRecord
 import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.inMemoryDatabase
@@ -226,10 +227,7 @@ class TransactionBoundariesTest {
         courses.activate(activation, planned = listOf(plannedIntake()))
 
         val closed = activation.record.close(CourseRecord.Outcome.CANCELLED, LATER)
-        courses.close(
-            record = closed,
-            cancelled = listOf(plannedIntake().cancel(LATER))
-        )
+        courses.close(closing(record = closed, cancelled = listOf(plannedIntake().cancel(LATER))))
 
         assertNull(courses.findPlan(COURSE))
         val record = requireNotNull(courses.findRecord(COURSE))
@@ -335,10 +333,7 @@ class TransactionBoundariesTest {
         courses.activate(activation, planned = listOf(plannedIntake()))
         assertTrue(intakes.record(confirmedOutcome()))
 
-        courses.close(
-            record = activation.record.close(CourseRecord.Outcome.CANCELLED, LATER),
-            cancelled = listOf(plannedIntake().cancel(LATER))
-        )
+        courses.close(closing(record = activation.record.close(CourseRecord.Outcome.CANCELLED, LATER), cancelled = listOf(plannedIntake().cancel(LATER))))
 
         assertEquals(IntakeStatus.TAKEN, requireNotNull(intakes.find(INTAKE)).status)
         assertEquals(
@@ -438,9 +433,7 @@ class TransactionBoundariesTest {
     fun adjustmentDoesNotResurrectAClosedPlan() = runTest {
         val activation = draft()
         courses.activate(activation)
-        courses.close(
-            record = activation.record.close(CourseRecord.Outcome.CANCELLED, LATER)
-        )
+        courses.close(closing(activation.record.close(CourseRecord.Outcome.CANCELLED, LATER)))
 
         packages.adjust(
             PackageAdjustment.Recount(PACK, tablets("17"), movementId),
@@ -475,7 +468,7 @@ class TransactionBoundariesTest {
     fun aDraftDoesNotResurrectAFinishedEpisode() = runTest {
         val activation = draft()
         courses.activate(activation)
-        courses.close(activation.record.close(CourseRecord.Outcome.COMPLETED, LATER))
+        courses.close(closing(activation.record.close(CourseRecord.Outcome.COMPLETED, LATER)))
 
         assertFalse(courses.saveDraft(course(title = "Старый черновик")))
         assertNull(courses.findDraft(COURSE))
@@ -546,7 +539,7 @@ class TransactionBoundariesTest {
     fun renamingDoesNotReopenAClosedRecord() = runTest {
         val activation = draft()
         courses.activate(activation)
-        courses.close(activation.record.close(CourseRecord.Outcome.COMPLETED, LATER))
+        courses.close(closing(activation.record.close(CourseRecord.Outcome.COMPLETED, LATER)))
 
         assertTrue(courses.rename(COURSE, "Другое название", note = null))
 

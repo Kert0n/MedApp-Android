@@ -18,6 +18,7 @@ import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.VOCABULARY
 import com.kert0n.medapp.fixture.activeCourse
+import com.kert0n.medapp.fixture.closing
 import com.kert0n.medapp.fixture.courseRecord
 import com.kert0n.medapp.fixture.courseRepository
 import com.kert0n.medapp.fixture.dose
@@ -218,7 +219,7 @@ class IntakeConfirmationTest {
     fun aClosedEpisodeRefusesTheAnswer() = runTest {
         activate()
         miss(plannedIntake())
-        courses.close(requireNotNull(courses.findRecord(COURSE)).close(CourseRecord.Outcome.CANCELLED, LATER))
+        courses.close(closing(requireNotNull(courses.findRecord(COURSE)).close(CourseRecord.Outcome.CANCELLED, LATER)))
 
         val refused = confirmation.confirm(INTAKE, PACK, dose("2"), FIRST_PLANNED_AT).exceptionOrNull()
 
