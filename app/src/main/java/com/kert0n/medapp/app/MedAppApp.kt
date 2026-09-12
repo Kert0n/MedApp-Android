@@ -2,7 +2,7 @@ package com.kert0n.medapp.app
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kert0n.medapp.app.navigation.MedAppShell
 import com.kert0n.medapp.feature.bootstrap.AppStartState
