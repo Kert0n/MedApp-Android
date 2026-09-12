@@ -8,9 +8,11 @@ import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.expiry
+import com.kert0n.medapp.fixture.millilitres
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.network.pack.PackageSyncState
+import com.kert0n.medapp.storage.pack.toStorageEntity
 import com.kert0n.medapp.network.server.ResourceVersion
 import java.math.BigDecimal
 import java.time.Instant
@@ -71,6 +73,27 @@ class PackageStorageMapperTest {
         assertNull(restored.facts.price)
         assertNull(restored.facts.defaultIntakeAmount)
         assertNull(restored.templateId)
+    }
+
+    /**
+     * Единицу пачки сменил сосед на сервере, а подсказка дозы осталась в старой: она потеряла
+     * смысл и не восстанавливается — чтение пачки от чужой правки не ломается.
+     */
+    @Test
+    fun aHintInAForeignUnitIsNotRestored() {
+        val row = rowOf(full)
+        val relabelled = PackageStorageRow(
+            pack = pack(quantity = millilitres("100")).toStorageEntity(PackageSyncState(PACK)),
+            details = row.details,
+            claims = row.claims,
+            medKit = row.medKit
+        )
+
+        val restored = relabelled.toDomain(VOCABULARY)
+
+        assertEquals(millilitres("100"), restored.quantity)
+        assertNull(restored.facts.defaultIntakeAmount)
+        assertEquals(full.facts.note, restored.facts.note)
     }
 
     @Test

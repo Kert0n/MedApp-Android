@@ -164,7 +164,7 @@ class PackageRoomRepository @Inject constructor(
     ): PackageAvailability = PackageAvailability(
         pkg = pkg,
         effective = amountOf(pkg, unclosed, words),
-        myAllocation = allocation?.allocated(words) ?: Quantity.zero(pkg.quantity.unit)
+        myAllocation = allocation?.allocated(words, pkg.quantity.unit) ?: Quantity.zero(pkg.quantity.unit)
     )
 
     /**

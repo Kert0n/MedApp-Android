@@ -11,6 +11,7 @@ import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.inMemoryDatabase
 import com.kert0n.medapp.fixture.medKit
+import com.kert0n.medapp.fixture.millilitres
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.packageRepository
 import com.kert0n.medapp.fixture.queueRepository
@@ -215,6 +216,25 @@ class PackageRoomRepositoryTest {
         assertEquals(tablets("11"), requireNotNull(repository.find(PACK)).quantity)
         assertEquals(sync, requireNotNull(database.packages().find(PACK)).pack.syncState())
         assertEquals(paracetamol.addedAt, requireNotNull(repository.find(PACK)).addedAt)
+    }
+
+    /**
+     * Сосед сменил единицу пачки на сервере: незакрытый расход и выделение курса остались в
+     * таблетках, а пачка теперь в миллилитрах. Чтение доступности не бросает: команда в чужой
+     * единице в число не входит, выделение в чужой единице пачку не занимает (PLAN E1, D4).
+     */
+    @Test
+    fun aUnitChangedOnTheServerDoesNotBreakTheReading() = runTest {
+        queue.enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
+        givenActiveCourseTaking(doses = 4)
+        val sync = PackageSyncState(PACK, version = ResourceVersion(5), claimsVersion = ResourceVersion(2), syncedAt = at)
+        repository.applyServerSnapshot(pack(quantity = millilitres("100")), sync, at)
+
+        val availability = requireNotNull(repository.observeAvailability(PACK).first())
+        assertEquals(millilitres("100"), availability.effective)
+        assertEquals(millilitres("100"), availability.availableToMe)
+        assertEquals(millilitres("100"), availability.freeForAnyone)
+        assertEquals(listOf(PACK), repository.list(PackageQuery(filter = PackageQuery.Filter.HasFree), today).first().map { it.id })
     }
 
     private suspend fun givenActiveCourseTaking(doses: Int) {
