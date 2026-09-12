@@ -100,7 +100,8 @@ class PackageRoomRepository @Inject constructor(
             applied.pack.toStorageEntity(stored.pack.syncState()),
             applied.pack.toDetailsStorageEntity()
         )
-        movements.insert(applied.movement.toMovementStorageEntity())
+        // След есть не у всякого перехода: перенос остаток не меняет и записи не оставляет (D7).
+        applied.movement?.let { movements.insert(it.toMovementStorageEntity()) }
         reallocation?.let { (plan, expected) ->
             courses.updateAllocations(
                 plan.toCourseStorageEntity(),

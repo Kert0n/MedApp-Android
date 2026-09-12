@@ -56,19 +56,5 @@ fun Intake.toStorageRow(sync: IntakeSyncState = IntakeSyncState(id)): IntakeStor
         taken = taken?.pkg?.toStorageRow()
     )
 
-fun StockMovement.toStorageRow(): StockMovementStorageRow {
-    return StockMovementStorageRow(
-        movement = toMovementStorageEntity(),
-        pack = pkg.toStorageRow(),
-        medKit = when (this) {
-            is StockMovement.Receipt -> medKit.row()
-            is StockMovement.Recount -> medKit.row()
-            is StockMovement.Disposal -> medKit.row()
-            is StockMovement.RemoteChange -> medKit.row()
-            is StockMovement.AccessLoss -> medKit.row()
-            is StockMovement.Transfer -> null
-        },
-        source = (this as? StockMovement.Transfer)?.source?.row(),
-        target = (this as? StockMovement.Transfer)?.target?.row()
-    )
-}
+fun StockMovement.toStorageRow(): StockMovementStorageRow =
+    StockMovementStorageRow(movement = toMovementStorageEntity(), pack = pkg.toStorageRow())

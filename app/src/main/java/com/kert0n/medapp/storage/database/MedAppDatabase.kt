@@ -78,7 +78,7 @@ abstract class MedAppDatabase : RoomDatabase() {
     abstract fun vocabulary(): VocabularyDao
 
     companion object {
-        const val VERSION = 2
+        const val VERSION = 3
         const val NAME = "medapp.db"
 
         /** Факт «замороженный запрос уходил, исход неизвестен» получил свою колонку (PLAN E3). */
@@ -90,6 +90,48 @@ abstract class MedAppDatabase : RoomDatabase() {
             }
         }
 
-        val MIGRATIONS: Array<Migration> get() = arrayOf(MIGRATION_1_2)
+        /**
+         * Движение стало записью о пачке: аптечек в нём нет и переносов как вида нет (PLAN D7).
+         * Убрать колонку, на которой висит внешний ключ, SQLite не умеет, поэтому таблица
+         * пересоздаётся и переливается.
+         *
+         * Строки переносов не переносятся: они говорили только о местах, а место у пачки одно и
+         * известно ей самой.
+         */
+        val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+            override fun migrate(connection: SQLiteConnection) {
+                connection.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `stock_adjustments_new` (
+                        `id` TEXT NOT NULL, `package_id` TEXT NOT NULL, `kind` TEXT NOT NULL,
+                        `unit_id` TEXT NOT NULL, `observed_at` INTEGER NOT NULL,
+                        `occurred_at` INTEGER, `amount` TEXT, `before_amount` TEXT,
+                        `after_amount` TEXT, `delta` TEXT, `reason` TEXT, `note` TEXT,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`package_id`) REFERENCES `packages`(`id`)
+                            ON UPDATE NO ACTION ON DELETE RESTRICT
+                    )
+                    """.trimIndent()
+                )
+                connection.execSQL(
+                    """
+                    INSERT INTO `stock_adjustments_new`
+                        (`id`, `package_id`, `kind`, `unit_id`, `observed_at`, `occurred_at`,
+                         `amount`, `before_amount`, `after_amount`, `delta`, `reason`, `note`)
+                    SELECT `id`, `package_id`, `kind`, `unit_id`, `observed_at`, `occurred_at`,
+                           `amount`, `before_amount`, `after_amount`, `delta`, `reason`, `note`
+                    FROM `stock_adjustments` WHERE `kind` != 'TRANSFER'
+                    """.trimIndent()
+                )
+                connection.execSQL("DROP TABLE `stock_adjustments`")
+                connection.execSQL("ALTER TABLE `stock_adjustments_new` RENAME TO `stock_adjustments`")
+                connection.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_stock_adjustments_package_id_observed_at` " +
+                        "ON `stock_adjustments` (`package_id`, `observed_at`)"
+                )
+            }
+        }
+
+        val MIGRATIONS: Array<Migration> get() = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
     }
 }

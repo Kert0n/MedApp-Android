@@ -18,14 +18,13 @@ import kotlin.uuid.Uuid
  * в его следе — настоящие. Что означает каждый переход, по-прежнему решает домен: хранение только
  * называет действие и записывает результат.
  *
- * Тождество записи движения приходит от вызывающего: повтор с тем же [movementId] не заводит в
- * истории вторую запись.
+ * Тождество записи движения приходит от вызывающего: повтор с тем же номером не заводит в истории
+ * вторую запись. Номер спрашивается только у тех переходов, которые эту запись пишут: у переноса
+ * её нет вовсе, и обещать её типом было бы неправдой.
  */
 sealed interface PackageAdjustment {
 
     val packageId: Uuid
-
-    val movementId: Uuid
 
     val note: String?
 
@@ -33,7 +32,7 @@ sealed interface PackageAdjustment {
     data class Recount(
         override val packageId: Uuid,
         val actual: Quantity,
-        override val movementId: Uuid,
+        val movementId: Uuid,
         override val note: String? = null
     ) : PackageAdjustment
 
@@ -45,31 +44,33 @@ sealed interface PackageAdjustment {
         override val packageId: Uuid,
         val amount: Quantity,
         val reason: StockMovement.Disposal.Reason,
-        override val movementId: Uuid,
+        val movementId: Uuid,
         override val note: String? = null
     ) : PackageAdjustment
 
     /**
-     * Перенос в другую аптечку: меняется место, а не остаток. Принимает саму аптечку, а не её
-     * идентификатор, — как и переход пачки, который этим переносом и вызывается.
+     * Перенос в другую аптечку: меняется место, а не остаток, и следа в истории он не оставляет.
+     * Принимает саму аптечку, а не её идентификатор, — как и переход пачки, который этим
+     * переносом и вызывается.
      */
     data class Transfer(
         override val packageId: Uuid,
         val target: MedKitRef,
-        override val movementId: Uuid,
         override val note: String? = null
     ) : PackageAdjustment
 
     /**
      * Применяет переход к нынешнему состоянию пачки и записывает его след. Оба конца следа —
      * «было» и «стало» — известны только здесь, потому что «было» прочитано в той же транзакции.
+     *
+     * У переноса следа нет: остаток он не меняет, а где коробка лежит, знает сама пачка (PLAN D7).
      */
     fun applyTo(pack: Package, at: Instant): Applied {
         require(pack.id == packageId) { "переход применяется к своей пачке" }
         return when (this) {
             is Recount -> Applied(
                 pack.correctTo(actual),
-                StockMovement.Recount(movementId, pack.ref, pack.quantity, actual, pack.medKit, at, at, note)
+                StockMovement.Recount(movementId, pack.ref, pack.quantity, actual, at, at, note)
             )
             is Disposal -> {
                 // В историю идёт то, что действительно ушло, — разница остатков до и после
@@ -78,17 +79,17 @@ sealed interface PackageAdjustment {
                 Applied(
                     disposed,
                     StockMovement.Disposal(
-                        movementId, pack.ref, pack.quantity - disposed.quantity, reason, pack.medKit, at, at, note
+                        movementId, pack.ref, pack.quantity - disposed.quantity, reason, at, at, note
                     )
                 )
             }
-            is Transfer -> Applied(
-                pack.moveTo(target),
-                StockMovement.Transfer(movementId, pack.ref, pack.quantity, pack.medKit, target, at, at, note)
-            )
+            is Transfer -> Applied(pack.moveTo(target))
         }
     }
 
-    /** Новое состояние пачки и запись о том, как оно получилось: порознь их не бывает. */
-    data class Applied(val pack: Package, val movement: StockMovement)
+    /**
+     * Новое состояние пачки и запись о том, как оно получилось. Запись бывает не у всякого
+     * перехода: перенос остаток не трогает, и в истории расхода ему места нет.
+     */
+    data class Applied(val pack: Package, val movement: StockMovement? = null)
 }

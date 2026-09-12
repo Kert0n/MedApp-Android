@@ -158,7 +158,7 @@ class HistoryDaoTest {
     @Test
     fun packageWithAMovementCannotBeDeleted() = runTest {
         movements.insert(
-            StockMovement.Receipt(movementId, pack().ref, tablets("20"), medKit().ref, Instant.EPOCH, LATER)
+            StockMovement.Receipt(movementId, pack().ref, tablets("20"), Instant.EPOCH, LATER)
                 .toMovementStorageEntity()
         )
         val refusal = rejectedByDatabase { database.packages().delete(PACK) }
@@ -171,7 +171,7 @@ class HistoryDaoTest {
         intakes.upsert(plannedIntake().confirm(pack().take(dose("2"), LATER).getOrThrow()).toStorageEntity())
         intakes.upsert(unplannedIntake(id = OTHER_INTAKE).toStorageEntity())
         movements.insert(
-            StockMovement.Receipt(movementId, pack().ref, tablets("20"), medKit().ref, Instant.EPOCH, LATER)
+            StockMovement.Receipt(movementId, pack().ref, tablets("20"), Instant.EPOCH, LATER)
                 .toMovementStorageEntity()
         )
 
@@ -203,10 +203,10 @@ class HistoryDaoTest {
 
     @Test
     fun movementsOfAPackageComeBackInTimeOrder() = runTest {
-        val first = StockMovement.Receipt(movementId, pack().ref, tablets("20"), medKit().ref, Instant.EPOCH, Instant.EPOCH)
+        val first = StockMovement.Receipt(movementId, pack().ref, tablets("20"), Instant.EPOCH, Instant.EPOCH)
         val second = StockMovement.Recount(
             Uuid.parse("00000000-0000-4000-8000-000000000082"),
-            pack().ref, tablets("20"), tablets("18"), medKit().ref, FIRST_PLANNED_AT, FIRST_PLANNED_AT
+            pack().ref, tablets("20"), tablets("18"), FIRST_PLANNED_AT, FIRST_PLANNED_AT
         )
         movements.insert(second.toMovementStorageEntity())
         movements.insert(first.toMovementStorageEntity())
