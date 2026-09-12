@@ -7,7 +7,9 @@ import dagger.hilt.components.SingletonComponent
 import javax.inject.Qualifier
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
@@ -20,6 +22,10 @@ annotation class DefaultDispatcher
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
 annotation class MainDispatcher
+
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class ApplicationScope
 
 /**
  * Диспетчеры выдаются графом, а не берутся из `Dispatchers` по месту вызова: иначе тест
@@ -43,4 +49,15 @@ object DispatcherModule {
     @Singleton
     @MainDispatcher
     fun mainDispatcher(): CoroutineDispatcher = Dispatchers.Main
+
+    /**
+     * Область жизни приложения: работа, которую начал человек, но ждать её ему незачем, — отправка
+     * очереди после изменения (PLAN E4). Переживает экран и его модель, кончается вместе с
+     * процессом; сбой одной такой работы не уносит остальные, поэтому `SupervisorJob`.
+     */
+    @Provides
+    @Singleton
+    @ApplicationScope
+    fun applicationScope(@DefaultDispatcher dispatcher: CoroutineDispatcher): CoroutineScope =
+        CoroutineScope(SupervisorJob() + dispatcher)
 }

@@ -40,6 +40,7 @@ import com.kert0n.medapp.network.server.RawResponse
 import com.kert0n.medapp.network.server.medAppHttpClient
 import com.kert0n.medapp.network.value.VocabularyResolver
 import com.kert0n.medapp.queue.PreparedRequest
+import com.kert0n.medapp.queue.QueueSending
 import com.kert0n.medapp.queue.QueueService
 import com.kert0n.medapp.queue.QueueTransport
 import com.kert0n.medapp.queue.QueueWorker
@@ -83,18 +84,11 @@ class IntakeConfirmationTest {
     private val now: Instant = Instant.parse("2027-03-10T12:00:00Z")
     private val third: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000063")
 
-    /** Обращения к серверу: связи нет, и каждое кончается `Unavailable`. */
-    private var attempts = 0
-
-    private val offline = object : QueueTransport {
-        override suspend fun send(request: PreparedRequest): ApiResult<RawResponse> {
-            attempts++
-            return ApiResult.Failure(ApiFailure.Unavailable)
-        }
-
-        override suspend fun packageSnapshot(packageId: Uuid): ApiResult<PackageSnapshotNetworkDTO> {
-            attempts++
-            return ApiResult.Failure(ApiFailure.Unavailable)
+    /** Просьбы отправить: сценарий их не ждёт, поэтому в тесте их просто считают. */
+    private val sending = object : QueueSending {
+        var asked = 0
+        override fun soon() {
+            asked++
         }
     }
 
@@ -106,13 +100,7 @@ class IntakeConfirmationTest {
         packages = database.packageRepository()
         val queue = database.queueRepository()
         val clock = Clock.fixed(now, ZoneOffset.UTC)
-        val vocabulary = VocabularyResolver(
-            VocabularyRoomRepository(database.vocabulary()),
-            MedAppApi(medAppHttpClient(OkHttp.create(), "https://medapp.invalid"))
-        )
-        confirmation = IntakeConfirmation(
-            intakes, courses, packages, queue, QueueService(queue), QueueWorker(queue, offline, vocabulary, clock), clock
-        )
+        confirmation = IntakeConfirmation(intakes, courses, packages, queue, QueueService(queue, sending), clock)
         packages.add(pack(quantity = tablets("20")))
     }
 
@@ -151,7 +139,7 @@ class IntakeConfirmationTest {
         // Выделено было пять доз (10 таблеток), ушло две таблетки: осталось четыре дозы.
         assertEquals(Doses(4), requireNotNull(courses.findPlan(COURSE)).sources.single().allocatedDoses)
         assertEquals(0, database.syncOperations().all().size)
-        assertEquals(0, attempts)
+        assertEquals("своей аптечке отправлять нечего", 0, sending.asked)
     }
 
     @Test
@@ -167,7 +155,7 @@ class IntakeConfirmationTest {
         val consume = commands().single() as PackageSyncCommand.Consume
         assertEquals(INTAKE, consume.intakeId)
         assertEquals(0, BigDecimal("8").compareTo(requireNotNull(consume.claimAfter).amount))
-        assertEquals("без связи — одна попытка", 1, attempts)
+        assertEquals("расход просится к отправке сразу", 1, sending.asked)
     }
 
     @Test

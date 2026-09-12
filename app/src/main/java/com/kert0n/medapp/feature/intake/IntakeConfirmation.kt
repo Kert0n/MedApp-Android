@@ -29,7 +29,8 @@ import kotlin.uuid.Uuid
  * Целое действие «принял» по пункту курса: факт, остаток, прогресс, обеспечение пачки, конец
  * эпизода и доставка согласуются одной транзакцией и по тому, что лежит в базе, а не по тому, что
  * экран прочитал раньше (PLAN D5, D6, F5). Своя аптечка списывает локально, общая ставит расход
- * командой; после коммита очередь уходит сразу, без связи — остаётся ждать.
+ * командой — и отправку после коммита просит служба очереди, а человек её не ждёт: подтверждение
+ * записано, и от сети оно не зависит (PLAN E4).
  */
 class IntakeConfirmation @Inject constructor(
     private val intakes: IntakeStorageRepository,
@@ -37,7 +38,6 @@ class IntakeConfirmation @Inject constructor(
     private val packages: PackageStorageRepository,
     private val transactions: QueueStorage,
     private val queue: QueueService,
-    private val worker: QueueWorker,
     private val clock: Clock
 ) {
 
@@ -46,11 +46,8 @@ class IntakeConfirmation @Inject constructor(
      * вчера — проверка одна и та же. Отказ — [IntakeRejected] внутри `Result`, и тогда не записано
      * ничего. Повтор по уже принятому пункту ничего не меняет и отвечает тем, что записано.
      */
-    suspend fun confirm(intakeId: Uuid, packageId: Uuid, amount: Dose, at: Instant): Result<Confirmed> {
-        val result = transactions.transaction { write(intakeId, packageId, amount, at) }
-        if (result.isSuccess) worker.drain()
-        return result
-    }
+    suspend fun confirm(intakeId: Uuid, packageId: Uuid, amount: Dose, at: Instant): Result<Confirmed> =
+        transactions.transaction { write(intakeId, packageId, amount, at) }
 
     private suspend fun write(intakeId: Uuid, packageId: Uuid, amount: Dose, at: Instant): Result<Confirmed> {
         val now = clock.instant()
