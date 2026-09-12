@@ -108,6 +108,7 @@ class QueueWorkerTest {
         val deferred = mutableListOf<Pair<Uuid, String>>()
 
         /** То же определение, что в SQL: срок наступил, зависимости применены, первая незакрытая по пачке. */
+        override fun changes(): kotlinx.coroutines.flow.Flow<Unit> = kotlinx.coroutines.flow.emptyFlow()
         override suspend fun ready(now: Instant): List<StoredSyncOperation> =
             operations.values
                 .filter { !it.status.isClosed }
@@ -122,7 +123,11 @@ class QueueWorkerTest {
                 .sortedBy { it.sequence }
                 .map<SyncOperation, StoredSyncOperation> { StoredSyncOperation.Readable(it) } + unreadable
 
+        /** Операции, на которых взятие бросает: база отказала, снимок не собрался — что угодно. */
+        val takeFailsFor = mutableSetOf<Uuid>()
+
         override suspend fun take(id: Uuid, fresh: PackageSnapshot?, at: Instant): Take? {
+            if (id in takeFailsFor) throw IllegalStateException("взятие $id сорвалось")
             val operation = operations[id] ?: return null
             if (operation.status.isClosed) return null
             takenWith += fresh
@@ -143,6 +148,9 @@ class QueueWorkerTest {
             )
         }
 
+        /** Ответ записан — а применение бросает: так ведёт себя сломанная транзакция закрытия. */
+        var settleFails = false
+
         override suspend fun answered(id: Uuid, answer: RawResponse, at: Instant) {
             val operation = operations.getValue(id)
             operations[id] = operation.with(status = SyncOperationStatus.ANSWERED, answer = answer)
@@ -160,6 +168,7 @@ class QueueWorkerTest {
             error("работник команд не ставит")
 
         override suspend fun settle(id: Uuid, settlement: Settlement, at: Instant) {
+            if (settleFails && settlement.transition is Settlement.Transition.Close) throw IllegalStateException("закрытие сорвалось")
             val outcome = settlement.asDelivery()
             settled += id to outcome
             settlement.effects.filterIsInstance<Settlement.Effect.LayDown>().forEach { learn(it.snapshot) }
@@ -828,6 +837,42 @@ class QueueWorkerTest {
         assertEquals("аптечка $SHARED_KIT неизвестна", storage.deferred.single().second)
         assertEquals(SyncOperationStatus.APPLIED, storage.operations.getValue(OTHER_PACK).status)
         assertEquals(0, store.refreshed)
+    }
+
+    /**
+     * Шаг одной операции бросил — база отказала при взятии. Проход не умирает: операция помечена
+     * на повтор с задержкой и названа в отчёте, а соседняя операция обработана.
+     */
+    @Test
+    fun aFailingStepMarksTheOperationNamesItAndThePassGoesOn() = runTest {
+        val storage = Storage(listOf(operation(sequence = 0), operation(id = OTHER_PACK, sequence = 1, command = PackageSyncCommand.Consume(OTHER_PACK, dose("1"), OTHER_PACK))))
+        storage.takeFailsFor += INTAKE
+        val transport = transport { ApiResult.Success(RawResponse(200, snapshotJson.replace(PACK.toString(), OTHER_PACK.toString()))) }
+
+        val report = worker(storage, transport).drain()
+
+        assertEquals(1, report.settled)
+        assertEquals(listOf(INTAKE), report.failed.map { it.id })
+        assertTrue(report.failed.single().reason, report.failed.single().reason.startsWith("сбой прохода"))
+        val marked = storage.operations.getValue(INTAKE)
+        assertEquals(SyncOperationStatus.PENDING, marked.status)
+        assertEquals(now.plusSeconds(2), marked.notBefore)
+        assertEquals(SyncOperationStatus.APPLIED, storage.operations.getValue(OTHER_PACK).status)
+    }
+
+    /** Ответ уже записан, а закрытие бросило: операция ждёт с ответом в руках, а не уходит на повтор. */
+    @Test
+    fun aFailureAfterTheAnswerIsRecordedLeavesTheOperationAnswered() = runTest {
+        val storage = Storage(listOf(operation()))
+        storage.settleFails = true
+        val transport = transport { ApiResult.Success(RawResponse(200, snapshotJson)) }
+
+        val report = worker(storage, transport).drain()
+
+        assertEquals(listOf(INTAKE), report.failed.map { it.id })
+        assertEquals(SyncOperationStatus.ANSWERED, storage.operations.getValue(INTAKE).status)
+        assertEquals(1, storage.deferred.size)
+        assertEquals(1, transport.sent.size)
     }
 
     /** Ответ, записанный до смерти процесса, закрывается из записи: сервер о нём не спрашивают. */

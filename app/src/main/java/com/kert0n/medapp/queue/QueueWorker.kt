@@ -17,6 +17,7 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
 import kotlin.uuid.Uuid
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -37,6 +38,10 @@ import kotlinx.coroutines.sync.withLock
  * операцию на повтор тем же запросом и останавливает проход; ограничение частоты соблюдает
  * `Retry-After`; строка, которую нечем прочитать, пропускается, а промах словаря дочитывается.
  * Задержка между повторами растёт с попытками — от двух секунд до пяти минут.
+ *
+ * Сбой одной операции — не сбой прохода: исключение из её шага ловится здесь, операция помечена
+ * (ждёт повтора с задержкой либо, если ответ уже записан, ждёт с ним в руках) и названа в
+ * [Report.failed], а проход идёт дальше. Владелец прохода — [QueueOutbox] — ловит остальное.
  */
 @Singleton
 class QueueWorker @Inject constructor(
@@ -79,12 +84,17 @@ class QueueWorker @Inject constructor(
                 }
             }
             val packageId = (operation.command as? PackageSyncCommand)?.packageId
-            val step = if (operation.status == SyncOperationStatus.ANSWERED) {
-                resume(operation)
-            } else {
-                attempt(operation, packageId, drain)
+            val stop = try {
+                val step = if (operation.status == SyncOperationStatus.ANSWERED) resume(operation) else attempt(operation, packageId, drain)
+                drain.record(operation, step)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                // Ответ, записанный до сбоя, остаётся у операции: она ждёт с ним, а не повторяет запрос.
+                val answered = operation.status == SyncOperationStatus.ANSWERED || operation.id in drain.answeredIds
+                drain.record(operation, Step.Failed(failure, answered))
             }
-            if (drain.record(operation, step)) break
+            if (stop) break
         }
         drain.report()
     }
@@ -113,8 +123,10 @@ class QueueWorker @Inject constructor(
         val request = checkNotNull(taken.prepared) { "взятая в отправку операция несёт запрос" }
         return when (val result = transport.send(request)) {
             is ApiResult.Success -> {
-                // Ответ записан до применения: полученное подтверждение не теряется.
+                // Ответ записан до применения: полученное подтверждение не теряется — и при
+                // сбое применения операция ждёт с ним в руках, а не уходит на повтор.
                 storage.answered(taken.id, result.value, clock.instant())
+                pass.answeredIds += taken.id
                 resolve(taken.command, result.value)
             }
             is ApiResult.Failure -> when (val failure = result.failure) {
@@ -294,6 +306,9 @@ class QueueWorker @Inject constructor(
         /** Ответ записан, применить его пока нечем: операция ждёт с ответом в руках. */
         data class Deferred(val reason: String, val stop: Boolean = false) : Step
 
+        /** Шаг бросил: операция помечена и названа, проход идёт дальше. [answered] — ответ уже записан. */
+        data class Failed(val cause: Exception, val answered: Boolean) : Step
+
         data object Unauthorized : Step
 
         data object Skipped : Step
@@ -303,12 +318,16 @@ class QueueWorker @Inject constructor(
     private inner class Drain {
         private var settled = 0
         private val skipped = ArrayList<StoredSyncOperation.Unreadable>()
+        private val failed = ArrayList<Report.Failure>()
         private var retryAt: Instant? = null
         private val reprepared = HashMap<Uuid, Int>()
         val skippedIds = HashSet<Uuid>()
 
         /** Пачки, чьё серверное состояние в этом проходе уже лежит в базе. */
         val freshPackages = HashSet<Uuid>()
+
+        /** Операции, чей ответ в этом проходе уже записан: сбой после него — ожидание, а не повтор. */
+        val answeredIds = HashSet<Uuid>()
 
         fun skip(entry: StoredSyncOperation.Unreadable) {
             skipped += entry
@@ -350,6 +369,21 @@ class QueueWorker @Inject constructor(
                     storage.defer(operation.id, step.reason, clock.instant(), notBefore = later(operation))
                     return step.stop
                 }
+                is Step.Failed -> {
+                    val reason = "сбой прохода: ${step.cause}"
+                    failed += Report.Failure(operation.id, reason)
+                    skippedIds += operation.id
+                    if (step.answered) {
+                        storage.defer(operation.id, reason, clock.instant(), notBefore = later(operation))
+                    } else {
+                        storage.settle(
+                            operation.id,
+                            Delivery.Retry(reason, notBefore = later(operation)).settlement(operation.command),
+                            clock.instant()
+                        )
+                    }
+                    return false
+                }
                 Step.Unauthorized -> return true
                 Step.Skipped -> {
                     // Взять не удалось — кто-то закрыл или взял её между чтением и взятием.
@@ -359,18 +393,22 @@ class QueueWorker @Inject constructor(
             }
         }
 
-        fun report() = Report(settled, skipped, retryAt)
+        fun report() = Report(settled, skipped, retryAt, failed)
     }
 
     /**
-     * Что сделал проход: сколько операций закрыто, какие строки пропущены как нечитаемые и когда
-     * приходить снова — `null`, если ждать нечего.
+     * Что сделал проход: сколько операций закрыто, какие строки пропущены как нечитаемые, какие
+     * операции сбойнули и когда приходить снова — `null`, если ждать нечего.
      */
     data class Report(
         val settled: Int,
         val skipped: List<StoredSyncOperation.Unreadable>,
-        val retryAt: Instant?
-    )
+        val retryAt: Instant?,
+        val failed: List<Failure> = emptyList()
+    ) {
+        /** Операция, чей шаг бросил: названа с причиной, помечена в базе, ждёт повтора. */
+        data class Failure(val id: Uuid, val reason: String)
+    }
 
     private companion object {
         /** Столько раз подряд одна операция переподготавливается сразу; дальше — по задержке. */

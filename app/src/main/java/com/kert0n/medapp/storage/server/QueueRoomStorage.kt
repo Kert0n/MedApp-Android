@@ -31,6 +31,8 @@ import com.kert0n.medapp.storage.value.VocabularyDao
 import java.time.Instant
 import javax.inject.Inject
 import kotlin.uuid.Uuid
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 /**
  * Порт очереди в Room — [QueueStorage] для работника. Транзакции очереди принадлежат ей: заморозка
@@ -49,6 +51,10 @@ class QueueRoomStorage @Inject constructor(
 ) : QueueStorage {
 
     override suspend fun <T> transaction(block: suspend () -> T): T = database.withTransaction { block() }
+
+    /** Room сообщает об изменении таблицы после коммита — то, что outbox и должен услышать. */
+    override fun changes(): Flow<Unit> =
+        database.invalidationTracker.createFlow("sync_operations", emitInitialState = false).map { }
 
     override suspend fun enqueue(queued: QueuedCommand, at: Instant): SyncOperation =
         queue.enqueue(queued.id, queued.command, at, queued.groupId, queued.dependsOn)

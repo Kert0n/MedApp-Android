@@ -59,7 +59,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import com.kert0n.medapp.fixture.VOCABULARY
-import com.kert0n.medapp.queue.QueueSending
 import com.kert0n.medapp.queue.QueueService
 import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.fixture.queueStorage
@@ -89,7 +88,7 @@ class TransactionBoundariesTest {
         packages = database.packageRepository()
         courses = database.courseRepository()
         intakes = database.intakeRepository()
-        queue = QueueService(database.queueStorage(), QueueSending.none)
+        queue = QueueService(database.queueStorage())
         database.medKits().upsert(medKit().toMedKitStorageEntity())
         database.medKits().upsert(medKit(id = SHARED_KIT, name = "Дача").toMedKitStorageEntity())
         packages.add(paracetamol)

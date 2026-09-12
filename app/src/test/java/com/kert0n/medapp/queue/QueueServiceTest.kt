@@ -21,6 +21,7 @@ class QueueServiceTest {
     private class Storage : QueueStorage {
         val enqueued = mutableListOf<QueuedCommand>()
         var transactions = 0
+        override fun changes(): kotlinx.coroutines.flow.Flow<Unit> = kotlinx.coroutines.flow.emptyFlow()
         override suspend fun ready(now: Instant): List<StoredSyncOperation> = emptyList()
         override suspend fun medKit(id: Uuid): com.kert0n.medapp.domain.medkit.MedKitRef? = null
         override suspend fun take(id: Uuid, fresh: com.kert0n.medapp.network.pack.PackageSnapshot?, at: Instant): Take? = null
@@ -37,14 +38,6 @@ class QueueServiceTest {
         }
     }
 
-    /** Просьба отправить: считаем, сколько раз и при скольких уже поставленных командах. */
-    private class Sending : QueueSending {
-        var asked = 0
-        override fun soon() {
-            asked++
-        }
-    }
-
     private val consume = QueuedCommand(INTAKE, PackageSyncCommand.Consume(PACK, dose("2"), INTAKE))
 
     private val published = medKit(publication = MedKit.Publication.PUBLISHED)
@@ -53,7 +46,7 @@ class QueueServiceTest {
     fun changeAndItsCommandGoInOneTransaction() = runTest {
         val storage = Storage()
         var changed = false
-        val applied = QueueService(storage, Sending()).change(published.ref, listOf(consume), EARLIER) {
+        val applied = QueueService(storage).change(published.ref, listOf(consume), EARLIER) {
             changed = true
             true
         }
@@ -63,45 +56,21 @@ class QueueServiceTest {
         assertEquals(1, storage.transactions)
     }
 
-    /** Поставленная команда уходит сразу: службу об этом просят, а не каждый сценарий помнит. */
-    @Test
-    fun aQueuedCommandIsSentRightAfterTheChange() = runTest {
-        val sending = Sending()
-
-        QueueService(Storage(), sending).change(published.ref, listOf(consume), EARLIER) { true }
-
-        assertEquals(1, sending.asked)
-    }
-
     @Test
     fun localKitGetsNoCommands() = runTest {
         val storage = Storage()
-        val sending = Sending()
 
-        assertTrue(QueueService(storage, sending).change(medKit(publication = MedKit.Publication.LOCAL).ref, listOf(consume), EARLIER) { true })
+        assertTrue(QueueService(storage).change(medKit(publication = MedKit.Publication.LOCAL).ref, listOf(consume), EARLIER) { true })
 
         assertTrue(storage.enqueued.isEmpty())
-        assertEquals("местной аптечке отправлять нечего", 0, sending.asked)
     }
 
     @Test
     fun aChangeThatDidNotLandQueuesNothing() = runTest {
         val storage = Storage()
-        val sending = Sending()
 
-        assertFalse(QueueService(storage, sending).change(published.ref, listOf(consume), EARLIER) { false })
+        assertFalse(QueueService(storage).change(published.ref, listOf(consume), EARLIER) { false })
 
         assertTrue(storage.enqueued.isEmpty())
-        assertEquals("записывать было некуда — и везти нечего", 0, sending.asked)
-    }
-
-    /** Изменение без команд серверу ничего не добавляет: будить отправку незачем. */
-    @Test
-    fun aChangeWithoutCommandsAsksForNothing() = runTest {
-        val sending = Sending()
-
-        assertTrue(QueueService(Storage(), sending).change(published.ref, emptyList(), EARLIER) { true })
-
-        assertEquals(0, sending.asked)
     }
 }

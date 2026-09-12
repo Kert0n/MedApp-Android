@@ -39,6 +39,14 @@ import com.kert0n.medapp.storage.pack.toDetailsStorageEntity
 import com.kert0n.medapp.storage.pack.toStorageEntity
 import java.time.Instant
 import kotlin.uuid.Uuid
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import com.kert0n.medapp.queue.QueuedCommand
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -340,6 +348,30 @@ class QueueRoomStorageTest {
         assertEquals(tablets("20"), row.toDomain(VOCABULARY).quantity)
         assertEquals(ResourceVersion(3), row.pack.syncState().version)
         assertEquals(SyncOperationStatus.APPLIED, (requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable).operation.status)
+    }
+
+    /**
+     * Сигнал таблицы приходит **после** коммита внешней транзакции: тот, кто его услышал, видит
+     * операцию в `ready`. Это и есть outbox — команду забирает не тот, кто положил (PLAN E4, F5).
+     * Красная проверка: подделка, зовущая сигнал внутри транзакции, увидела бы пустую очередь.
+     */
+    @Test
+    fun theChangeSignalArrivesAfterTheOuterTransactionCommits() = runBlocking {
+        val seen = CompletableDeferred<List<Uuid>>()
+        val watcher = launch(Dispatchers.IO) {
+            storage.changes().first()
+            seen.complete(storage.ready(at.plusSeconds(1)).map { it.id })
+        }
+        delay(300) // подписка на таблицу успела встать
+
+        storage.transaction {
+            storage.enqueue(QueuedCommand(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE)), at)
+            delay(300) // транзакция ещё открыта: сигнала быть не должно
+            assertFalse(seen.isCompleted)
+        }
+
+        assertEquals(listOf(operation), withTimeout(5_000) { seen.await() })
+        watcher.cancel()
     }
 
     /** Закрытие одно: закрытую операцию второй исход не переписывает и следствий не оставляет. */

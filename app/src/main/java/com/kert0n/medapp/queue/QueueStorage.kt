@@ -5,6 +5,7 @@ import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.network.server.RawResponse
 import java.time.Instant
 import kotlin.uuid.Uuid
+import kotlinx.coroutines.flow.Flow
 
 /**
  * Что очереди нужно от хранилища — и только это. Транзакция принадлежит хранилищу: заморозить
@@ -13,6 +14,12 @@ import kotlin.uuid.Uuid
  * реализация живёт в хранении.
  */
 interface QueueStorage {
+
+    /**
+     * Сигнал «таблица операций изменилась» — после коммита по определению: тот, кто положил
+     * команду, о ней не сообщает, её замечает тот, кто следит за таблицей ([QueueOutbox]).
+     */
+    fun changes(): Flow<Unit>
 
     /**
      * Готовые к работе на момент [now], по порядку номера — одно определение, и живёт оно в
