@@ -1,7 +1,7 @@
 package com.kert0n.medapp.queue
 
+import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
-import com.kert0n.medapp.network.pack.requireKnownIn
 import com.kert0n.medapp.network.server.ApiFailure
 import com.kert0n.medapp.network.server.ApiResult
 import com.kert0n.medapp.network.server.RawResponse
@@ -17,6 +17,7 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
 import kotlin.uuid.Uuid
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -29,19 +30,25 @@ import kotlinx.coroutines.sync.withLock
  * неизвестным исходом либо отправка, пережившая смерть процесса, — уходит как есть.
  *
  * Полученный ответ записывается до того, как применён: если применить его нечем — словарь не
- * знает единицы, снимок следом не прочитался, — операция ждёт с ответом в руках и закрывается
- * из него, не спрашивая сервер второй раз.
+ * знает единицы, аптечка снимка неизвестна, снимок следом не прочитался, — операция ждёт с
+ * ответом в руках и закрывается из него, не спрашивая сервер второй раз. Что снимок называет,
+ * разрешает [PackageSnapshotResolver] одним исходом; хранение получает уже разрешённый снимок.
  *
  * Один проход — [drain]: пока есть связь, по одной операции в порядке очереди. Обрыв оставляет
  * операцию на повтор тем же запросом и останавливает проход; ограничение частоты соблюдает
  * `Retry-After`; строка, которую нечем прочитать, пропускается, а промах словаря дочитывается.
  * Задержка между повторами растёт с попытками — от двух секунд до пяти минут.
+ *
+ * Сбой одной операции — не сбой прохода: исключение из её шага ловится здесь, операция помечена
+ * (ждёт повтора с задержкой либо, если ответ уже записан, ждёт с ним в руках) и названа в
+ * [Report.failed], а проход идёт дальше. Владелец прохода — [QueueOutbox] — ловит остальное.
  */
 @Singleton
 class QueueWorker @Inject constructor(
     private val storage: QueueStorage,
     private val transport: QueueTransport,
     private val vocabulary: VocabularyResolver,
+    private val snapshots: PackageSnapshotResolver,
     private val clock: Clock
 ) {
 
@@ -77,12 +84,17 @@ class QueueWorker @Inject constructor(
                 }
             }
             val packageId = (operation.command as? PackageSyncCommand)?.packageId
-            val step = if (operation.status == SyncOperationStatus.ANSWERED) {
-                resume(operation)
-            } else {
-                attempt(operation, packageId, drain)
+            val stop = try {
+                val step = if (operation.status == SyncOperationStatus.ANSWERED) resume(operation) else attempt(operation, packageId, drain)
+                drain.record(operation, step)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                // Ответ, записанный до сбоя, остаётся у операции: она ждёт с ним, а не повторяет запрос.
+                val answered = operation.status == SyncOperationStatus.ANSWERED || operation.id in drain.answeredIds
+                drain.record(operation, Step.Failed(failure, answered))
             }
-            if (drain.record(operation, step)) break
+            if (stop) break
         }
         drain.report()
     }
@@ -111,8 +123,10 @@ class QueueWorker @Inject constructor(
         val request = checkNotNull(taken.prepared) { "взятая в отправку операция несёт запрос" }
         return when (val result = transport.send(request)) {
             is ApiResult.Success -> {
-                // Ответ записан до применения: полученное подтверждение не теряется.
+                // Ответ записан до применения: полученное подтверждение не теряется — и при
+                // сбое применения операция ждёт с ним в руках, а не уходит на повтор.
                 storage.answered(taken.id, result.value, clock.instant())
+                pass.answeredIds += taken.id
                 resolve(taken.command, result.value)
             }
             is ApiResult.Failure -> when (val failure = result.failure) {
@@ -123,12 +137,17 @@ class QueueWorker @Inject constructor(
                 is ApiFailure.Invalid ->
                     Step.Settled(refused(taken.command, (taken.command as? PackageSyncCommand)?.onInvalid ?: RefusalReason.INVALID))
                 ApiFailure.NotFound -> Step.Settled(notFound(taken, request))
-                ApiFailure.Unauthorized, ApiFailure.RegistrationRefused -> Step.Unauthorized
+                // Пропуска нет окончательно: перевыпуск и один повтор уже были в HTTP-слое
+                // (PLAN B5), и сервер этой учётке не отвечает. Проход останавливается, а операция
+                // ждёт по задержке — иначе она осталась бы готовой сейчас же, и собственная
+                // запись разбудила бы следующий круг.
+                ApiFailure.Unauthorized, ApiFailure.RegistrationRefused ->
+                    Step.Settled(Delivery.Retry("нет пропуска"), stop = true)
                 is ApiFailure.TooManyRequests ->
                     Step.Settled(Delivery.Retry("429"), retryAfter = failure.retryAfter, stop = true)
                 ApiFailure.Unavailable -> Step.Settled(Delivery.Retry("связи нет", attempted = false), stop = true)
-                ApiFailure.OutcomeUnknown -> Step.Settled(Delivery.Retry("ответ потерян"))
-                is ApiFailure.Protocol -> Step.Settled(Delivery.Retry(failure.reason))
+                ApiFailure.OutcomeUnknown -> Step.Settled(Delivery.Retry("ответ потерян", outcomeUnknown = true))
+                is ApiFailure.Protocol -> Step.Settled(Delivery.Retry(failure.reason, outcomeUnknown = true))
             }
         }
     }
@@ -145,7 +164,8 @@ class QueueWorker @Inject constructor(
     private suspend fun resolve(command: SyncCommand, answer: RawResponse): Step {
         val read = when (val parsed = command.expects.read(answer)) {
             is ApiResult.Success -> parsed.value
-            is ApiResult.Failure -> return Step.Settled(Delivery.Retry((parsed.failure as ApiFailure.Protocol).reason))
+            is ApiResult.Failure ->
+                return Step.Settled(Delivery.Retry((parsed.failure as ApiFailure.Protocol).reason, outcomeUnknown = true))
         }
         return when (command) {
             is PackageSyncCommand -> when (read) {
@@ -169,12 +189,11 @@ class QueueWorker @Inject constructor(
         }
     }
 
-    /** Снимок из ответа ложится в базу только словами, которые словарь знает: промах дочитывается. */
-    private suspend fun known(snapshot: PackageSnapshotNetworkDTO, then: (PackageSnapshotNetworkDTO) -> Step): Step =
-        when (val resolution = vocabulary.resolve { snapshot.requireKnownIn(it) }) {
-            is VocabularyResolver.Resolution.Resolved -> then(snapshot)
-            is VocabularyResolver.Resolution.Unresolved ->
-                Step.Deferred(resolution.reason, stop = resolution.failure != null)
+    /** Снимок из ответа ложится в базу только разрешённым: неизвестное дочитывается или ждёт. */
+    private suspend fun known(snapshot: PackageSnapshotNetworkDTO, then: (PackageSnapshot) -> Step): Step =
+        when (val resolution = snapshots.resolve(snapshot, clock.instant())) {
+            is PackageSnapshotResolver.Resolution.Resolved -> then(resolution.snapshot)
+            is PackageSnapshotResolver.Resolution.Unresolved -> Step.Deferred(resolution.reason, stop = resolution.stop)
         }
 
     /**
@@ -225,13 +244,14 @@ class QueueWorker @Inject constructor(
 
     /**
      * 404 значит разное для разных команд (PLAN B4): что именно — говорит команда. У расхода есть
-     * ещё один случай: повтор запроса, который уже уходил и мог уничтожить пачку, дойдя до нуля, —
-     * тогда пачки нет по нашей же причине, и это применение, а не потеря доступа (PLAN E3).
+     * ещё один случай: повтор запроса, который уже уходил с неизвестным исходом и мог уничтожить
+     * пачку, дойдя до нуля, — тогда пачки нет по нашей же причине, и это применение, а не потеря
+     * доступа (PLAN E3). Известный исход — 429, обрыв до сервера — такого не значит.
      */
     private suspend fun notFound(operation: SyncOperation, request: PreparedRequest): Delivery = when (val command = operation.command) {
         is PackageSyncCommand -> when (command.onNotFound) {
             NotFoundPolicy.ACCESS_LOST ->
-                if (command is PackageSyncCommand.Consume && operation.attempts > 0 && command.emptiedBy(request)) {
+                if (command is PackageSyncCommand.Consume && operation.outcomeUnknown && command.emptiedBy(request)) {
                     Delivery.Applied(PackageState.Gone)
                 } else {
                     Delivery.AccessLost
@@ -247,21 +267,20 @@ class QueueWorker @Inject constructor(
     }
 
     /** Истина по пачке, прочитанная следом, — и исход по ней; не прочиталась — исход чтения. */
-    private suspend fun snapshotThen(packageId: Uuid, then: (PackageSnapshotNetworkDTO) -> Delivery): Delivery =
+    private suspend fun snapshotThen(packageId: Uuid, then: (PackageSnapshot) -> Delivery): Delivery =
         when (val read = snapshotRead(packageId)) {
             is Read.Snapshot -> then(read.snapshot)
             is Read.Failed -> read.delivery
         }
 
     /**
-     * Что у сервера сейчас по этой пачке — словами, которые словарь знает: промах дочитывается.
+     * Что у сервера сейчас по этой пачке — разрешённым снимком: неизвестное дочитывается или ждёт.
      * Пачки нет — доступа к ней нет; связи нет — проход останавливается; иначе — повтор позже.
      */
     private suspend fun snapshotRead(packageId: Uuid): Read = when (val read = transport.packageSnapshot(packageId)) {
-        is ApiResult.Success -> when (val resolution = vocabulary.resolve { read.value.requireKnownIn(it) }) {
-            is VocabularyResolver.Resolution.Resolved -> Read.Snapshot(read.value)
-            is VocabularyResolver.Resolution.Unresolved ->
-                Read.Failed(Delivery.Retry(resolution.reason), stop = resolution.failure != null)
+        is ApiResult.Success -> when (val resolution = snapshots.resolve(read.value, clock.instant())) {
+            is PackageSnapshotResolver.Resolution.Resolved -> Read.Snapshot(resolution.snapshot)
+            is PackageSnapshotResolver.Resolution.Unresolved -> Read.Failed(Delivery.Retry(resolution.reason), stop = resolution.stop)
         }
         is ApiResult.Failure -> when (val failure = read.failure) {
             ApiFailure.NotFound -> Read.Failed(Delivery.AccessLost)
@@ -273,7 +292,7 @@ class QueueWorker @Inject constructor(
     }
 
     private sealed interface Read {
-        data class Snapshot(val snapshot: PackageSnapshotNetworkDTO) : Read
+        data class Snapshot(val snapshot: PackageSnapshot) : Read
         data class Failed(val delivery: Delivery, val stop: Boolean = false) : Read
     }
 
@@ -292,7 +311,9 @@ class QueueWorker @Inject constructor(
         /** Ответ записан, применить его пока нечем: операция ждёт с ответом в руках. */
         data class Deferred(val reason: String, val stop: Boolean = false) : Step
 
-        data object Unauthorized : Step
+        /** Шаг бросил: операция помечена и названа, проход идёт дальше. [answered] — ответ уже записан. */
+        data class Failed(val cause: Exception, val answered: Boolean) : Step
+
 
         data object Skipped : Step
     }
@@ -301,12 +322,16 @@ class QueueWorker @Inject constructor(
     private inner class Drain {
         private var settled = 0
         private val skipped = ArrayList<StoredSyncOperation.Unreadable>()
+        private val failed = ArrayList<Report.Failure>()
         private var retryAt: Instant? = null
         private val reprepared = HashMap<Uuid, Int>()
         val skippedIds = HashSet<Uuid>()
 
         /** Пачки, чьё серверное состояние в этом проходе уже лежит в базе. */
         val freshPackages = HashSet<Uuid>()
+
+        /** Операции, чей ответ в этом проходе уже записан: сбой после него — ожидание, а не повтор. */
+        val answeredIds = HashSet<Uuid>()
 
         fun skip(entry: StoredSyncOperation.Unreadable) {
             skipped += entry
@@ -336,7 +361,7 @@ class QueueWorker @Inject constructor(
                         }
                         else -> delivery
                     }
-                    storage.settle(operation.id, delivery, clock.instant())
+                    storage.settle(operation.id, delivery.settlement(operation.command), clock.instant())
                     if (delivery is Delivery.Applied || delivery is Delivery.Refused || delivery is Delivery.AccessLost) settled++
                     return step.stop
                 }
@@ -348,7 +373,21 @@ class QueueWorker @Inject constructor(
                     storage.defer(operation.id, step.reason, clock.instant(), notBefore = later(operation))
                     return step.stop
                 }
-                Step.Unauthorized -> return true
+                is Step.Failed -> {
+                    val reason = "сбой прохода: ${step.cause}"
+                    failed += Report.Failure(operation.id, reason)
+                    skippedIds += operation.id
+                    if (step.answered) {
+                        storage.defer(operation.id, reason, clock.instant(), notBefore = later(operation))
+                    } else {
+                        storage.settle(
+                            operation.id,
+                            Delivery.Retry(reason, notBefore = later(operation)).settlement(operation.command),
+                            clock.instant()
+                        )
+                    }
+                    return false
+                }
                 Step.Skipped -> {
                     // Взять не удалось — кто-то закрыл или взял её между чтением и взятием.
                     skippedIds += operation.id
@@ -357,18 +396,22 @@ class QueueWorker @Inject constructor(
             }
         }
 
-        fun report() = Report(settled, skipped, retryAt)
+        fun report() = Report(settled, skipped, retryAt, failed)
     }
 
     /**
-     * Что сделал проход: сколько операций закрыто, какие строки пропущены как нечитаемые и когда
-     * приходить снова — `null`, если ждать нечего.
+     * Что сделал проход: сколько операций закрыто, какие строки пропущены как нечитаемые, какие
+     * операции сбойнули и когда приходить снова — `null`, если ждать нечего.
      */
     data class Report(
         val settled: Int,
         val skipped: List<StoredSyncOperation.Unreadable>,
-        val retryAt: Instant?
-    )
+        val retryAt: Instant?,
+        val failed: List<Failure> = emptyList()
+    ) {
+        /** Операция, чей шаг бросил: названа с причиной, помечена в базе, ждёт повтора. */
+        data class Failure(val id: Uuid, val reason: String)
+    }
 
     private companion object {
         /** Столько раз подряд одна операция переподготавливается сразу; дальше — по задержке. */

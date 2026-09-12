@@ -13,22 +13,22 @@ import com.kert0n.medapp.domain.intake.UnplannedIntake
 import com.kert0n.medapp.domain.value.QuantityUnit
 import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.storage.pack.PackageStorageEntity
-import com.kert0n.medapp.storage.pack.PackageStorageRow
+import com.kert0n.medapp.storage.pack.PackageRefStorageRow
 import com.kert0n.medapp.storage.value.storedDose
 import com.kert0n.medapp.storage.value.storedUnit
 import java.time.Instant
 
 /**
- * Приём вместе с пачками, которые он называет: плановой и фактической. Домен держит их
- * объектами, а Room читает связями той же транзакцией — по запросу на связь на всю выборку, так
- * что история из ста строк не делает ста запросов к пачкам.
+ * Приём вместе со ссылками на пачки, которые он называет: плановую и фактическую. Room читает
+ * их связями той же транзакцией — по запросу на связь на всю выборку, так что история из ста
+ * строк не делает ста запросов к пачкам.
  */
 class IntakeStorageRow(
     @Embedded val intake: IntakeStorageEntity,
     @Relation(entity = PackageStorageEntity::class, parentColumn = "planned_package_id", entityColumn = "id")
-    val planned: PackageStorageRow? = null,
+    val planned: PackageRefStorageRow? = null,
     @Relation(entity = PackageStorageEntity::class, parentColumn = "taken_package_id", entityColumn = "id")
-    val taken: PackageStorageRow? = null
+    val taken: PackageRefStorageRow? = null
 ) {
     fun toDomain(vocabulary: Vocabulary): Intake {
         val unit = vocabulary.storedUnit(intake.unitId)
@@ -51,7 +51,7 @@ class IntakeStorageRow(
             unit
         ),
         plannedPackage = intake.plannedPackageId?.let {
-            requireNotNull(planned) { "плановая пачка $it приёма не найдена" }.toDomain(vocabulary)
+            requireNotNull(planned) { "плановая пачка $it приёма не найдена" }.toRef(vocabulary)
         },
         answer = answer(unit, vocabulary)
     )
@@ -74,7 +74,7 @@ class IntakeStorageRow(
     private fun takenDose(unit: QuantityUnit, vocabulary: Vocabulary): TakenDose? {
         val amount = intake.takenAmount ?: return null
         return TakenDose(
-            pkg = requireNotNull(taken) { "у принятой дозы есть своя пачка" }.toDomain(vocabulary),
+            pkg = requireNotNull(taken) { "у принятой дозы есть своя пачка" }.toRef(vocabulary),
             amount = storedDose(amount, unit),
             at = answeredMoment()
         )

@@ -1,7 +1,7 @@
 package com.kert0n.medapp.domain.stock
 
-import com.kert0n.medapp.domain.medkit.MedKit
-import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.medkit.MedKitRef
+import com.kert0n.medapp.domain.pack.PackageRef
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.QuantityUnit
 import com.kert0n.medapp.domain.value.requireDecimalWithinLimits
@@ -16,13 +16,13 @@ import kotlin.uuid.Uuid
  * это не событие и не часть пачки. «Зачем» — вид записи, причина утилизации и [note]; «сколько» —
  * величина в единице на момент записи, а знак задаёт вид, а не тот, кто пишет; «когда» — два
  * момента: [occurredAt] случилось (неизвестно только у чужого) и [observedAt] мы узнали. Пачка и
- * аптечка — объектами: аптечка та, где движение случилось, и она может отличаться от той, где пачка
+ * аптечка — ссылками: аптечка та, где движение случилось, и она может отличаться от той, где пачка
  * лежит теперь. Связи с операцией очереди здесь нет: это обвязка данных.
  */
 sealed interface StockMovement {
 
     val id: Uuid
-    val pkg: Package
+    val pkg: PackageRef
     val unit: QuantityUnit
     val occurredAt: Instant?
     val observedAt: Instant
@@ -31,9 +31,9 @@ sealed interface StockMovement {
     /** Пачка заведена: весь начальный остаток — приход. */
     data class Receipt(
         override val id: Uuid,
-        override val pkg: Package,
+        override val pkg: PackageRef,
         val amount: Quantity,
-        val medKit: MedKit,
+        val medKit: MedKitRef,
         override val occurredAt: Instant,
         override val observedAt: Instant,
         override val note: String? = null
@@ -45,10 +45,10 @@ sealed interface StockMovement {
     /** Пересчитали и увидели [after] вместо [before]: пересчёт находит и больше, и меньше. */
     data class Recount(
         override val id: Uuid,
-        override val pkg: Package,
+        override val pkg: PackageRef,
         val before: Quantity,
         val after: Quantity,
-        val medKit: MedKit,
+        val medKit: MedKitRef,
         override val occurredAt: Instant,
         override val observedAt: Instant,
         override val note: String? = null
@@ -63,10 +63,10 @@ sealed interface StockMovement {
     /** Выбросили названное количество по названной причине. */
     data class Disposal(
         override val id: Uuid,
-        override val pkg: Package,
+        override val pkg: PackageRef,
         val amount: Quantity,
         val reason: Reason,
-        val medKit: MedKit,
+        val medKit: MedKitRef,
         override val occurredAt: Instant,
         override val observedAt: Instant,
         override val note: String? = null
@@ -87,10 +87,10 @@ sealed interface StockMovement {
      */
     data class Transfer(
         override val id: Uuid,
-        override val pkg: Package,
+        override val pkg: PackageRef,
         val amount: Quantity,
-        val source: MedKit,
-        val target: MedKit,
+        val source: MedKitRef,
+        val target: MedKitRef,
         override val occurredAt: Instant,
         override val observedAt: Instant,
         override val note: String? = null
@@ -109,10 +109,10 @@ sealed interface StockMovement {
      */
     data class RemoteChange(
         override val id: Uuid,
-        override val pkg: Package,
+        override val pkg: PackageRef,
         val delta: BigDecimal,
         override val unit: QuantityUnit,
-        val medKit: MedKit,
+        val medKit: MedKitRef,
         override val observedAt: Instant,
         override val occurredAt: Instant? = null,
         override val note: String? = null
@@ -131,9 +131,9 @@ sealed interface StockMovement {
     /** Пачка перестала быть видимой: из учёта аптечки уходит последний виденный остаток. */
     data class AccessLoss(
         override val id: Uuid,
-        override val pkg: Package,
+        override val pkg: PackageRef,
         val amount: Quantity,
-        val medKit: MedKit,
+        val medKit: MedKitRef,
         override val observedAt: Instant,
         override val occurredAt: Instant? = null,
         override val note: String? = null
@@ -143,13 +143,13 @@ sealed interface StockMovement {
     }
 
     /**
-     * Насколько эта запись изменила остаток в аптечке [medKit]. Принимается сама аптечка, и
-     * сравниваются они как сущности — по тождеству. Знак задаёт вид: приход положителен,
+     * Насколько эта запись изменила остаток в аптечке [medKit]. Принимается ссылка на аптечку, и
+     * сравниваются они по тождеству. Знак задаёт вид: приход положителен,
      * утилизация и утрата доступа отрицательны, пересчёт и чужое изменение — в обе стороны. Концы
      * переноса дают −и+, поэтому перенос внутри выбранных аптечек в их сумме расходом не выглядит
      * (H6).
      */
-    fun deltaIn(medKit: MedKit): BigDecimal {
+    fun deltaIn(medKit: MedKitRef): BigDecimal {
         val (kit, delta) = when (this) {
             is Receipt -> this.medKit to amount.amount
             is Recount -> this.medKit to after.amount - before.amount

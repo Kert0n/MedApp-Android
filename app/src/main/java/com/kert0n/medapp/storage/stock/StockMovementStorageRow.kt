@@ -2,27 +2,27 @@ package com.kert0n.medapp.storage.stock
 
 import androidx.room.Embedded
 import androidx.room.Relation
-import com.kert0n.medapp.domain.medkit.MedKit
+import com.kert0n.medapp.domain.medkit.MedKitRef
 import com.kert0n.medapp.domain.stock.StockMovement
 import com.kert0n.medapp.domain.value.QuantityUnit
 import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.storage.medkit.MedKitStorageEntity
 import com.kert0n.medapp.storage.pack.PackageStorageEntity
-import com.kert0n.medapp.storage.pack.PackageStorageRow
+import com.kert0n.medapp.storage.pack.PackageRefStorageRow
 import com.kert0n.medapp.storage.value.storedQuantity
 import com.kert0n.medapp.storage.value.storedUnit
 import java.math.BigDecimal
 import kotlin.uuid.Uuid
 
 /**
- * Движение вместе с пачкой и аптечками, которые оно называет. Домен держит их объектами; Room
+ * Движение вместе с пачкой и аптечками, которые оно называет. Домен держит их ссылками; Room
  * читает связи той же транзакцией и по одному запросу на связь на всю выборку — история из ста
  * строк грузит пачки одним запросом, а не ста.
  */
 class StockMovementStorageRow(
     @Embedded val movement: StockMovementStorageEntity,
     @Relation(entity = PackageStorageEntity::class, parentColumn = "package_id", entityColumn = "id")
-    val pack: PackageStorageRow? = null,
+    val pack: PackageRefStorageRow? = null,
     @Relation(parentColumn = "med_kit_id", entityColumn = "id")
     val medKit: MedKitStorageEntity? = null,
     @Relation(parentColumn = "source_med_kit_id", entityColumn = "id")
@@ -33,7 +33,7 @@ class StockMovementStorageRow(
     fun toDomain(vocabulary: Vocabulary): StockMovement {
         val unit = vocabulary.storedUnit(movement.unitId)
         val pkg = requireNotNull(pack) { "движение ссылается на пачку, которой нет: ${movement.packageId}" }
-            .toDomain(vocabulary)
+            .toRef(vocabulary)
         val kind = movement.kind
         return when (kind) {
             StockMovementStorageEntity.Kind.RECEIPT -> StockMovement.Receipt(
@@ -100,10 +100,10 @@ class StockMovementStorageRow(
     private fun quantity(text: String?, unit: QuantityUnit) =
         storedQuantity(requireNotNull(text) { "у движения вида ${movement.kind} записано количество" }, unit)
 
-    private fun medKit(read: MedKitStorageEntity?, id: Uuid?): MedKit =
+    private fun medKit(read: MedKitStorageEntity?, id: Uuid?): MedKitRef =
         requireNotNull(read) {
             "движение вида ${movement.kind} называет аптечку, которой нет: $id"
-        }.toDomain()
+        }.toRef()
 
     private fun moment() =
         requireNotNull(movement.occurredAt) { "движение вида ${movement.kind} знает, когда случилось" }

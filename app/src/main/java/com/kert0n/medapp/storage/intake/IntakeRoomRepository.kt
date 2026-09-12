@@ -3,13 +3,15 @@ package com.kert0n.medapp.storage.intake
 import com.kert0n.medapp.domain.course.ScheduledOccurrence
 import com.kert0n.medapp.domain.intake.CourseIntake
 import com.kert0n.medapp.domain.intake.Intake
-import com.kert0n.medapp.network.intake.IntakeSyncState
+import com.kert0n.medapp.domain.intake.IntakeProjection
+import com.kert0n.medapp.queue.intake.IntakeSyncState
 import com.kert0n.medapp.domain.intake.UnplannedIntake
 import androidx.room.withTransaction
 import com.kert0n.medapp.storage.course.CourseDao
 import com.kert0n.medapp.storage.course.toSourceStorageEntities
 import com.kert0n.medapp.storage.course.toStorageEntity as toCourseStorageEntity
 import com.kert0n.medapp.storage.database.MedAppDatabase
+import com.kert0n.medapp.storage.database.chunkedForQuery
 import com.kert0n.medapp.storage.pack.PackageDao
 import com.kert0n.medapp.storage.pack.toDetailsStorageEntity
 import com.kert0n.medapp.storage.pack.toStorageEntity as toPackageStorageEntity
@@ -29,10 +31,10 @@ class IntakeRoomRepository @Inject constructor(
     private val vocabulary: VocabularyDao
 ) : IntakeStorageRepository {
 
-    override fun observeOfCourse(courseId: Uuid): Flow<List<Intake>> =
+    override fun observeOfCourse(courseId: Uuid): Flow<List<IntakeProjection>> =
         intakes.observeOfCourse(courseId).map { rows ->
             val words = vocabulary.snapshot()
-            rows.map { it.toDomain(words) }
+            rows.map { it.toDomain(words).projection() }
         }
 
     override suspend fun ofCourse(courseId: Uuid): List<Intake> {
@@ -63,7 +65,7 @@ class IntakeRoomRepository @Inject constructor(
         val extra = intakes.plannedOf(courseId)
             .filter { (it.scheduledOn to it.scheduledTime) !in kept }
             .map { it.id }
-        if (extra.isEmpty()) 0 else intakes.deletePlanned(extra)
+        extra.chunkedForQuery().sumOf { intakes.deletePlanned(it) }
     }
 
     override suspend fun record(outcome: IntakeOutcome): Boolean = database.withTransaction {

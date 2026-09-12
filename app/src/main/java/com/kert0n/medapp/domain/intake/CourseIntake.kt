@@ -1,7 +1,7 @@
 package com.kert0n.medapp.domain.intake
 
 import com.kert0n.medapp.domain.course.Revision
-import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.pack.PackageRef
 import com.kert0n.medapp.domain.course.ScheduledOccurrence
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.QuantityUnit
@@ -22,7 +22,7 @@ class CourseIntake(
     val courseRevision: Revision,
     val slot: ScheduledOccurrence,
     val plannedAmount: Dose,
-    val plannedPackage: Package? = null,
+    val plannedPackage: PackageRef? = null,
     val answer: IntakeAnswer? = null
 ) : Intake {
 
@@ -51,6 +51,18 @@ class CourseIntake(
 
     /** Когда наступает пункт. */
     val plannedAt: Instant get() = slot.at
+
+    override fun projection(): IntakeProjection.Scheduled = IntakeProjection.Scheduled(
+        id = id,
+        courseId = courseId,
+        courseRevision = courseRevision,
+        slot = slot,
+        plannedAmount = plannedAmount,
+        plannedPackage = plannedPackage,
+        answer = answer,
+        status = status,
+        taken = taken
+    )
 
     /** Обеспечен ли пункт: источник с целой дозой под него найден (PLAN D5). */
     val isSupplied: Boolean get() = plannedPackage != null

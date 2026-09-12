@@ -48,7 +48,8 @@ class SyncOperationStorageRow(
                 lastError = operation.lastError,
                 lastTriedAt = operation.lastTriedAt,
                 answer = operation.answerStatus?.let { RawResponse(it, operation.answerBody.orEmpty()) },
-                notBefore = operation.notBefore
+                notBefore = operation.notBefore,
+                outcomeUnknown = operation.outcomeUnknown
             )
         )
     } catch (missed: VocabularyMiss) {

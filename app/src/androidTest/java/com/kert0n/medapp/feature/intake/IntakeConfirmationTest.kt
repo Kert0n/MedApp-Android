@@ -8,6 +8,7 @@ import com.kert0n.medapp.domain.intake.IntakeRejected
 import com.kert0n.medapp.domain.intake.IntakeStatus
 import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.value.Doses
+import com.kert0n.medapp.feature.course.CourseClosing
 import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.FIRST_PLANNED_AT
 import com.kert0n.medapp.fixture.INTAKE
@@ -27,23 +28,13 @@ import com.kert0n.medapp.fixture.millilitres
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.packageRepository
 import com.kert0n.medapp.fixture.plannedIntake
-import com.kert0n.medapp.fixture.queueRepository
+import com.kert0n.medapp.fixture.queueStorage
+import com.kert0n.medapp.fixture.transactions
 import com.kert0n.medapp.fixture.schedule
 import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
-import com.kert0n.medapp.network.intake.IntakeAccounting
-import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
-import com.kert0n.medapp.network.server.ApiFailure
-import com.kert0n.medapp.network.server.ApiResult
-import com.kert0n.medapp.network.server.MedAppApi
-import com.kert0n.medapp.network.server.RawResponse
-import com.kert0n.medapp.network.server.medAppHttpClient
-import com.kert0n.medapp.network.value.VocabularyResolver
-import com.kert0n.medapp.queue.PreparedRequest
-import com.kert0n.medapp.queue.QueueSending
+import com.kert0n.medapp.queue.intake.IntakeAccounting
 import com.kert0n.medapp.queue.QueueService
-import com.kert0n.medapp.queue.QueueTransport
-import com.kert0n.medapp.queue.QueueWorker
 import com.kert0n.medapp.queue.StoredSyncOperation
 import com.kert0n.medapp.queue.SyncCommand
 import com.kert0n.medapp.queue.pack.PackageSyncCommand
@@ -53,8 +44,6 @@ import com.kert0n.medapp.storage.intake.IntakeOutcome
 import com.kert0n.medapp.storage.intake.IntakeRoomRepository
 import com.kert0n.medapp.storage.medkit.toStorageEntity as toMedKitStorageEntity
 import com.kert0n.medapp.storage.pack.PackageRoomRepository
-import com.kert0n.medapp.storage.value.VocabularyRoomRepository
-import io.ktor.client.engine.okhttp.OkHttp
 import java.math.BigDecimal
 import java.time.Clock
 import java.time.Instant
@@ -84,23 +73,16 @@ class IntakeConfirmationTest {
     private val now: Instant = Instant.parse("2027-03-10T12:00:00Z")
     private val third: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000063")
 
-    /** Просьбы отправить: сценарий их не ждёт, поэтому в тесте их просто считают. */
-    private val sending = object : QueueSending {
-        var asked = 0
-        override fun soon() {
-            asked++
-        }
-    }
-
     @Before
     fun openDatabase() = runTest {
         database = inMemoryDatabase()
         courses = database.courseRepository()
         intakes = database.intakeRepository()
         packages = database.packageRepository()
-        val queue = database.queueRepository()
+        val transactions = database.transactions()
         val clock = Clock.fixed(now, ZoneOffset.UTC)
-        confirmation = IntakeConfirmation(intakes, courses, packages, queue, QueueService(queue, sending), clock)
+        val service = QueueService(transactions, database.queueStorage())
+        confirmation = IntakeConfirmation(intakes, courses, packages, transactions, service, CourseClosing(courses, service), clock)
         packages.add(pack(quantity = tablets("20")))
     }
 
@@ -139,7 +121,6 @@ class IntakeConfirmationTest {
         // Выделено было пять доз (10 таблеток), ушло две таблетки: осталось четыре дозы.
         assertEquals(Doses(4), requireNotNull(courses.findPlan(COURSE)).sources.single().allocatedDoses)
         assertEquals(0, database.syncOperations().all().size)
-        assertEquals("своей аптечке отправлять нечего", 0, sending.asked)
     }
 
     @Test
@@ -155,7 +136,23 @@ class IntakeConfirmationTest {
         val consume = commands().single() as PackageSyncCommand.Consume
         assertEquals(INTAKE, consume.intakeId)
         assertEquals(0, BigDecimal("8").compareTo(requireNotNull(consume.claimAfter).amount))
-        assertEquals("расход просится к отправке сразу", 1, sending.asked)
+    }
+
+    /**
+     * Домен считает от факта: подтверждённый остаток минус чужие брони минус принятое. Незакрытый
+     * расход в очереди — доставка, и на выделение после приёма он не влияет (PLAN D4).
+     */
+    @Test
+    fun anUnclosedConsumeInTheQueueDoesNotChangeTheAllocationAfterTheIntake() = runTest {
+        publishHomeKit()
+        activate(totalDoses = 7)
+        // Уже уехавший расход на 15 таблеток: по свёртке очереди в пачке было бы 5.
+        database.syncOperations().enqueue(third, PackageSyncCommand.Consume(PACK, dose("15"), third), now)
+
+        confirmation.confirm(INTAKE, PACK, dose("2"), FIRST_PLANNED_AT).getOrThrow()
+
+        // От подтверждённых 20: выделено было 5 доз (10 таблеток), ушло 2 таблетки — осталось 4 дозы.
+        assertEquals(Doses(4), requireNotNull(courses.findPlan(COURSE)).sources.single().allocatedDoses)
     }
 
     @Test
@@ -231,6 +228,41 @@ class IntakeConfirmationTest {
         assertEquals(IntakeRejected.Reason.UNIT_MISMATCH, (refused as IntakeRejected).reason)
         assertEquals(IntakeStatus.PLANNED, requireNotNull(intakes.find(INTAKE)).status)
         assertEquals(millilitres("100"), requireNotNull(packages.find(OTHER_PACK)).quantity)
+    }
+
+    /**
+     * Пачка вне источников курса той же единицей: пункт курса принимают из пачки курса, а такой
+     * приём — внеплановый факт, и пункт им не закрывается (PLAN D5). Отказ до записи: ни остатка,
+     * ни статуса, ни команды.
+     *
+     * Красная проверка: убрать отказ — пункт становится `TAKEN`, а чужая пачка худеет.
+     */
+    @Test
+    fun aPackageOutsideTheCourseSourcesIsRefusedAndWritesNothing() = runTest {
+        activate()
+        packages.add(pack(id = OTHER_PACK, quantity = tablets("30")))
+
+        val refused = confirmation.confirm(INTAKE, OTHER_PACK, dose("2"), FIRST_PLANNED_AT).exceptionOrNull()
+
+        assertEquals(IntakeRejected.Reason.PACKAGE_NOT_A_SOURCE, (refused as IntakeRejected).reason)
+        assertEquals(IntakeStatus.PLANNED, requireNotNull(intakes.find(INTAKE)).status)
+        assertEquals(tablets("30"), requireNotNull(packages.find(OTHER_PACK)).quantity)
+        assertEquals(tablets("20"), requireNotNull(packages.find(PACK)).quantity)
+        assertEquals(0, database.syncOperations().all().size)
+    }
+
+    /** Другая пачка **из источников** курса разрешена: расход и выделение идут по ней (PLAN D5). */
+    @Test
+    fun anotherPackageOfTheCourseSourcesIsAccepted() = runTest {
+        packages.add(pack(id = OTHER_PACK, quantity = tablets("30")))
+        val plan = activeCourse(totalDoses = 7, sources = listOf(source(PACK, 5), source(OTHER_PACK, 2)))
+        courses.activate(CourseDraft.Activation(plan, courseRecord(prescription = plan.prescription)), listOf(plannedIntake()))
+
+        val confirmed = confirmation.confirm(INTAKE, OTHER_PACK, dose("2"), FIRST_PLANNED_AT).getOrThrow()
+
+        assertEquals(IntakeStatus.TAKEN, confirmed.intake.status)
+        assertEquals(tablets("28"), requireNotNull(packages.find(OTHER_PACK)).quantity)
+        assertEquals(tablets("20"), requireNotNull(packages.find(PACK)).quantity)
     }
 
     /** Двойное нажатие: второй раз отвечает записанным и второй раз не списывает (PLAN D6). */

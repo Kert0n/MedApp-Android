@@ -1,6 +1,6 @@
 package com.kert0n.medapp.storage.pack
 
-import com.kert0n.medapp.domain.medkit.MedKit
+import com.kert0n.medapp.domain.medkit.MedKitRef
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.stock.StockMovement
 import com.kert0n.medapp.domain.value.Quantity
@@ -55,7 +55,7 @@ sealed interface PackageAdjustment {
      */
     data class Transfer(
         override val packageId: Uuid,
-        val target: MedKit,
+        val target: MedKitRef,
         override val movementId: Uuid,
         override val note: String? = null
     ) : PackageAdjustment
@@ -69,7 +69,7 @@ sealed interface PackageAdjustment {
         return when (this) {
             is Recount -> Applied(
                 pack.correctTo(actual),
-                StockMovement.Recount(movementId, pack, pack.quantity, actual, pack.medKit, at, at, note)
+                StockMovement.Recount(movementId, pack.ref, pack.quantity, actual, pack.medKit, at, at, note)
             )
             is Disposal -> {
                 // В историю идёт то, что действительно ушло, — разница остатков до и после
@@ -78,13 +78,13 @@ sealed interface PackageAdjustment {
                 Applied(
                     disposed,
                     StockMovement.Disposal(
-                        movementId, pack, pack.quantity - disposed.quantity, reason, pack.medKit, at, at, note
+                        movementId, pack.ref, pack.quantity - disposed.quantity, reason, pack.medKit, at, at, note
                     )
                 )
             }
             is Transfer -> Applied(
                 pack.moveTo(target),
-                StockMovement.Transfer(movementId, pack, pack.quantity, pack.medKit, target, at, at, note)
+                StockMovement.Transfer(movementId, pack.ref, pack.quantity, pack.medKit, target, at, at, note)
             )
         }
     }

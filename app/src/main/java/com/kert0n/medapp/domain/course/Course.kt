@@ -1,7 +1,7 @@
 package com.kert0n.medapp.domain.course
 
 import com.kert0n.medapp.domain.pack.Availability
-import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.pack.PackageRef
 import com.kert0n.medapp.domain.value.DosageForm
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Doses
@@ -23,8 +23,8 @@ import kotlin.uuid.Uuid
  * растягивается, а ожидаемый конец сдвигается сам; закончить раньше человек может, сократив
  * число доз рукой. Все вопросы о лечении задаются курсу — обеспечение, предел ползунка, зажим
  * при нехватке, пересчёт после приёма, порядок расхода, — потому что он один владеет и дозой, и
- * препаратом. Пачки — объектами: подставить вместо пачки форму или единицу нечем, а прочитанный
- * курс держит пачки такими, какими они были при чтении.
+ * препаратом. Пачки — ссылками [PackageRef]: подставить вместо пачки форму или единицу нечем,
+ * а списать из пачки через курс — тоже.
  */
 class Course(
     val id: Uuid,
@@ -49,6 +49,17 @@ class Course(
     val unit: QuantityUnit get() = prescription.dose.unit
 
     val totalDoses: Doses get() = prescription.totalDoses
+
+    /** Как курс видит экран: величина, наружу уходит она, а не сущность. */
+    fun projection(): CourseProjection = CourseProjection(
+        id = id,
+        prescription = prescription,
+        sources = sources,
+        takenOffPlan = takenOffPlan,
+        revision = revision,
+        createdAt = createdAt,
+        updatedAt = updatedAt
+    )
 
     /**
      * Сколько доз ещё впереди при [progress] по плану. Что принято, знают приёмы — курс их не
@@ -108,19 +119,26 @@ class Course(
      * Выделение пачки **в единицах пачки** — та самая величина, которую видит серверная бронь:
      * целевой объём равен `allocatedDoses × dose` (PLAN D5). `null` — пачка не в препарате курса.
      */
-    fun allocatedOf(pkg: Package): Quantity? =
+    fun allocatedOf(pkg: PackageRef): Quantity? =
         medicine.allocatedTo(pkg)?.let { dose * it }
+
+    /**
+     * Источник ли эта пачка: из пачки курса принимают его пункт, из любой другой — внеплановый
+     * факт, и пункт им не закрывается (PLAN D5). Правило о составе препарата живёт на курсе,
+     * а не у того, кто записывает приём.
+     */
+    fun isSource(pkg: PackageRef): Boolean = medicine.holds(pkg)
 
     /**
      * Пачки действующего курса менять можно: это не изменение дозы или календаря (PLAN D5).
      * Годится ли пачка, решает назначение: та же форма, та же единица.
      */
-    fun attach(pkg: Package, doses: Doses, at: Instant): Result<Course> =
+    fun attach(pkg: PackageRef, doses: Doses, at: Instant): Result<Course> =
         medicine.attach(pkg, doses, dose, form)
             .map { changed(medicine = it, revision = revision.next(), updatedAt = at) }
 
     /** Отвязка последней пачки лечения не отменяет: курс просто становится необеспеченным. */
-    fun detach(pkg: Package, at: Instant): Course = changed(
+    fun detach(pkg: PackageRef, at: Instant): Course = changed(
         medicine = medicine.detach(pkg),
         revision = revision.next(),
         updatedAt = at
@@ -132,7 +150,7 @@ class Course(
         return changed(medicine = moved, revision = revision.next(), updatedAt = at)
     }
 
-    fun allocate(pkg: Package, doses: Doses, at: Instant): Course = changed(
+    fun allocate(pkg: PackageRef, doses: Doses, at: Instant): Course = changed(
         medicine = medicine.allocate(pkg, doses),
         revision = revision.next(),
         updatedAt = at
@@ -149,7 +167,7 @@ class Course(
      * Верхняя граница ползунка пачки в целых дозах: меньшее из того, что пачка даёт, и того, что
      * потребность оставляет сверх выделенного остальным (PLAN D5).
      */
-    fun maxDoses(pkg: Package, required: Doses, availability: Availability): Doses =
+    fun maxDoses(pkg: PackageRef, required: Doses, availability: Availability): Doses =
         medicine.maxDoses(pkg, dose, required, availability)
 
     /**
@@ -169,7 +187,7 @@ class Course(
      * Сколько целых доз остаётся выделено пачке после подтверждённого приёма: не больше
      * выделенного за вычетом расхода и не больше того, что в пачке осталось (PLAN D5).
      */
-    fun dosesAfterIntake(pkg: Package, taken: Dose, availableAfter: Quantity): Doses =
+    fun dosesAfterIntake(pkg: PackageRef, taken: Dose, availableAfter: Quantity): Doses =
         medicine.dosesAfterIntake(pkg, dose, taken, availableAfter)
 
     /**
@@ -182,7 +200,7 @@ class Course(
      * порядке — его знание, а курс отвечает, из чего они возьмутся. Спрашивать у курса список
      * приёмов значило бы тянуть в него чужой агрегат ради двух проверок.
      */
-    fun spendOrder(doses: Doses, availability: Availability): List<Package?> {
+    fun spendOrder(doses: Doses, availability: Availability): List<PackageRef?> {
         val fromPacks = medicine.spend(dose, doses, availability)
             .flatMap { (pkg, taken) -> List(taken.count) { pkg } }
         return List(doses.count) { fromPacks.getOrNull(it) }
@@ -192,7 +210,7 @@ class Course(
      * Сколько уйдёт из каждой пачки на следующие [doses] доз. Пачек, из которых не уходит ничего,
      * в ответе нет; это тот же расход, что и [spendOrder], только величинами.
      */
-    fun spending(doses: Doses, availability: Availability): Map<Package, Quantity> =
+    fun spending(doses: Doses, availability: Availability): Map<PackageRef, Quantity> =
         medicine.spend(dose, doses, availability).mapValues { (_, taken) -> dose * taken }
 
     private fun changed(

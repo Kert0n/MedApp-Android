@@ -80,6 +80,10 @@ class PackageStorageEntity(
     val access: Package.Access = Package.Access.AVAILABLE,
     @ColumnInfo(name = "synced_at") val syncedAt: Instant? = null
 ) {
+    /** Аптечка пачки, прочитанная связью: её нет — строка пачки повреждена, ключ это держит (F2). */
+    fun medKitRow(read: MedKitStorageEntity?): MedKitStorageEntity =
+        requireNotNull(read) { "пачка лежит в аптечке, которой нет: $medKitId" }
+
     fun sharedFacts(vocabulary: Vocabulary): PackageSharedFacts = PackageSharedFacts(
         name = name,
         form = formId?.let(vocabulary::storedForm),

@@ -16,6 +16,12 @@ class IntakeRejected(val reason: Reason) : IllegalStateException(reason.name) {
         PACKAGE_UNUSABLE,
 
         /** Единица дозы — не та, в которой пачку считают сейчас. */
-        UNIT_MISMATCH
+        UNIT_MISMATCH,
+
+        /**
+         * Пачка не из источников курса: такой приём — внеплановый факт, и пункт курса им не
+         * закрывается (PLAN D5). Человека ведёт к другому действию, поэтому причина своя.
+         */
+        PACKAGE_NOT_A_SOURCE
     }
 }

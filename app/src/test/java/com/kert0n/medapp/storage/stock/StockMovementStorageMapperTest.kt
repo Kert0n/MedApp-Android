@@ -33,14 +33,14 @@ class StockMovementStorageMapperTest {
     private val shared = medKit(id = SHARED_KIT, name = "Общая")
 
     private val everyKind: List<StockMovement> = listOf(
-        StockMovement.Receipt(id, paracetamol, tablets("20"), home, occurred, observed, "куплено"),
-        StockMovement.Recount(id, paracetamol, tablets("20"), tablets("18.5"), home, occurred, observed),
+        StockMovement.Receipt(id, paracetamol.ref, tablets("20"), home.ref, occurred, observed, "куплено"),
+        StockMovement.Recount(id, paracetamol.ref, tablets("20"), tablets("18.5"), home.ref, occurred, observed),
         StockMovement.Disposal(
-            id, paracetamol, tablets("3"), StockMovement.Disposal.Reason.EXPIRED, home, occurred, observed
+            id, paracetamol.ref, tablets("3"), StockMovement.Disposal.Reason.EXPIRED, home.ref, occurred, observed
         ),
-        StockMovement.Transfer(id, paracetamol, tablets("5"), home, shared, occurred, observed),
-        StockMovement.RemoteChange(id, paracetamol, BigDecimal("-2.5"), TABLETS, shared, observed),
-        StockMovement.AccessLoss(id, paracetamol, tablets("7"), shared, observed)
+        StockMovement.Transfer(id, paracetamol.ref, tablets("5"), home.ref, shared.ref, occurred, observed),
+        StockMovement.RemoteChange(id, paracetamol.ref, BigDecimal("-2.5"), TABLETS, shared.ref, observed),
+        StockMovement.AccessLoss(id, paracetamol.ref, tablets("7"), shared.ref, observed)
     )
 
     @Test
@@ -69,8 +69,8 @@ class StockMovementStorageMapperTest {
         assertNull(stored.medKitId)
 
         val restored = transfer.toStorageRow().toDomain(VOCABULARY)
-        assertEquals(BigDecimal("-5"), restored.deltaIn(medKit(id = HOME_KIT)))
-        assertEquals(BigDecimal("5"), restored.deltaIn(medKit(id = SHARED_KIT)))
+        assertEquals(BigDecimal("-5"), restored.deltaIn(medKit(id = HOME_KIT).ref))
+        assertEquals(BigDecimal("5"), restored.deltaIn(medKit(id = SHARED_KIT).ref))
     }
 
     /** У чужого изменения и утраты доступа момента события нет: мы знаем только, когда узнали. */
@@ -92,6 +92,6 @@ class StockMovementStorageMapperTest {
         assertEquals("20", stored.beforeAmount)
         assertEquals("18.5", stored.afterAmount)
         assertNull(stored.delta)
-        assertEquals(BigDecimal("-1.5"), recount.toStorageRow().toDomain(VOCABULARY).deltaIn(medKit(id = HOME_KIT)))
+        assertEquals(BigDecimal("-1.5"), recount.toStorageRow().toDomain(VOCABULARY).deltaIn(medKit(id = HOME_KIT).ref))
     }
 }

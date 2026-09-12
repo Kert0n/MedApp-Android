@@ -2,10 +2,11 @@ package com.kert0n.medapp.fixture
 
 import com.kert0n.medapp.domain.pack.PackageAvailability
 import com.kert0n.medapp.domain.pack.Claims
-import com.kert0n.medapp.domain.medkit.MedKit
+import com.kert0n.medapp.domain.medkit.MedKitRef
 import com.kert0n.medapp.domain.pack.ExpiryDate
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageFacts
+import com.kert0n.medapp.domain.pack.PackageProjection
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
 import com.kert0n.medapp.domain.value.DosageForm
 import com.kert0n.medapp.domain.value.Dose
@@ -28,7 +29,7 @@ val OTHER_PACK: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000022")
  */
 fun pack(
     id: Uuid = PACK,
-    medKit: MedKit = medKit(id = HOME_KIT),
+    medKit: MedKitRef = medKit(id = HOME_KIT).ref,
     name: String = "Парацетамол",
     quantity: Quantity = tablets("20"),
     form: DosageForm? = null,
@@ -72,6 +73,10 @@ fun pack(
     lifecycle = lifecycle,
     access = access
 )
+
+/** Проекция пачки без очереди и выделений: оценка равна подтверждённому остатку. */
+fun Package.projected(hasUnconfirmedChanges: Boolean = false): PackageProjection =
+    projection(PackageAvailability(this, effective = quantity), hasUnconfirmedChanges)
 
 /** Сведения, взятые у пачки: круговой тест начинается с того, что уже сохранено. */
 fun factsOf(pkg: Package): PackageFacts = pkg.facts

@@ -1,6 +1,6 @@
 package com.kert0n.medapp.domain.intake
 
-import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.pack.PackageRef
 import com.kert0n.medapp.domain.value.Dose
 import java.time.Instant
 
@@ -9,12 +9,12 @@ import java.time.Instant
  *
  * Обстоятельства события — [amount] с единицей, в которой считали тогда, и [at], который
  * называет человек, — записаны в факте и не перечитываются. [pkg] — ссылка на сегодняшнее: имя,
- * аптечка и нынешняя единица пачки читаются из неё и потому текущие (PLAN D6). Факт против
+ * аптечка и нынешняя единица пачки читаются по ней и потому текущие (PLAN D6). Факт против
  * сегодняшней пачки не проверяется: он был допустим в момент записи, а проверяет это акт —
  * [Package.take]. Пачка может отличаться от плановой, и расход относится к фактической (D5).
  */
 data class TakenDose(
-    val pkg: Package,
+    val pkg: PackageRef,
     val amount: Dose,
     val at: Instant
 )

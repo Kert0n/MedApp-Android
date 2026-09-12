@@ -2,7 +2,7 @@ package com.kert0n.medapp.domain.pack
 
 import com.kert0n.medapp.domain.intake.IntakeRejected
 import com.kert0n.medapp.domain.intake.TakenDose
-import com.kert0n.medapp.domain.medkit.MedKit
+import com.kert0n.medapp.domain.medkit.MedKitRef
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
 import java.time.Instant
@@ -13,15 +13,16 @@ import kotlin.uuid.Uuid
  * Упаковка — конкретная пачка или флакон; одинаковые названия пачки не объединяют (PLAN C0).
  * Сущность: пачка, из которой приняли таблетку, — та же пачка, равенство по [id], состояние
  * меняют переходы. [quantity] — подтверждённый остаток (E1); обвязка синхронизации живёт в
- * `PackageSyncState` слоя данных. Аптечку пачка держит объектом: где она лежит и опубликована
- * ли, спрашивают у неё, а не ищут по номеру.
+ * `PackageSyncState` слоя данных. Аптечку пачка держит ссылкой [MedKitRef]: где она лежит и
+ * опубликована ли, спрашивают у ссылки, а переходы аптечки через неё недоступны.
  *
  * Объект действителен в пределах транзакции, которая его прочитала: пачка на руках после
- * первого же приёма — пачка с прежним остатком, если её не перечитать.
+ * первого же приёма — пачка с прежним остатком, если её не перечитать. Чужим агрегатам пачка
+ * отдаёт [ref] — замороженную ссылку без переходов.
  */
 class Package(
     val id: Uuid,                 // придуман клиентом; он же серверный
-    val medKit: MedKit,
+    val medKit: MedKitRef,
     val facts: PackageFacts,
     val quantity: Quantity,
     val addedAt: Instant,         // для чужой пачки — момент ПЕРВОГО НАБЛЮДЕНИЯ
@@ -50,7 +51,38 @@ class Package(
      * «можно ли отсюда взять» — переходы пачки, расчёт свободного, фильтр списка (PLAN D4, D5).
      */
     val suppliesStock: Boolean
-        get() = lifecycle == Lifecycle.ACTIVE && access == Access.AVAILABLE
+        get() = suppliesStock(lifecycle, access)
+
+    /**
+     * Как пачку видит экран: состояние вместе с доступностью, посчитанной тем, кто читал очередь и
+     * выделения (PLAN D4, E1). Величина — наружу уходит она, а не сущность.
+     */
+    fun projection(availability: PackageAvailability, hasUnconfirmedChanges: Boolean): PackageProjection =
+        PackageProjection(
+            id = id,
+            medKit = medKit,
+            facts = facts,
+            quantity = quantity,
+            addedAt = addedAt,
+            templateId = templateId,
+            claims = claims,
+            lifecycle = lifecycle,
+            access = access,
+            availability = availability,
+            hasUnconfirmedChanges = hasUnconfirmedChanges
+        )
+
+    /** Как пачку видит чужой агрегат — курс, приём, движение: без остатка и без переходов. */
+    val ref: PackageRef
+        get() = PackageRef(
+            id = id,
+            name = facts.name,
+            unit = quantity.unit,
+            form = facts.form,
+            lifecycle = lifecycle,
+            access = access,
+            medKit = medKit
+        )
 
     fun isExpiredOn(date: LocalDate): Boolean = facts.isExpiredOn(date)
 
@@ -68,7 +100,7 @@ class Package(
             amount.unit != quantity.unit -> IntakeRejected.Reason.UNIT_MISMATCH
             else -> null
         }
-        return if (rejection == null) Result.success(TakenDose(this, amount, at))
+        return if (rejection == null) Result.success(TakenDose(ref, amount, at))
         else Result.failure(IntakeRejected(rejection))
     }
 
@@ -113,10 +145,10 @@ class Package(
      * Перенос меняет только принадлежность; что делать с бронями на границе публикации, решает
      * сценарий переноса (PLAN E6).
      *
-     * Принимает саму аптечку, а не её идентификатор: у вызывающего она на руках, а подставить
-     * вместо неё чужой `Uuid` — пачки, формы, единицы — тогда становится нечем.
+     * Принимает ссылку на аптечку, а не её идентификатор: у вызывающего она на руках, а
+     * подставить вместо неё чужой `Uuid` — пачки, формы, единицы — тогда становится нечем.
      */
-    fun moveTo(target: MedKit): Package {
+    fun moveTo(target: MedKitRef): Package {
         requireUsable("перенос")
         require(target != medKit) { "пачка уже лежит в этой аптечке" }
         return changed(medKit = target)
@@ -161,7 +193,7 @@ class Package(
      * непереданный аргумент их сохраняет.
      */
     private fun changed(
-        medKit: MedKit = this.medKit,
+        medKit: MedKitRef = this.medKit,
         facts: PackageFacts = this.facts,
         quantity: Quantity = this.quantity,
         templateId: Uuid? = this.templateId,
@@ -203,4 +235,11 @@ class Package(
      * в аптечке, из которой мы вышли.
      */
     enum class Access { AVAILABLE, LOST }
+
+    companion object {
+
+        /** Одно правило на пачку и её ссылку: берут из целой пачки, которую мы видим. */
+        fun suppliesStock(lifecycle: Lifecycle, access: Access): Boolean =
+            lifecycle == Lifecycle.ACTIVE && access == Access.AVAILABLE
+    }
 }

@@ -1,7 +1,7 @@
 package com.kert0n.medapp.domain.course
 
 import com.kert0n.medapp.domain.pack.Availability
-import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.pack.PackageRef
 import com.kert0n.medapp.domain.value.DosageForm
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Doses
@@ -50,8 +50,23 @@ class CourseDraft(
 
     val allocatedDosesTotal: Doses get() = medicine.allocatedTotal
 
+    /** Как черновик видит экран: величина, наружу уходит она, а не сущность. */
+    fun projection(): CourseDraftProjection = CourseDraftProjection(
+        id = id,
+        title = title,
+        note = note,
+        dose = dose,
+        form = form,
+        schedule = schedule,
+        totalDoses = totalDoses,
+        sources = sources,
+        revision = revision,
+        createdAt = createdAt,
+        updatedAt = updatedAt
+    )
+
     /** Выделение пачки в единицах пачки; `null` — пачка не выбрана. */
-    fun allocatedOf(pkg: Package): Quantity? {
+    fun allocatedOf(pkg: PackageRef): Quantity? {
         val allocated = medicine.allocatedTo(pkg) ?: return null
         return dose?.times(allocated)
     }
@@ -103,7 +118,7 @@ class CourseDraft(
      * первая пачка: пока доза и форма не названы, сверять не с чем, и отказ говорит, чего не
      * хватает.
      */
-    fun attach(pkg: Package, doses: Doses, at: Instant): Result<CourseDraft> {
+    fun attach(pkg: PackageRef, doses: Doses, at: Instant): Result<CourseDraft> {
         val dose = dose ?: return rejected(CourseRejected.Reason.DOSE_MISSING)
         val form = form ?: return rejected(CourseRejected.Reason.FORM_MISSING)
         return medicine.attach(pkg, doses, dose, form)
@@ -111,7 +126,7 @@ class CourseDraft(
     }
 
     /** Отвязка пачки назначения не касается: доза и форма заданы словарём, а не пачкой. */
-    fun detach(pkg: Package, at: Instant): CourseDraft = changed(
+    fun detach(pkg: PackageRef, at: Instant): CourseDraft = changed(
         medicine = medicine.detach(pkg),
         revision = revision.next(),
         updatedAt = at
@@ -123,7 +138,7 @@ class CourseDraft(
         return changed(medicine = moved, revision = revision.next(), updatedAt = at)
     }
 
-    fun allocate(pkg: Package, doses: Doses, at: Instant): CourseDraft = changed(
+    fun allocate(pkg: PackageRef, doses: Doses, at: Instant): CourseDraft = changed(
         medicine = medicine.allocate(pkg, doses),
         revision = revision.next(),
         updatedAt = at
@@ -133,7 +148,7 @@ class CourseDraft(
      * Верхняя граница ползунка пачки. Пока доза не задана, границы нет: выделять нечего, и ноль
      * здесь честнее выдуманного числа.
      */
-    fun maxDoses(pkg: Package, required: Doses, availability: Availability): Doses {
+    fun maxDoses(pkg: PackageRef, required: Doses, availability: Availability): Doses {
         val dose = dose ?: return 0.doses
         return medicine.maxDoses(pkg, dose, required, availability)
     }

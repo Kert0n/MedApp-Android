@@ -12,10 +12,14 @@ import com.kert0n.medapp.fixture.medKit
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.unplannedIntake
 import com.kert0n.medapp.fixture.packageRepository
-import com.kert0n.medapp.fixture.queueRepository
+import com.kert0n.medapp.fixture.queueStorage
+import com.kert0n.medapp.fixture.transactions
 import com.kert0n.medapp.fixture.tablets
-import com.kert0n.medapp.network.intake.IntakeAccounting
-import com.kert0n.medapp.network.intake.IntakeSyncState
+import com.kert0n.medapp.queue.intake.IntakeAccounting
+import com.kert0n.medapp.queue.intake.IntakeSyncState
+import com.kert0n.medapp.network.pack.PackageSnapshot
+import com.kert0n.medapp.network.pack.toDomain
+import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
 import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncState
@@ -23,6 +27,7 @@ import com.kert0n.medapp.network.server.RawResponse
 import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.network.server.medAppJson
 import com.kert0n.medapp.queue.Delivery
+import com.kert0n.medapp.queue.settlement
 import com.kert0n.medapp.queue.PackageState
 import com.kert0n.medapp.queue.RefusalReason
 import com.kert0n.medapp.queue.StoredSyncOperation
@@ -33,26 +38,43 @@ import com.kert0n.medapp.storage.intake.toStorageEntity as toIntakeStorageEntity
 import com.kert0n.medapp.storage.medkit.toStorageEntity as toMedKitStorageEntity
 import com.kert0n.medapp.storage.pack.toDetailsStorageEntity
 import com.kert0n.medapp.storage.pack.toStorageEntity
+import java.math.BigDecimal
 import java.time.Instant
 import kotlin.uuid.Uuid
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import com.kert0n.medapp.queue.QueuedCommand
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import com.kert0n.medapp.fixture.VOCABULARY
 
 /**
- * Хранилище очереди для работника: заморозка запроса с предусловиями пачки, закрытие с
- * применением снимка и учётом приёма — одной транзакцией каждое (PLAN E1, E2, F5).
+ * Порт очереди в Room: заморозка запроса с предусловиями пачки, применение исхода со всеми его
+ * эффектами — одной транзакцией каждое (PLAN E1, E2, F5). Что исход значит, решает очередь
+ * (`Delivery.settlement`); здесь проверяется, что хранение применяет решённое.
  */
-class QueueStorageTest {
+class QueueRoomStorageTest {
 
     private lateinit var database: MedAppDatabase
-    private val storage get() = database.queueRepository()
+    private val storage get() = database.queueStorage()
+
+    /** Исход — через решение очереди, как его отдаёт работник. */
+    private suspend fun QueueRoomStorage.settle(id: Uuid, outcome: Delivery, at: Instant) {
+        val command = (requireNotNull(database.syncOperations().find(id)).toDomain(VOCABULARY) as StoredSyncOperation.Readable).operation.command
+        settle(id, outcome.settlement(command), at)
+    }
 
     private val operation: Uuid = Uuid.parse("00000000-0000-4000-8000-000000000091")
     private val at: Instant = Instant.parse("2026-09-10T12:00:00Z")
@@ -63,8 +85,12 @@ class QueueStorageTest {
          "reservations":{"total":"4.000000","mine":"4.000000","version":2}}
     """
 
-    private val snapshot: PackageSnapshotNetworkDTO =
-        medAppJson.decodeFromString(PackageSnapshotNetworkDTO.serializer(), snapshotJson)
+    private val snapshot: PackageSnapshot = resolved(snapshotJson)
+
+    /** Снимок, каким его отдаёт резолвер: собранный в домен, аптечка — домашняя. */
+    private fun resolved(json: String): PackageSnapshot =
+        medAppJson.decodeFromString(PackageSnapshotNetworkDTO.serializer(), json)
+            .toDomain(VOCABULARY, medKit(publication = MedKit.Publication.PUBLISHED).ref, addedAt = at, observedAt = at)
 
     @Before
     fun openDatabase() = runTest {
@@ -117,8 +143,10 @@ class QueueStorageTest {
         val first = (storage.take(operation, null, at) as Take.Sending).operation.prepared
         // Версия пачки ушла вперёд — а замороженный запрос остался с прежней (PLAN E2).
         val moved = pack(quantity = tablets("20"), form = TABLET_FORM)
-        database.packages().applyServerSnapshot(
-            moved.toStorageEntity(PackageSyncState(PACK, ResourceVersion(9), ResourceVersion(1), at)), at
+        database.packages().applySnapshot(
+            moved.toStorageEntity(PackageSyncState(PACK, ResourceVersion(9), ResourceVersion(1), at)),
+            claims = null,
+            observedAt = at
         )
 
         val second = (storage.take(operation, null, at.plusSeconds(60)) as Take.Sending).operation.prepared
@@ -147,7 +175,9 @@ class QueueStorageTest {
         assertNotNull(pkg.claims)
         val stored = requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable
         assertEquals(SyncOperationStatus.APPLIED, stored.operation.status)
-        assertEquals(1, stored.operation.attempts)
+        // Счёт попыток — вход задержки повтора, и только он: закрытой операции повторяться
+        // незачем, поэтому закрытие его не двигает (PLAN E2, E3).
+        assertEquals(0, stored.operation.attempts)
         assertEquals(IntakeAccounting.REMOTE_APPLIED, requireNotNull(database.intakes().findEntity(INTAKE)).accounting)
         assertEquals(IntakeStatus.TAKEN, requireNotNull(database.intakes().findEntity(INTAKE)).status)
         assertTrue(storage.ready(at.plusSeconds(600)).isEmpty())
@@ -208,17 +238,19 @@ class QueueStorageTest {
     fun staleAppliesTheSnapshotDropsTheRequestAndLeavesTheOperationPending() = runTest {
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
         val frozen = (storage.take(operation, null, at) as Take.Sending).operation.prepared
-        // Исход неизвестен — попытка засчитана; она принадлежит этому запросу, а не операции.
-        storage.settle(operation, Delivery.Retry("ответ потерян"), at)
-        storage.take(operation, null, at.plusSeconds(1))
+        // Исход неизвестен — факт принадлежит этому запросу, а не операции.
+        storage.settle(operation, Delivery.Retry("ответ потерян", outcomeUnknown = true), at)
+        val taken = (storage.take(operation, null, at.plusSeconds(1)) as Take.Sending).operation
+        assertTrue(taken.outcomeUnknown)
 
         storage.settle(operation, Delivery.Stale(snapshot), at.plusSeconds(1))
 
         val stored = requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable
         assertEquals(SyncOperationStatus.PENDING, stored.operation.status)
         assertNull(stored.operation.prepared)
-        // Запрос сброшен — сброшен и счёт его попыток: следующий уходит впервые.
-        assertEquals(0, stored.operation.attempts)
+        // Запрос сброшен — сброшен и факт о нём; счёт попыток остаётся у операции как вход задержки.
+        assertFalse(stored.operation.outcomeUnknown)
+        assertEquals(1, stored.operation.attempts)
         assertEquals(tablets("17"), requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY).quantity)
         // Заново — уже по свежему состоянию, а не по прежнему запросу.
         val again = (storage.take(operation, null, at.plusSeconds(2)) as Take.Sending).operation.prepared
@@ -261,10 +293,7 @@ class QueueStorageTest {
             )
         )
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
-        val inMillilitres = medAppJson.decodeFromString(
-            PackageSnapshotNetworkDTO.serializer(),
-            snapshotJson.replace(TABLETS.id.toString(), com.kert0n.medapp.fixture.MILLILITRES.id.toString())
-        )
+        val inMillilitres = resolved(snapshotJson.replace(TABLETS.id.toString(), com.kert0n.medapp.fixture.MILLILITRES.id.toString()))
 
         val take = storage.take(operation, inMillilitres, at)
 
@@ -273,6 +302,31 @@ class QueueStorageTest {
         assertEquals(SyncOperationStatus.REFUSED, stored.operation.status)
         assertEquals(IntakeAccounting.REMOTE_REFUSED, requireNotNull(database.intakes().findEntity(INTAKE)).accounting)
         assertEquals(com.kert0n.medapp.fixture.millilitres("17"), requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY).quantity)
+        // Отправки не было вовсе: подготовка закрыла операцию сама, и попытке взяться неоткуда.
+        assertEquals(0, stored.operation.attempts)
+    }
+
+    /**
+     * `attempts` растёт только там, где от него зависит задержка следующего захода — `Retry` и
+     * `defer`. Закрытие не повторяется, и счёт ему не принадлежит (PLAN E2, E3).
+     *
+     * Красная проверка: вернуть закрытию `attempted = 1` — оба случая краснеют.
+     */
+    @Test
+    fun closingDoesNotCountAnAttemptWhileRetryDoes() = runTest {
+        database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
+        storage.take(operation, null, at)
+
+        storage.settle(operation, Delivery.Retry("обрыв", notBefore = at.plusSeconds(30)), at)
+        val retried = (requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable).operation
+        assertEquals(1, retried.attempts)
+
+        storage.take(operation, null, at.plusSeconds(31))
+        storage.settle(operation, Delivery.Applied(PackageState.Present(snapshot)), at.plusSeconds(32))
+
+        val closed = (requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable).operation
+        assertEquals(SyncOperationStatus.APPLIED, closed.status)
+        assertEquals(1, closed.attempts)
     }
 
     /** Полученный ответ записан до применения: он в базе, операция готова к закрытию без сети. */
@@ -312,22 +366,67 @@ class QueueStorageTest {
         assertEquals(listOf(operation), storage.ready(at.plusSeconds(31)).map { it.id })
     }
 
-    /** Запоздалый снимок свежий не перекрывает: меньшая версия большую не откатывает (PLAN E1). */
+    /**
+     * Запоздалый снимок свежий не перекрывает: меньшая версия большую не откатывает (PLAN E1).
+     * Половина, которая не запоздала, при этом ложится: версии независимы, и картина броней с
+     * версией 2 поверх известной 1 — новость, даже когда состояние пачки старее (PLAN B3).
+     */
     @Test
     fun anOlderSnapshotDoesNotOverwriteANewerOne() = runTest {
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
         storage.take(operation, null, at)
-        val older = medAppJson.decodeFromString(
-            PackageSnapshotNetworkDTO.serializer(),
-            snapshotJson.replace("\"version\":4", "\"version\":2").replace("17.000000", "19.000000")
-        )
+        val older = resolved(snapshotJson.replace("\"version\":4", "\"version\":2").replace("17.000000", "19.000000"))
 
         storage.settle(operation, Delivery.Applied(PackageState.Present(older)), at.plusSeconds(1))
 
         val row = requireNotNull(database.packages().find(PACK))
         assertEquals(tablets("20"), row.toDomain(VOCABULARY).quantity)
         assertEquals(ResourceVersion(3), row.pack.syncState().version)
+        assertEquals(BigDecimal("4.000000"), requireNotNull(row.toDomain(VOCABULARY).claims).total)
+        assertEquals(ResourceVersion(2), row.pack.syncState().claimsVersion)
         assertEquals(SyncOperationStatus.APPLIED, (requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable).operation.status)
+    }
+
+    /** Запоздалая картина броней не откатывает свежую, даже когда состояние пачки ложится (B3, E1). */
+    @Test
+    fun anOlderClaimsHalfDoesNotOverwriteANewerOne() = runTest {
+        database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
+        storage.take(operation, snapshot, at)
+        val staleClaims = resolved(
+            snapshotJson.replace("\"version\":4", "\"version\":5")
+                .replace("\"total\":\"4.000000\",\"mine\":\"4.000000\",\"version\":2", "\"total\":\"9.000000\",\"version\":1")
+        )
+
+        storage.settle(operation, Delivery.Applied(PackageState.Present(staleClaims)), at.plusSeconds(1))
+
+        val row = requireNotNull(database.packages().find(PACK))
+        assertEquals(ResourceVersion(5), row.pack.syncState().version)
+        assertEquals(BigDecimal("4.000000"), requireNotNull(row.toDomain(VOCABULARY).claims).total)
+        assertEquals(ResourceVersion(2), row.pack.syncState().claimsVersion)
+    }
+
+    /**
+     * Сигнал таблицы приходит **после** коммита внешней транзакции: тот, кто его услышал, видит
+     * операцию в `ready`. Это и есть outbox — команду забирает не тот, кто положил (PLAN E4, F5).
+     * Красная проверка: подделка, зовущая сигнал внутри транзакции, увидела бы пустую очередь.
+     */
+    @Test
+    fun theChangeSignalArrivesAfterTheOuterTransactionCommits() = runBlocking {
+        val seen = CompletableDeferred<List<Uuid>>()
+        val watcher = launch(Dispatchers.IO) {
+            storage.changes().first()
+            seen.complete(storage.ready(at.plusSeconds(1)).map { it.id })
+        }
+        delay(300) // подписка на таблицу успела встать
+
+        database.transactions().run {
+            storage.enqueue(QueuedCommand(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE)), at)
+            delay(300) // транзакция ещё открыта: сигнала быть не должно
+            assertFalse(seen.isCompleted)
+        }
+
+        assertEquals(listOf(operation), withTimeout(5_000) { seen.await() })
+        watcher.cancel()
     }
 
     /** Закрытие одно: закрытую операцию второй исход не переписывает и следствий не оставляет. */

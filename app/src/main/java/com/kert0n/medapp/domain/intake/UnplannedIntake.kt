@@ -19,6 +19,8 @@ class UnplannedIntake(
 
     override val taken: TakenDose get() = dose
 
+    override fun projection(): IntakeProjection.Unplanned = IntakeProjection.Unplanned(id, dose)
+
     /** Тождество — [id]: запись остаётся той же записью. */
     override fun equals(other: Any?): Boolean =
         this === other || (other is UnplannedIntake && other.id == id)

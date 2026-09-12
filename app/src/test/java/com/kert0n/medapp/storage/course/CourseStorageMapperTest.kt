@@ -29,7 +29,7 @@ import com.kert0n.medapp.domain.value.doses
 import com.kert0n.medapp.fixture.LATER
 import com.kert0n.medapp.fixture.availability
 import com.kert0n.medapp.fixture.tablets
-import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.pack.PackageRef
 import com.kert0n.medapp.fixture.toStorageRow
 
 /**
@@ -39,7 +39,7 @@ import com.kert0n.medapp.fixture.toStorageRow
 class CourseStorageMapperTest {
 
     /** Строки источников с пачками — так их собрала бы база связью. */
-    private fun rowsOf(sources: List<CourseSourceStorageEntity>, packs: List<Package>) =
+    private fun rowsOf(sources: List<CourseSourceStorageEntity>, packs: List<PackageRef>) =
         sources.map { source ->
             CourseSourceStorageRow(source, packs.single { it.id == source.packageId }.toStorageRow())
         }

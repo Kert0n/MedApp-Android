@@ -6,20 +6,20 @@ import com.kert0n.medapp.domain.course.CourseSource
 import com.kert0n.medapp.domain.value.Doses
 import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.storage.pack.PackageStorageEntity
-import com.kert0n.medapp.storage.pack.PackageStorageRow
+import com.kert0n.medapp.storage.pack.PackageRefStorageRow
 
 /**
- * Источник курса вместе со своей пачкой: домен держит пачку объектом, и Room читает её той же
- * транзакцией, что и курс, — одним запросом на все источники, а не по запросу на строку.
+ * Источник курса вместе со ссылкой на свою пачку: Room читает её той же транзакцией, что и
+ * курс, — одним запросом на все источники, а не по запросу на строку.
  */
 class CourseSourceStorageRow(
     @Embedded val source: CourseSourceStorageEntity,
     @Relation(entity = PackageStorageEntity::class, parentColumn = "package_id", entityColumn = "id")
-    val pack: PackageStorageRow? = null
+    val pack: PackageRefStorageRow? = null
 ) {
     fun toDomain(vocabulary: Vocabulary): CourseSource = CourseSource(
         pkg = requireNotNull(pack) { "источник курса ссылается на пачку, которой нет: ${source.packageId}" }
-            .toDomain(vocabulary),
+            .toRef(vocabulary),
         allocatedDoses = Doses(source.allocatedDoses)
     )
 }

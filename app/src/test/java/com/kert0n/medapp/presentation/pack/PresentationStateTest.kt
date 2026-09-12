@@ -2,12 +2,20 @@ package com.kert0n.medapp.presentation.pack
 
 import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.pack.Claims
+import com.kert0n.medapp.domain.pack.PackageProjection
+import com.kert0n.medapp.domain.medkit.MedKitProjection
+import com.kert0n.medapp.fixture.projected
 import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.value.DosageForm
 import com.kert0n.medapp.domain.value.Money
+import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.domain.value.QuantityUnit
 import com.kert0n.medapp.presentation.medkit.MedKitPresentationDTO
 import com.kert0n.medapp.presentation.medkit.toPresentationDTO
 
 import com.kert0n.medapp.fixture.HOME_KIT
+import com.kert0n.medapp.fixture.TABLETS_ID
+import com.kert0n.medapp.fixture.TABLET_FORM_ID
 import com.kert0n.medapp.fixture.factsOf
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.dose
@@ -36,28 +44,29 @@ class PresentationStateTest {
     @Test
     fun stateFlowReceivesConsumptionDescriptionAndArchivingOfTheSamePackage() = runTest {
         val original = pack(quantity = tablets("20"))
-        val updates = MutableSharedFlow<List<Package>>()
+        val updates = MutableSharedFlow<List<PackageProjection>>()
         val state = updates.map { packages ->
             PackageListState(packages.map { it.toPresentationDTO() })
         }.stateIn(backgroundScope, SharingStarted.Eagerly, PackageListState(emptyList()))
         runCurrent()
 
-        updates.emit(listOf(original))
+        updates.emit(listOf(original.projected()))
         runCurrent()
         assertEquals("20", state.value.packages.single().quantity.amount)
 
         val consumed = original.consume(dose("1"))
         assertEquals(original, consumed) // Доменное тождество не меняем ради интерфейса.
-        updates.emit(listOf(consumed))
+        assertNotEquals(original.projected(), consumed.projected()) // Наружу уходит проекция, и она различает.
+        updates.emit(listOf(consumed.projected()))
         runCurrent()
         assertEquals("19", state.value.packages.single().quantity.amount)
 
         val edited = consumed.describe(factsOf(consumed).copy(note = "В поездку"))
-        updates.emit(listOf(edited))
+        updates.emit(listOf(edited.projected()))
         runCurrent()
         assertEquals("В поездку", state.value.packages.single().note)
 
-        updates.emit(listOf(edited.consume(dose("19"))))
+        updates.emit(listOf(edited.consume(dose("19")).projected()))
         runCurrent()
         assertEquals("0", state.value.packages.single().quantity.amount)
         assertEquals(Package.Lifecycle.ARCHIVED, state.value.packages.single().lifecycle)
@@ -67,19 +76,20 @@ class PresentationStateTest {
     fun stateFlowReceivesRenamingAndLocationClearingOfTheSameKit() = runTest {
         val original =
             MedKit(HOME_KIT, "Домашняя", "Шкаф", MedKit.Publication.LOCAL, 1, Instant.EPOCH)
-        val updates = MutableSharedFlow<List<MedKit>>()
+        val updates = MutableSharedFlow<List<MedKitProjection>>()
         val state = updates.map { kits ->
             MedKitListState(kits.map { it.toPresentationDTO() })
         }.stateIn(backgroundScope, SharingStarted.Eagerly, MedKitListState(emptyList()))
         runCurrent()
 
-        updates.emit(listOf(original))
+        updates.emit(listOf(original.projection()))
         runCurrent()
         assertEquals("Домашняя", state.value.medKits.single().name)
 
         val edited = original.describe("Дачная", null)
         assertEquals(original, edited)
-        updates.emit(listOf(edited))
+        assertNotEquals(original.projection(), edited.projection())
+        updates.emit(listOf(edited.projection()))
         runCurrent()
         assertEquals("Дачная", state.value.medKits.single().name)
         assertNull(state.value.medKits.single().location)
@@ -97,8 +107,36 @@ class PresentationStateTest {
             price = Money(BigDecimal("150.00")),
             claims = Claims(BigDecimal("5.000000"), BigDecimal("2.000000"))
         )
-        assertEquals(first.toPresentationDTO(), same.toPresentationDTO())
-        assertEquals(first.toPresentationDTO().hashCode(), same.toPresentationDTO().hashCode())
+        assertEquals(first.projected().toPresentationDTO(), same.projected().toPresentationDTO())
+        assertEquals(first.projected().toPresentationDTO().hashCode(), same.projected().toPresentationDTO().hashCode())
+    }
+
+    /**
+     * Экран показывает **имя** единицы и формы, а не их номера. Домен различает словарь по
+     * тождеству — переименованная единица та же самая (PLAN D1), — поэтому состояние экрана
+     * держит свои величины и переименование замечает.
+     *
+     * Красная проверка: вернуть в DTO доменные `QuantityUnit` и `DosageForm` — оба случая
+     * краснеют, состояния оказываются равными.
+     */
+    @Test
+    fun aRenamedUnitChangesThePresentationState() {
+        val before = pack(quantity = Quantity(BigDecimal("20"), QuantityUnit(TABLETS_ID, "таблетка")))
+        val after = pack(quantity = Quantity(BigDecimal("20"), QuantityUnit(TABLETS_ID, "пилюля")))
+        assertEquals(before.quantity.unit, after.quantity.unit)
+
+        assertNotEquals(before.projected().toPresentationDTO(), after.projected().toPresentationDTO())
+        assertEquals("пилюля", after.projected().toPresentationDTO().quantity.unit.name)
+    }
+
+    @Test
+    fun aRenamedFormChangesThePresentationState() {
+        val before = pack(form = DosageForm(TABLET_FORM_ID, "таблетки"))
+        val after = pack(form = DosageForm(TABLET_FORM_ID, "пилюли"))
+        assertEquals(before.facts.form, after.facts.form)
+
+        assertNotEquals(before.projected().toPresentationDTO(), after.projected().toPresentationDTO())
+        assertEquals("пилюли", requireNotNull(after.projected().toPresentationDTO().form).name)
     }
 
     @Test
@@ -106,6 +144,6 @@ class PresentationStateTest {
         val before = pack(claims = Claims(BigDecimal("5"), null))
         val after = pack(claims = Claims(BigDecimal("8"), null))
         assertEquals(before, after)
-        assertNotEquals(before.toPresentationDTO(), after.toPresentationDTO())
+        assertNotEquals(before.projected().toPresentationDTO(), after.projected().toPresentationDTO())
     }
 }

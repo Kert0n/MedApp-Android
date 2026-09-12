@@ -19,6 +19,9 @@ import com.kert0n.medapp.storage.value.storedUnit
  * у пачки, а не ноль (PLAN F1). Единицу и форму строка держит идентификаторами, а объекты даёт
  * снимок словаря; аптечку Room читает связью в той же транзакции, и одну на всю выборку — списку
  * пачек не нужно по запросу на строку.
+ *
+ * Подсказка дозы живёт в личных сведениях, а единица пачки — в серверной части, и сосед меняет
+ * её без нас: подсказка в чужой единице потеряла смысл и не восстанавливается.
  */
 class PackageStorageRow(
     @Embedded val pack: PackageStorageEntity,
@@ -31,7 +34,7 @@ class PackageStorageRow(
 ) {
     fun toDomain(vocabulary: Vocabulary): Package = Package(
         id = pack.id,
-        medKit = requireNotNull(medKit) { "пачка лежит в аптечке, которой нет: ${pack.medKitId}" }.toDomain(),
+        medKit = pack.medKitRow(medKit).toRef(),
         facts = PackageFacts(
             shared = pack.sharedFacts(vocabulary),
             expiresOn = details.expiry(),
@@ -39,7 +42,7 @@ class PackageStorageRow(
                 val unitId = requireNotNull(details.defaultIntakeUnitId) {
                     "доза-подсказка без единицы не восстанавливается"
                 }
-                storedDose(it, vocabulary.storedUnit(unitId))
+                storedDose(it, vocabulary.storedUnit(unitId)).takeIf { hint -> hint.unit.id == pack.quantityUnitId }
             },
             note = details.note,
             price = details.price?.let {

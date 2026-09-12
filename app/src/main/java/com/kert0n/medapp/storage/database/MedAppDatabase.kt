@@ -3,6 +3,9 @@ package com.kert0n.medapp.storage.database
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.SQLiteConnection
+import androidx.sqlite.execSQL
 import com.kert0n.medapp.storage.course.ActivePackageAssignmentStorageEntity
 import com.kert0n.medapp.storage.course.CourseDao
 import com.kert0n.medapp.storage.course.CourseRecordStorageEntity
@@ -75,7 +78,18 @@ abstract class MedAppDatabase : RoomDatabase() {
     abstract fun vocabulary(): VocabularyDao
 
     companion object {
-        const val VERSION = 1
+        const val VERSION = 2
         const val NAME = "medapp.db"
+
+        /** Факт «замороженный запрос уходил, исход неизвестен» получил свою колонку (PLAN E3). */
+        val MIGRATION_1_2: Migration = object : Migration(1, 2) {
+            override fun migrate(connection: SQLiteConnection) {
+                connection.execSQL(
+                    "ALTER TABLE sync_operations ADD COLUMN outcome_unknown INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
+        val MIGRATIONS: Array<Migration> get() = arrayOf(MIGRATION_1_2)
     }
 }

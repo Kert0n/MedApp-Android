@@ -1,15 +1,15 @@
 package com.kert0n.medapp.presentation.medkit
 
-import com.kert0n.medapp.domain.medkit.MedKit
+import com.kert0n.medapp.domain.medkit.MedKitProjection
 import java.time.Instant
 
 /**
- * Преобразует состояние до операторов потока, которые сравнивают значения через equals.
+ * Строит состояние экрана из доменной проекции: как та собрана, представление не знает (PLAN H1).
  *
  * [syncedAt] приходит аргументом: момент последней сверки принадлежит обвязке синхронизации,
  * а не аптечке.
  */
-fun MedKit.toPresentationDTO(syncedAt: Instant? = null): MedKitPresentationDTO =
+fun MedKitProjection.toPresentationDTO(syncedAt: Instant? = null): MedKitPresentationDTO =
     MedKitPresentationDTO(
         id = id,
         name = name,

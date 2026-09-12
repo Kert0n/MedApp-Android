@@ -45,7 +45,7 @@ class PackageIdentityTest {
         // Фабрики нет: когда пачку позволено завести — правило сценария добавления, а не модели.
         val built = Package(
             id = PACK,
-            medKit = medKit(id = HOME_KIT),
+            medKit = medKit(id = HOME_KIT).ref,
             facts = PackageFacts(PackageSharedFacts(name = "Парацетамол", form = TABLET_FORM)),
             quantity = tablets("20"),
             addedAt = Instant.EPOCH

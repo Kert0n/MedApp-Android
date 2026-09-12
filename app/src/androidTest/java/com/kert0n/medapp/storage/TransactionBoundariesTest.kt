@@ -30,8 +30,8 @@ import com.kert0n.medapp.fixture.prescription
 import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.fixture.unplannedIntake
-import com.kert0n.medapp.network.intake.IntakeAccounting
-import com.kert0n.medapp.network.intake.IntakeSyncState
+import com.kert0n.medapp.queue.intake.IntakeAccounting
+import com.kert0n.medapp.queue.intake.IntakeSyncState
 import com.kert0n.medapp.queue.pack.PackageSyncCommand
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.network.server.ResourceVersion
@@ -59,10 +59,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import com.kert0n.medapp.fixture.VOCABULARY
-import com.kert0n.medapp.queue.QueueSending
 import com.kert0n.medapp.queue.QueueService
 import com.kert0n.medapp.domain.medkit.MedKit
-import com.kert0n.medapp.fixture.queueRepository
+import com.kert0n.medapp.fixture.queueStorage
+import com.kert0n.medapp.fixture.transactions
 
 /**
  * Связанные изменения сохраняются атомарно: откат не оставляет ни отдельного расхода, ни
@@ -89,7 +89,7 @@ class TransactionBoundariesTest {
         packages = database.packageRepository()
         courses = database.courseRepository()
         intakes = database.intakeRepository()
-        queue = QueueService(database.queueRepository(), QueueSending.none)
+        queue = QueueService(database.transactions(), database.queueStorage())
         database.medKits().upsert(medKit().toMedKitStorageEntity())
         database.medKits().upsert(medKit(id = SHARED_KIT, name = "Дача").toMedKitStorageEntity())
         packages.add(paracetamol)
@@ -148,12 +148,12 @@ class TransactionBoundariesTest {
         val ibuprofen = pack(id = OTHER_PACK, quantity = tablets("10"), form = TABLET_FORM)
         packages.add(ibuprofen)
 
-        val extended = activation.course.attach(ibuprofen, 3.doses, LATER).getOrThrow()
+        val extended = activation.course.attach(ibuprofen.ref, 3.doses, LATER).getOrThrow()
         assertTrue(courses.updateSources(extended, expected = activation.course.revision))
         assertEquals(COURSE, courses.courseHolding(PACK))
         assertEquals(COURSE, courses.courseHolding(OTHER_PACK))
 
-        val shrunk = extended.detach(paracetamol, LATER)
+        val shrunk = extended.detach(paracetamol.ref, LATER)
         assertTrue(courses.updateSources(shrunk, expected = extended.revision))
         assertNull(courses.courseHolding(PACK))
         assertEquals(COURSE, courses.courseHolding(OTHER_PACK))
@@ -167,7 +167,7 @@ class TransactionBoundariesTest {
         courses.activate(activation, planned = listOf(plannedIntake()))
         val ibuprofen = pack(id = OTHER_PACK, quantity = tablets("10"), form = TABLET_FORM)
         packages.add(ibuprofen)
-        val extended = activation.course.attach(ibuprofen, 3.doses, LATER).getOrThrow()
+        val extended = activation.course.attach(ibuprofen.ref, 3.doses, LATER).getOrThrow()
 
         val failure = runCatching {
             courses.reallocate(CourseReallocation(extended, activation.course.revision))
@@ -246,7 +246,7 @@ class TransactionBoundariesTest {
         database.syncOperations().enqueue(operation, PackageSyncCommand.Delete(PACK), at)
 
         val failure = runCatching {
-            queue.change(published, listOf(clash), at) {
+            queue.change(published.ref, listOf(clash), at) {
                 intakes.record(
                     IntakeOutcome(
                         intake = plannedIntake().confirm(paracetamol.take(dose("2"), LATER).getOrThrow()),
@@ -332,7 +332,7 @@ class TransactionBoundariesTest {
         val consume = QueuedCommand(operation, PackageSyncCommand.Consume(PACK, dose("2"), INTAKE))
 
         assertTrue(
-            queue.change(published, listOf(consume), at) {
+            queue.change(published.ref, listOf(consume), at) {
                 intakes.record(
                     IntakeOutcome(
                         intake = plannedIntake().confirm(paracetamol.take(dose("2"), LATER).getOrThrow()),
@@ -354,7 +354,7 @@ class TransactionBoundariesTest {
         val recount = QueuedCommand(operation, PackageSyncCommand.CorrectStock(PACK, tablets("17")))
 
         assertTrue(
-            queue.change(local, listOf(recount), at) {
+            queue.change(local.ref, listOf(recount), at) {
                 packages.adjust(PackageAdjustment.Recount(PACK, tablets("17"), movementId), at = LATER)
             }
         )
@@ -370,7 +370,7 @@ class TransactionBoundariesTest {
         val recount = QueuedCommand(operation, PackageSyncCommand.CorrectStock(gone, tablets("17")))
 
         assertFalse(
-            queue.change(published, listOf(recount), at) {
+            queue.change(published.ref, listOf(recount), at) {
                 packages.adjust(PackageAdjustment.Recount(gone, tablets("17"), movementId), at = LATER)
             }
         )
@@ -585,7 +585,7 @@ class TransactionBoundariesTest {
     @Test
     fun transferMovesThePackageAndRecordsBothEnds() = runTest {
         packages.adjust(
-            PackageAdjustment.Transfer(PACK, medKit(id = SHARED_KIT, name = "Дача"), movementId),
+            PackageAdjustment.Transfer(PACK, medKit(id = SHARED_KIT, name = "Дача").ref, movementId),
             at = LATER
         )
 
@@ -601,7 +601,7 @@ class TransactionBoundariesTest {
         val recount = QueuedCommand(operation, PackageSyncCommand.CorrectStock(PACK, tablets("4")))
 
         val failure = runCatching {
-            queue.change(published, listOf(recount), at) {
+            queue.change(published.ref, listOf(recount), at) {
                 packages.adjust(PackageAdjustment.Recount(PACK, tablets("4"), movementId), at = LATER)
             }
         }.exceptionOrNull()

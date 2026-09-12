@@ -1,9 +1,11 @@
 package com.kert0n.medapp.queue
 
-import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
+import com.kert0n.medapp.domain.medkit.MedKitRef
+import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.network.server.RawResponse
 import java.time.Instant
 import kotlin.uuid.Uuid
+import kotlinx.coroutines.flow.Flow
 
 /**
  * Что очереди нужно от хранилища — и только это. Транзакция принадлежит хранилищу: заморозить
@@ -12,6 +14,12 @@ import kotlin.uuid.Uuid
  * реализация живёт в хранении.
  */
 interface QueueStorage {
+
+    /**
+     * Сигнал «таблица операций изменилась» — после коммита по определению: тот, кто положил
+     * команду, о ней не сообщает, её замечает тот, кто следит за таблицей ([QueueOutbox]).
+     */
+    fun changes(): Flow<Unit>
 
     /**
      * Готовые к работе на момент [now], по порядку номера — одно определение, и живёт оно в
@@ -23,15 +31,25 @@ interface QueueStorage {
     suspend fun ready(now: Instant): List<StoredSyncOperation>
 
     /**
-     * Берёт операцию в отправку: применяет [fresh] — только что прочитанное состояние пачки,
-     * если работник его читал, — замораживает запрос по нему, если он ещё не собран, и переводит
+     * Когда наступит ближайший срок незакрытой операции, ещё не наступивший к [now]; `null` — ждать
+     * нечего. Срок повтора — состояние базы, а не память прохода: проход видит только то, что
+     * трогал, а отложенная при старте или чужим проходом операция ждёт ровно здесь.
+     */
+    suspend fun nextDueAt(now: Instant): Instant?
+
+    /** Ссылка на аптечку, которую называет снимок; `null` — локально её нет, и снимок положить некуда. */
+    suspend fun medKit(id: Uuid): MedKitRef?
+
+    /**
+     * Берёт операцию в отправку: применяет [fresh] — только что прочитанное и разрешённое
+     * состояние пачки, если работник его читал, — замораживает запрос по нему, если он ещё не собран, и переводит
      * в `SENDING` одной транзакцией. Так запрос везёт предусловия, которые у сервера **сейчас**,
      * а не те, что устройство видело когда-то (PLAN E2, E3). Собранный запрос не
      * пересобирается: повтор с неизвестным исходом идёт тем же. Подготовка может и не дать
      * запроса — отказать или найти желаемое уже наступившим: тогда операция закрывается здесь
      * же, той же транзакцией. `null` — операции нет или она уже закрыта.
      */
-    suspend fun take(id: Uuid, fresh: PackageSnapshotNetworkDTO?, at: Instant): Take?
+    suspend fun take(id: Uuid, fresh: PackageSnapshot?, at: Instant): Take?
 
     /**
      * Записывает ответ сервера до того, как он применён: полученное подтверждение не теряется,
@@ -42,11 +60,12 @@ interface QueueStorage {
     /** Ответ есть, применить его пока нечем — операция остаётся `ANSWERED` до [notBefore], причина названа. */
     suspend fun defer(id: Uuid, reason: String, at: Instant, notBefore: Instant)
 
-    /** Отпускает операцию с исходом; что исход значит для строк, решает хранилище. */
-    suspend fun settle(id: Uuid, outcome: Delivery, at: Instant)
-
-    /** Одна транзакция на изменение и его команду: порознь их не бывает (PLAN F5). */
-    suspend fun <T> transaction(block: suspend () -> T): T
+    /**
+     * Применяет [settlement] одной транзакцией: переход строки операции и его эффекты. Что исход
+     * значит, уже решено в очереди ([Delivery.settlement]); эффекты ложатся только если переход
+     * изменил строку — закрытие одно.
+     */
+    suspend fun settle(id: Uuid, settlement: Settlement, at: Instant)
 
     /** Ставит команду; номер выдаёт хранилище. Только внутри [transaction] с её причиной. */
     suspend fun enqueue(queued: QueuedCommand, at: Instant): SyncOperation

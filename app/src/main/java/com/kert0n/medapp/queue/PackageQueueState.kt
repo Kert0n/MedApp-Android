@@ -8,8 +8,12 @@ import kotlin.uuid.Uuid
 /**
  * Остаток пачки глазами очереди: подтверждённое сервером число и незакрытые команды в порядке
  * `sequence` (PLAN E1). Закрытые — применённые, отказанные, потерявшие доступ — не считаются:
- * истина по ним уже прочитана снимком и лежит в подтверждённом числе. Домену отдаётся [amount]; признаки очереди остаются здесь, и экран
- * сводит их с доменным результатом сам.
+ * истина по ним уже прочитана снимком и лежит в подтверждённом числе. Домену отдаётся [amount];
+ * признаки очереди остаются здесь, и экран сводит их с доменным результатом сам.
+ *
+ * Свёртка тотальна: она стоит на пути чтения, и данные, которые она видит, — законное состояние
+ * базы. Команда в единице, которой пачку больше не считают (сосед сменил её на сервере, а
+ * подготовка ещё не отвергла команду при взятии), в число не входит и названа в [incompatible].
  */
 class PackageQueueState(
     val packageId: Uuid,
@@ -47,14 +51,25 @@ class PackageQueueState(
     /** В число вложено незакрытое изменение количества; правка описания или брони не в счёт. */
     val hasUnconfirmedChanges: Boolean get() = projected.changed
 
-    /** Одна свёртка на оба вопроса: меняла ли команда количество, она узнаёт по дороге. */
+    /**
+     * Незакрытые команды в единице, которой пачку больше не считают: ждут отказа при взятии
+     * (`UNIT_CHANGED`), в число не входят. Экран называет их рядом с нечитаемыми.
+     */
+    val incompatible: List<PackageSyncCommand> get() = projected.incompatible
+
+    /** Одна свёртка на все вопросы: меняла ли команда количество и применима ли она, узнаётся по дороге. */
     private val projected: Projected =
-        unclosed.fold(Projected(confirmed, changed = false)) { acc, command ->
+        unclosed.fold(Projected(confirmed, changed = false, incompatible = emptyList())) { acc, command ->
+            val unit = command.measuredIn
+            // Число без единицы сервер прочёл бы в своей: такая команда на провод не пойдёт.
+            if (unit != null && unit != confirmed.unit) return@fold acc.copy(incompatible = acc.incompatible + command)
             val next = command.appliedTo(acc.amount) ?: return@fold acc
-            // Пересчёт заменяет число целиком, поэтому чужая единица сменила бы её молча.
-            require(next.unit == confirmed.unit) { "команда пачки измеряется её единицей" }
-            Projected(next, changed = true)
+            Projected(next, changed = true, incompatible = acc.incompatible)
         }
 
-    private data class Projected(val amount: Quantity, val changed: Boolean)
+    private data class Projected(
+        val amount: Quantity,
+        val changed: Boolean,
+        val incompatible: List<PackageSyncCommand>
+    )
 }

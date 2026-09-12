@@ -4,14 +4,13 @@ import com.kert0n.medapp.domain.pack.PackageSharedFacts
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.QuantityUnit
-import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
+import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.queue.ConflictPolicy
 import com.kert0n.medapp.queue.Expected
 import com.kert0n.medapp.queue.NotFoundPolicy
 import com.kert0n.medapp.queue.RefusalReason
 import com.kert0n.medapp.queue.PreparedRequest
 import com.kert0n.medapp.queue.StalePolicy
-import java.math.BigDecimal
 import com.kert0n.medapp.queue.SyncCommand
 import kotlin.uuid.Uuid
 
@@ -214,12 +213,12 @@ sealed interface PackageSyncCommand : SyncCommand {
             return amount.quantity.amount >= before.amount
         }
 
-        fun provenAppliedBy(snapshot: PackageSnapshotNetworkDTO, prepared: PreparedRequest): Boolean {
+        fun provenAppliedBy(snapshot: PackageSnapshot, prepared: PreparedRequest): Boolean {
             val wanted = claimAfter?.takeUnless { it.isZero } ?: return false
             val before = prepared.mineBefore ?: return false
             if (before.amount.compareTo(wanted.amount) == 0) return false
-            val mine = snapshot.claims.mine ?: return false
-            return BigDecimal(mine).compareTo(wanted.amount) == 0
+            val mine = snapshot.pack.claims?.mine ?: return false
+            return mine.compareTo(wanted.amount) == 0
         }
     }
 

@@ -3,6 +3,9 @@ package com.kert0n.medapp.storage.course
 import androidx.room.withTransaction
 import com.kert0n.medapp.domain.course.Course
 import com.kert0n.medapp.domain.course.CourseDraft
+import com.kert0n.medapp.domain.course.CourseDraftProjection
+import com.kert0n.medapp.domain.course.CourseProjection
+import com.kert0n.medapp.domain.course.CourseRecordProjection
 import com.kert0n.medapp.domain.course.CourseRecord
 import com.kert0n.medapp.domain.course.Revision
 import com.kert0n.medapp.domain.intake.CourseIntake
@@ -11,7 +14,6 @@ import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.storage.intake.IntakeDao
 import com.kert0n.medapp.storage.intake.toStorageEntity as toIntakeStorageEntity
 import com.kert0n.medapp.storage.value.VocabularyDao
-import java.time.Instant
 import javax.inject.Inject
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.Flow
@@ -24,15 +26,15 @@ class CourseRoomRepository @Inject constructor(
     private val vocabulary: VocabularyDao
 ) : CourseStorageRepository {
 
-    override fun observeDrafts(): Flow<List<CourseDraft>> =
+    override fun observeDrafts(): Flow<List<CourseDraftProjection>> =
         courses.observeDrafts().map { rows ->
             val words = vocabulary.snapshot()
-            rows.map { it.toDraft(words) }
+            rows.map { it.toDraft(words).projection() }
         }
 
-    override fun observePlan(id: Uuid): Flow<Course?> =
+    override fun observePlan(id: Uuid): Flow<CourseProjection?> =
         courses.observePlan(id).map { row ->
-            row?.takeUnless { it.isDraft }?.toPlan(vocabulary.snapshot())
+            row?.takeUnless { it.isDraft }?.toPlan(vocabulary.snapshot())?.projection()
         }
 
     override suspend fun findDraft(id: Uuid): CourseDraft? =
@@ -55,14 +57,14 @@ class CourseRoomRepository @Inject constructor(
         true
     }
 
-    override fun observeRecords(): Flow<List<CourseRecord>> =
+    override fun observeRecords(): Flow<List<CourseRecordProjection>> =
         courses.observeRecords().map { rows ->
             val words = vocabulary.snapshot()
-            rows.map { it.toDomain(words) }
+            rows.map { it.toDomain(words).projection() }
         }
 
-    override fun observeRecord(id: Uuid): Flow<CourseRecord?> =
-        courses.observeRecord(id).map { it?.toDomain(vocabulary.snapshot()) }
+    override fun observeRecord(id: Uuid): Flow<CourseRecordProjection?> =
+        courses.observeRecord(id).map { it?.toDomain(vocabulary.snapshot())?.projection() }
 
     override suspend fun findRecord(id: Uuid): CourseRecord? =
         courses.findRecord(id)?.toDomain(vocabulary.snapshot())

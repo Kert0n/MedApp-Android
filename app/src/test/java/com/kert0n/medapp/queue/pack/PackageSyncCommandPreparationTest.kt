@@ -25,7 +25,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Команда становится запросом один раз, с предусловиями пачки на этот момент (PLAN E2). */
-class PackageSyncCommandNetworkMapperTest {
+class PackageSyncCommandPreparationTest {
 
     private val sync = PackageSyncState(PACK, version = ResourceVersion(3), claimsVersion = ResourceVersion(5))
 

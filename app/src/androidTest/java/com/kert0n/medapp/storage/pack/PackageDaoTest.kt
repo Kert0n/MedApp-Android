@@ -1,6 +1,8 @@
 package com.kert0n.medapp.storage.pack
 
+import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.value.Money
+import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
@@ -11,6 +13,8 @@ import com.kert0n.medapp.fixture.inMemoryDatabase
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.reopenFileDatabase
 import com.kert0n.medapp.fixture.tablets
+import com.kert0n.medapp.network.pack.PackageSyncState
+import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import java.math.BigDecimal
 import java.time.Instant
@@ -62,7 +66,7 @@ class PackageDaoTest {
     @Test
     fun snapshotOfAnUnknownPackageCreatesItsDetailsRow() = runTest {
         val observed = Instant.parse("2026-09-10T12:00:00Z")
-        packages.applyServerSnapshot(local.toStorageEntity(), observed)
+        packages.applySnapshot(local.toStorageEntity(), claims = null, observedAt = observed)
         val restored = requireNotNull(packages.find(PACK)).toDomain(VOCABULARY)
         assertEquals(observed, restored.addedAt)
         assertNull(restored.facts.expiresOn)
@@ -77,9 +81,10 @@ class PackageDaoTest {
         val fromServer = local.correctTo(tablets("12")).describe(
             local.facts.copy(shared = local.facts.shared.copy(name = "Paracetamol"))
         )
-        packages.applyServerSnapshot(
+        packages.applySnapshot(
             fromServer.toStorageEntity(),
-            Instant.parse("2026-09-11T12:00:00Z")
+            claims = null,
+            observedAt = Instant.parse("2026-09-11T12:00:00Z")
         )
 
         val restored = requireNotNull(packages.find(PACK)).toDomain(VOCABULARY)
@@ -91,6 +96,107 @@ class PackageDaoTest {
         assertEquals(local.facts.defaultIntakeAmount, restored.facts.defaultIntakeAmount)
         assertEquals(local.addedAt, restored.addedAt)
     }
+
+    /**
+     * Половины снимка применяются порознь: запоздалая серверная часть не откатывает картину
+     * броней, и наоборот. Версии независимы — их двигают разные команды (PLAN B3, E1).
+     *
+     * Красная проверка: одна проверка версии на обе половины роняет оба случая.
+     */
+    @Test
+    fun anOlderHalfOfTheSnapshotDoesNotRollBackTheFresherOne() = runTest {
+        givenSnapshot(version = 10, claimsVersion = 5, quantity = tablets("20"), total = "5")
+
+        // Пачка той же версии, картина броней — запоздалая: брони и их версия остаются прежними.
+        val applied = applySnapshot(version = 10, claimsVersion = 4, quantity = tablets("12"), total = "4")
+
+        assertEquals(SnapshotApplied(pack = true, claims = false), applied)
+        val row = requireNotNull(packages.find(PACK))
+        assertEquals(tablets("12"), row.toDomain(VOCABULARY).quantity)
+        assertEquals(BigDecimal("5"), requireNotNull(row.claims).toDomain().total)
+        assertEquals(ResourceVersion(5), row.pack.syncState().claimsVersion)
+    }
+
+    @Test
+    fun afresherClaimsHalfLaysDownWhileTheOlderPackageHalfDoesNot() = runTest {
+        givenSnapshot(version = 10, claimsVersion = 5, quantity = tablets("20"), total = "5")
+
+        val applied = applySnapshot(version = 9, claimsVersion = 6, quantity = tablets("12"), total = "6")
+
+        assertEquals(SnapshotApplied(pack = false, claims = true), applied)
+        val row = requireNotNull(packages.find(PACK))
+        assertEquals(tablets("20"), row.toDomain(VOCABULARY).quantity)
+        assertEquals(ResourceVersion(10), row.pack.syncState().version)
+        assertEquals(BigDecimal("6"), requireNotNull(row.claims).toDomain().total)
+        assertEquals(ResourceVersion(6), row.pack.syncState().claimsVersion)
+    }
+
+    /** Картина броней без своей версии не читалась: её не кладут и прежнюю версию не трогают. */
+    @Test
+    fun aSnapshotWithoutClaimsVersionLeavesTheClaimsHalfAlone() = runTest {
+        givenSnapshot(version = 10, claimsVersion = 5, quantity = tablets("20"), total = "5")
+
+        val applied = packages.applySnapshot(
+            pack(quantity = tablets("12")).toStorageEntity(
+                PackageSyncState(PACK, version = ResourceVersion(11))
+            ),
+            claims = null,
+            observedAt = observed
+        )
+
+        assertEquals(SnapshotApplied(pack = true, claims = false), applied)
+        val row = requireNotNull(packages.find(PACK))
+        assertEquals(BigDecimal("5"), requireNotNull(row.claims).toDomain().total)
+        assertEquals(ResourceVersion(5), row.pack.syncState().claimsVersion)
+    }
+
+    /**
+     * Версия картины броней описывает ту картину, что лежит рядом. Дверь, пишущая версию без
+     * картины, эту пару разводит: запоздалая версия садится на свежие брони, и следующий снимок
+     * — уже по правилам — принимает устаревшую картину как новость (PLAN B3, E1).
+     *
+     * Красная проверка: дверь, пишущая серверную строку вместе с `claims_version`, краснит это.
+     */
+    @Test
+    fun noDoorMovesTheClaimsVersionWithoutTheClaims() = runTest {
+        givenSnapshot(version = 10, claimsVersion = 5, quantity = tablets("20"), total = "8")
+
+        // Снимок пачки версии 10 с запоздалой версией броней 4 — картины броней он не несёт.
+        packages.applySnapshot(
+            pack(quantity = tablets("12")).toStorageEntity(
+                PackageSyncState(PACK, version = ResourceVersion(10), claimsVersion = ResourceVersion(4))
+            ),
+            claims = null,
+            observedAt = observed
+        )
+
+        val row = requireNotNull(packages.find(PACK))
+        assertEquals(ResourceVersion(5), row.pack.syncState().claimsVersion)
+        assertEquals(BigDecimal("8"), requireNotNull(row.claims).toDomain().total)
+    }
+
+    private val observed = Instant.parse("2026-09-11T12:00:00Z")
+
+    private suspend fun givenSnapshot(version: Long, claimsVersion: Long, quantity: Quantity, total: String) {
+        applySnapshot(version, claimsVersion, quantity, total)
+    }
+
+    private suspend fun applySnapshot(
+        version: Long,
+        claimsVersion: Long,
+        quantity: Quantity,
+        total: String
+    ): SnapshotApplied = packages.applySnapshot(
+        pack(quantity = quantity).toStorageEntity(
+            PackageSyncState(
+                PACK,
+                version = ResourceVersion(version),
+                claimsVersion = ResourceVersion(claimsVersion)
+            )
+        ),
+        Claims(total = BigDecimal(total)).toStorageEntity(PACK),
+        observedAt = observed
+    )
 
     @Test
     fun packagesOfAMedKitAreObservable() = runTest {

@@ -5,16 +5,19 @@ import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageAvailability
 import com.kert0n.medapp.domain.pack.PackageFacts
+import com.kert0n.medapp.domain.pack.PackageProjection
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.queue.PackageQueueState
 import com.kert0n.medapp.queue.pack.PackageSyncCommand
+import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.storage.course.CourseDao
 import com.kert0n.medapp.storage.course.CourseReallocation
 import com.kert0n.medapp.storage.course.toSourceStorageEntities
 import com.kert0n.medapp.storage.course.toStorageEntity as toCourseStorageEntity
 import com.kert0n.medapp.storage.database.MedAppDatabase
+import com.kert0n.medapp.storage.database.chunkedForQuery
 import com.kert0n.medapp.queue.StoredSyncOperation
 import com.kert0n.medapp.storage.server.SyncOperationDao
 import com.kert0n.medapp.storage.server.SyncOperationStorageRow
@@ -41,18 +44,13 @@ class PackageRoomRepository @Inject constructor(
      * Снимок словаря читается после строки, а не вместе с ней, и это безопасно: словарь только
      * растёт, а единица ложится в базу не позже строки, которая её называет.
      */
-    override fun observe(id: Uuid): Flow<Package?> =
-        packages.observe(id).map { it?.toDomain(vocabulary.snapshot()) }
+    override fun observe(id: Uuid): Flow<PackageProjection?> =
+        onChange { projectionOf(id) }
 
     override suspend fun find(id: Uuid): Package? =
         packages.find(id)?.toDomain(vocabulary.snapshot())
 
-    override fun observeAvailability(id: Uuid): Flow<PackageAvailability?> =
-        onChange { availabilityOf(id) }
-
-    override suspend fun availability(id: Uuid): PackageAvailability? = availabilityOf(id)
-
-    override fun list(query: PackageQuery, today: LocalDate): Flow<List<Package>> =
+    override fun list(query: PackageQuery, today: LocalDate): Flow<List<PackageProjection>> =
         onChange { listing(query, today) }
 
     override suspend fun add(pkg: Package, sync: PackageSyncState) =
@@ -82,11 +80,8 @@ class PackageRoomRepository @Inject constructor(
             true
         }
 
-    override suspend fun applyServerSnapshot(
-        pkg: Package,
-        sync: PackageSyncState,
-        observedAt: Instant
-    ): Boolean = packages.applyServerSnapshot(pkg.toStorageEntity(sync), observedAt)
+    override suspend fun applySnapshot(snapshot: PackageSnapshot, observedAt: Instant): SnapshotApplied =
+        packages.applySnapshot(snapshot, observedAt)
 
     override suspend fun saveClaims(packageId: Uuid, claims: Claims?) {
         if (claims == null) packages.deleteClaims(packageId)
@@ -125,65 +120,75 @@ class PackageRoomRepository @Inject constructor(
     private fun <T> onChange(read: suspend () -> T): Flow<T> =
         database.invalidationTracker.createFlow(*AVAILABILITY_TABLES).map { read() }
 
-    private suspend fun availabilityOf(id: Uuid): PackageAvailability? = database.withTransaction {
+    private suspend fun projectionOf(id: Uuid): PackageProjection? = database.withTransaction {
         val words = vocabulary.snapshot()
         val pkg = packages.find(id)?.toDomain(words) ?: return@withTransaction null
-        availabilityOf(
-            pkg,
-            queue.unclosedOfPackage(id),
-            packages.allocationsOf(listOf(id)).firstOrNull(),
-            words
-        )
+        projectionOf(pkg, packages.allocationsOf(listOf(id)).firstOrNull(), queue.unclosedOfPackages(listOf(id)), words)
     }
 
     /**
-     * «Есть свободное» запросом не выражается: это вычитание чужих броней и выделения из оценки
-     * количества, а оценка зависит от очереди (PLAN H4).
+     * Обвязка синхронизации пачки — своим методом, а не полем проекции: версии и момент сверки
+     * принадлежат доставке, а не пачке, и нужны они одному экрану состояния синхронизации
+     * (PLAN E4, H3 №28). `null` — пачки больше нет.
      */
-    private suspend fun listing(query: PackageQuery, today: LocalDate): List<Package> =
+    override fun observeSyncState(id: Uuid): Flow<PackageSyncState?> =
+        packages.observe(id).map { it?.pack?.syncState() }
+
+    /**
+     * Список — готовые проекции одним чтением. «Есть свободное» запросом не выражается: это
+     * вычитание чужих броней и выделения из оценки количества, а оценка зависит от очереди
+     * (PLAN H4).
+     */
+    private suspend fun listing(query: PackageQuery, today: LocalDate): List<PackageProjection> =
         database.withTransaction {
             val words = vocabulary.snapshot()
             val found = packages.matching(query, today).map { it.toDomain(words) }
-            if (query.filter != PackageQuery.Filter.HasFree) return@withTransaction found
-            val allocations = packages.allocationsOf(found.map { it.id })
-            found.filter { pkg ->
-                availabilityOf(
-                    pkg,
-                    queue.unclosedOfPackage(pkg.id),
-                    allocations.firstOrNull { it.packageId == pkg.id },
-                    words
-                ).freeForAnyone.isZero.not()
+            val ids = found.map { it.id }
+            val allocations = ids.chunkedForQuery().flatMap { packages.allocationsOf(it) }
+            val unclosed = unclosedOf(ids)
+            val projected = found.map { pkg ->
+                projectionOf(pkg, allocations.firstOrNull { it.packageId == pkg.id }, unclosed[pkg.id].orEmpty(), words)
             }
+            if (query.filter != PackageQuery.Filter.HasFree) projected
+            else projected.filter { !it.availability.freeForAnyone.isZero }
         }
 
-    private fun availabilityOf(
-        pkg: Package,
-        unclosed: List<SyncOperationStorageRow>,
-        allocation: PackageAllocationRow?,
-        words: Vocabulary
-    ): PackageAvailability = PackageAvailability(
-        pkg = pkg,
-        effective = amountOf(pkg, unclosed, words),
-        myAllocation = allocation?.allocated(words) ?: Quantity.zero(pkg.quantity.unit)
-    )
-
     /**
-     * Незакрытые команды применяются к подтверждённому остатку по возрастанию номера. Команда,
-     * которую нечем прочитать после обновления приложения, в число не входит: она названа среди
-     * нечитаемых отдельно, а число остаётся тем, что известно (PLAN E1, F4).
+     * Проекция пачки: оценка количества — незакрытые команды поверх подтверждённого остатка по
+     * возрастанию номера; команда, которую нечем прочитать после обновления приложения, в число
+     * не входит и названа среди нечитаемых отдельно (PLAN E1, F4). Выделение — из назначения
+     * активному курсу (PLAN D4).
      */
-    private fun amountOf(
+    private suspend fun projectionOf(
         pkg: Package,
+        allocation: PackageAllocationRow?,
         unclosed: List<SyncOperationStorageRow>,
         words: Vocabulary
-    ): Quantity {
+    ): PackageProjection {
         val commands = unclosed.mapNotNull {
             (it.toDomain(words) as? StoredSyncOperation.Readable)?.operation?.command as? PackageSyncCommand
         }
-        return PackageQueueState(pkg, commands).amount
+        val state = PackageQueueState(pkg, commands)
+        val availability = PackageAvailability(
+            pkg = pkg,
+            effective = state.amount,
+            myAllocation = allocation?.allocated(words, pkg.quantity.unit) ?: Quantity.zero(pkg.quantity.unit)
+        )
+        return pkg.projection(availability, state.hasUnconfirmedChanges)
     }
 
+    /**
+     * Незакрытые операции всего списка — одним чтением на порцию: спрашивать очередь про каждую
+     * пачку значило бы двести запросов там, где хватает одного. Порядок по `sequence` внутри
+     * пачки группировка сохраняет.
+     */
+    private suspend fun unclosedOf(ids: List<Uuid>): Map<Uuid, List<SyncOperationStorageRow>> =
+        ids.chunkedForQuery()
+            .flatMap { queue.unclosedOfPackages(it) }
+            .groupBy { requireNotNull(it.operation.packageId) { "операция пачки называет свою пачку" } }
+
     private companion object {
+
 
         /** Из чего складывается доступность: пачка с её сведениями и бронями, очередь, выделения. */
         val AVAILABILITY_TABLES = arrayOf(

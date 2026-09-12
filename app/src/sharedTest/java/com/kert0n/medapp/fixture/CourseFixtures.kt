@@ -10,6 +10,7 @@ import com.kert0n.medapp.domain.course.CourseSource
 import com.kert0n.medapp.domain.course.Prescription
 import com.kert0n.medapp.domain.course.Revision
 import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.pack.PackageRef
 import com.kert0n.medapp.domain.value.DosageForm
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Doses
@@ -158,8 +159,10 @@ fun courseRecord(
     closedAt = closedAt
 )
 
-/** Источник: пачка и её выделение в целых дозах. Пачка — объектом, как её держит домен. */
-fun source(pkg: Package, doses: Int) = CourseSource(pkg, Doses(doses))
+/** Источник: пачка и её выделение в целых дозах. Пачка — ссылкой, как её держит домен. */
+fun source(pkg: PackageRef, doses: Int) = CourseSource(pkg, Doses(doses))
+
+fun source(pkg: Package, doses: Int) = source(pkg.ref, doses)
 
 /** Источник по номеру пачки: пачка собирается фикстурой с этим номером и двадцатью таблетками. */
 fun source(packageId: Uuid, doses: Int) = source(pack(id = packageId), doses)

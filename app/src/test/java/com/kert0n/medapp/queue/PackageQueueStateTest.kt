@@ -74,15 +74,19 @@ class PackageQueueStateTest {
         }
     }
 
+    /**
+     * Единицу пачки сменил сосед на сервере, а команда в старой единице ещё не закрыта: подготовка
+     * отвергнет её при взятии, а до того свёртка обязана остаться тотальной — число равно
+     * подтверждённому, команда названа среди несовместимых, и чтение не бросает (PLAN E1).
+     */
     @Test
-    fun aCommandInAnotherUnitIsNotFoldedIn() {
-        // Пересчёт заменяет число целиком: чужая единица сменила бы единицу пачки молча.
-        assertThrows(IllegalArgumentException::class.java) {
-            PackageQueueState(
-                pack(quantity = tablets("20")),
-                listOf(PackageSyncCommand.CorrectStock(PACK, millilitres("30")))
-            ).amount
-        }
+    fun aCommandInAnotherUnitIsLeftOutOfTheNumberAndNamed() {
+        val stale = PackageSyncCommand.CorrectStock(PACK, tablets("30"))
+        val state = PackageQueueState(pack(quantity = millilitres("100")), listOf(stale, consume("3")))
+
+        assertEquals(millilitres("100"), state.amount)
+        assertFalse(state.hasUnconfirmedChanges)
+        assertEquals(listOf<PackageSyncCommand>(stale, consume("3")), state.incompatible)
     }
 
     @Test

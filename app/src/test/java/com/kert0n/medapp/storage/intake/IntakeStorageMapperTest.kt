@@ -6,6 +6,7 @@ import com.kert0n.medapp.domain.intake.UnplannedIntake
 import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.INTAKE
 import com.kert0n.medapp.fixture.LATER
+import com.kert0n.medapp.fixture.MILLILITRES
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.SHARED_KIT
@@ -15,8 +16,8 @@ import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.fixture.plannedIntake
 import com.kert0n.medapp.fixture.unplannedIntake
-import com.kert0n.medapp.network.intake.IntakeAccounting
-import com.kert0n.medapp.network.intake.IntakeSyncState
+import com.kert0n.medapp.queue.intake.IntakeAccounting
+import com.kert0n.medapp.queue.intake.IntakeSyncState
 import kotlin.uuid.Uuid
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -57,7 +58,7 @@ class IntakeStorageMapperTest {
     /** Пачка факта может отличаться от плановой, и аптечка — у пачки. */
     @Test
     fun confirmedIntakeKeepsWhereTheDoseCameFrom() {
-        val taken = plannedIntake().confirm(pack(id = OTHER_PACK, medKit = medKit(id = SHARED_KIT, name = "Дача")).take(dose("1.5"), LATER).getOrThrow())
+        val taken = plannedIntake().confirm(pack(id = OTHER_PACK, medKit = medKit(id = SHARED_KIT, name = "Дача").ref).take(dose("1.5"), LATER).getOrThrow())
         val restored = taken.toStorageRow().toDomain(VOCABULARY) as CourseIntake
 
         assertEquals(IntakeStatus.TAKEN, restored.status)
@@ -74,13 +75,13 @@ class IntakeStorageMapperTest {
         val row = IntakeStorageRow(
             intake = confirmed.toStorageEntity(),
             planned = confirmed.plannedPackage?.toStorageRow(),
-            taken = pack(quantity = millilitres("100")).toStorageRow()
+            taken = pack(quantity = millilitres("100")).ref.toStorageRow()
         )
 
         val restored = row.toDomain(VOCABULARY) as CourseIntake
 
         assertEquals(dose("2"), restored.taken?.amount)
-        assertEquals(millilitres("100"), restored.taken?.pkg?.quantity)
+        assertEquals(MILLILITRES, restored.taken?.pkg?.unit)
     }
 
     @Test

@@ -21,4 +21,7 @@ sealed interface Intake {
 
     /** Что фактически принято. `null` — приёма не было (PLAN D6). */
     val taken: TakenDose?
+
+    /** Как приём видит экран: величина, наружу уходит она, а не сущность. */
+    fun projection(): IntakeProjection
 }

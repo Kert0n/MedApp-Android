@@ -39,47 +39,47 @@ class StockMovementTest {
         source: MedKit = home,
         target: MedKit = shared
     ) = StockMovement.Transfer(
-        id, paracetamol, tablets("20"),
-        source = source, target = target,
+        id, paracetamol.ref, tablets("20"),
+        source = source.ref, target = target.ref,
         occurredAt = moment, observedAt = moment
     )
 
     private fun disposal(note: String? = null) = StockMovement.Disposal(
-        id, paracetamol, tablets("2"), StockMovement.Disposal.Reason.EXPIRED, home,
+        id, paracetamol.ref, tablets("2"), StockMovement.Disposal.Reason.EXPIRED, home.ref,
         occurredAt = moment, observedAt = moment, note = note
     )
 
     @Test
     fun receiptAndDisposalDifferBySignWithoutTheCallerChoosingIt() {
-        val added = StockMovement.Receipt(id, paracetamol, tablets("20"), home, moment, moment)
-        assertEquals(BigDecimal("20"), added.deltaIn(home))
-        assertEquals(BigDecimal("-2"), disposal().deltaIn(home))
+        val added = StockMovement.Receipt(id, paracetamol.ref, tablets("20"), home.ref, moment, moment)
+        assertEquals(BigDecimal("20"), added.deltaIn(home.ref))
+        assertEquals(BigDecimal("-2"), disposal().deltaIn(home.ref))
     }
 
     @Test
     fun movementChangesOnlyItsOwnKit() {
-        assertEquals(BigDecimal.ZERO, disposal().deltaIn(shared))
+        assertEquals(BigDecimal.ZERO, disposal().deltaIn(shared.ref))
     }
 
     @Test
     fun unitComesFromTheAmountAndCannotContradictIt() {
-        val added = StockMovement.Receipt(id, paracetamol, millilitres("100"), home, moment, moment)
+        val added = StockMovement.Receipt(id, paracetamol.ref, millilitres("100"), home.ref, moment, moment)
         assertEquals(MILLILITRES, added.unit)
     }
 
     @Test
     fun transferIsOneRecordWithTwoEnds() {
         val moved = transfer()
-        assertEquals(BigDecimal("-20"), moved.deltaIn(home))
-        assertEquals(BigDecimal("20"), moved.deltaIn(shared))
-        assertEquals(BigDecimal.ZERO, moved.deltaIn(elsewhere))
+        assertEquals(BigDecimal("-20"), moved.deltaIn(home.ref))
+        assertEquals(BigDecimal("20"), moved.deltaIn(shared.ref))
+        assertEquals(BigDecimal.ZERO, moved.deltaIn(elsewhere.ref))
     }
 
     @Test
     fun transferInsideTheSelectedKitsIsNotConsumption() {
         // Отчёт по двум аптечкам складывает их изменения: перекладывание пачки даёт ноль (H6).
         val moved = transfer()
-        assertEquals(0, (moved.deltaIn(home) + moved.deltaIn(shared)).signum())
+        assertEquals(0, (moved.deltaIn(home.ref) + moved.deltaIn(shared.ref)).signum())
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -91,42 +91,42 @@ class StockMovementTest {
     @Test
     fun recountTakesBothAmountsAndWorksOutTheSign() {
         val found = StockMovement.Recount(
-            id, paracetamol, before = tablets("3"), after = tablets("12"),
-            medKit = home, occurredAt = moment, observedAt = moment
+            id, paracetamol.ref, before = tablets("3"), after = tablets("12"),
+            medKit = home.ref, occurredAt = moment, observedAt = moment
         )
         val lost = StockMovement.Recount(
-            id, paracetamol, before = tablets("12"), after = tablets("3"),
-            medKit = home, occurredAt = moment, observedAt = moment
+            id, paracetamol.ref, before = tablets("12"), after = tablets("3"),
+            medKit = home.ref, occurredAt = moment, observedAt = moment
         )
-        assertEquals(BigDecimal("9"), found.deltaIn(home))
-        assertEquals(BigDecimal("-9"), lost.deltaIn(home))
+        assertEquals(BigDecimal("9"), found.deltaIn(home.ref))
+        assertEquals(BigDecimal("-9"), lost.deltaIn(home.ref))
     }
 
     @Test(expected = IllegalArgumentException::class)
     fun recountAcrossUnitsIsRejected() {
         StockMovement.Recount(
-            id, paracetamol, before = tablets("3"), after = millilitres("3"),
-            medKit = home, occurredAt = moment, observedAt = moment
+            id, paracetamol.ref, before = tablets("3"), after = millilitres("3"),
+            medKit = home.ref, occurredAt = moment, observedAt = moment
         )
     }
 
     @Test
     fun remoteChangeIsSignedAndItsMomentMayBeUnknown() {
         val up = StockMovement.RemoteChange(
-            id, paracetamol, BigDecimal("3"), TABLETS, home, observedAt = moment
+            id, paracetamol.ref, BigDecimal("3"), TABLETS, home.ref, observedAt = moment
         )
         val down = StockMovement.RemoteChange(
-            id, paracetamol, BigDecimal("-3"), TABLETS, home, observedAt = moment
+            id, paracetamol.ref, BigDecimal("-3"), TABLETS, home.ref, observedAt = moment
         )
-        assertEquals(BigDecimal("3"), up.deltaIn(home))
-        assertEquals(BigDecimal("-3"), down.deltaIn(home))
+        assertEquals(BigDecimal("3"), up.deltaIn(home.ref))
+        assertEquals(BigDecimal("-3"), down.deltaIn(home.ref))
         assertNull(up.occurredAt)
     }
 
     @Test
     fun accessLossTakesTheWholeRemainderOut() {
-        val lost = StockMovement.AccessLoss(id, paracetamol, tablets("7"), shared, observedAt = moment)
-        assertEquals(BigDecimal("-7"), lost.deltaIn(shared))
+        val lost = StockMovement.AccessLoss(id, paracetamol.ref, tablets("7"), shared.ref, observedAt = moment)
+        assertEquals(BigDecimal("-7"), lost.deltaIn(shared.ref))
         assertNull(lost.occurredAt)
     }
 
@@ -141,7 +141,7 @@ class StockMovementTest {
     @Test(expected = IllegalArgumentException::class)
     fun sevenFractionDigitsAreRejected() {
         StockMovement.RemoteChange(
-            id, paracetamol, BigDecimal("-0.0000001"), TABLETS, home, observedAt = moment
+            id, paracetamol.ref, BigDecimal("-0.0000001"), TABLETS, home.ref, observedAt = moment
         )
     }
 

@@ -14,6 +14,11 @@ import kotlin.uuid.Uuid
  * до того, как его удалось применить: он есть ровно у [SyncOperationStatus.ANSWERED].
  * [notBefore] — раньше этого срока операцию не трогают: задержка повтора и `Retry-After` живут
  * здесь, а не в памяти прохода, и переживают его, процесс и второй `drain`.
+ *
+ * [outcomeUnknown] — замороженный запрос уже уходил, и чем кончилось, неизвестно: обрыв после
+ * отправки, 5xx, неразборчивый ответ, смерть процесса в `SENDING`. Факт о **запросе**: живёт,
+ * пока жив он, и умирает вместе с ним при переподготовке. По нему расход решает, что значит 404
+ * (PLAN E3). [attempts] — только вход задержки и смысла не несёт.
  */
 class SyncOperation(
     val id: Uuid,
@@ -29,7 +34,8 @@ class SyncOperation(
     val lastError: String? = null,
     val lastTriedAt: Instant? = null,
     val answer: RawResponse? = null,
-    val notBefore: Instant? = null
+    val notBefore: Instant? = null,
+    val outcomeUnknown: Boolean = false
 ) {
     /** Своя копия: множество, оставшееся у вызывающего, меняло бы порядок отправки очереди. */
     val dependsOn: Set<Uuid> = dependsOn.toSet()
@@ -42,6 +48,7 @@ class SyncOperation(
         require((answer != null) == (status == SyncOperationStatus.ANSWERED)) {
             "записанный ответ бывает ровно у операции, которая его получила и ещё не закрыта"
         }
+        require(!outcomeUnknown || prepared != null) { "неизвестный исход бывает только у отправленного запроса" }
     }
 
     override fun equals(other: Any?): Boolean =
@@ -60,12 +67,13 @@ class SyncOperation(
                 lastError == other.lastError &&
                 lastTriedAt == other.lastTriedAt &&
                 answer == other.answer &&
-                notBefore == other.notBefore
+                notBefore == other.notBefore &&
+                outcomeUnknown == other.outcomeUnknown
             )
 
     override fun hashCode(): Int = Objects.hash(
         id, command, sequence, createdAt, payloadVersion, prepared, groupId, dependsOn,
-        status, attempts, lastError, lastTriedAt, answer, notBefore
+        status, attempts, lastError, lastTriedAt, answer, notBefore, outcomeUnknown
     )
 
     override fun toString(): String =

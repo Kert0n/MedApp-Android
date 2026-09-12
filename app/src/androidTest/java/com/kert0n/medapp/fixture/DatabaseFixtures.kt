@@ -14,9 +14,16 @@ import kotlinx.coroutines.runBlocking
  * Словарь и две аптечки фикстур засеяны: строки держат идентификаторы единиц, форм и аптечек, а
  * собираются в домен по словарю и связям, и без них ни одна пачка из базы не читается.
  */
-fun inMemoryDatabase(): MedAppDatabase {
+fun inMemoryDatabase(observeQueries: ((String) -> Unit)? = null): MedAppDatabase {
     val context = InstrumentationRegistry.getInstrumentation().targetContext
-    return Room.inMemoryDatabaseBuilder(context, MedAppDatabase::class.java).build().seeded()
+    val builder = Room.inMemoryDatabaseBuilder(context, MedAppDatabase::class.java)
+    // Перехват запросов нужен там, где проверяется не только ответ, но и сколько его стоило.
+    // Исполнитель прямой: с отдельным потоком уведомление о запросе могло не дойти к моменту,
+    // когда тест считает прочитанное, и счёт вышел бы меньше настоящего — то есть тихо зелёным.
+    observeQueries?.let { observe ->
+        builder.setQueryCallback({ sql, _ -> observe(sql) }, { command -> command.run() })
+    }
+    return builder.build().seeded()
 }
 
 private fun MedAppDatabase.seeded(): MedAppDatabase = apply {
@@ -72,9 +79,17 @@ fun MedAppDatabase.intakeRepository() = com.kert0n.medapp.storage.intake.IntakeR
 )
 
 fun MedAppDatabase.medKitRepository() = com.kert0n.medapp.storage.medkit.MedKitRoomRepository(
-    this, medKits(), packages(), vocabulary()
+    this, medKits(), packages()
 )
 
 fun MedAppDatabase.queueRepository() = com.kert0n.medapp.storage.server.SyncOperationRoomRepository(
+    syncOperations(), vocabulary()
+)
+
+/** «Одна транзакция» — узкий порт поверх той же базы (PLAN F5). */
+fun MedAppDatabase.transactions() = com.kert0n.medapp.storage.database.RoomTransactions(this)
+
+/** Порт очереди для работника — транзакции взятия и применения исхода. */
+fun MedAppDatabase.queueStorage() = com.kert0n.medapp.storage.server.QueueRoomStorage(
     this, syncOperations(), packages(), intakes(), medKits(), vocabulary()
 )

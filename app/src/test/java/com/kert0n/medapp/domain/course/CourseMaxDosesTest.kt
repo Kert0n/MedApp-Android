@@ -32,7 +32,7 @@ class CourseMaxDosesTest {
         pkg: Package,
         required: Int,
         availability: Availability = this@CourseMaxDosesTest.availability
-    ) = maxDoses(pkg, required.doses, availability)
+    ) = maxDoses(pkg.ref, required.doses, availability)
 
     @Test
     fun doseTwoOutOfTwoSinglesGivesZeroDoses() {
@@ -89,7 +89,7 @@ class CourseMaxDosesTest {
     fun fractionalDoseIsCountedAsWhole() {
         // Половина таблетки — законная доза; из двадцати таблеток это сорок приёмов.
         val found = activeCourse(doseAmount = BigDecimal("0.5"), sources = listOf(source(PACK, 0)))
-            .maxDoses(home, 100.doses, availability)
+            .maxDoses(home.ref, 100.doses, availability)
         assertEquals(40.doses, found)
     }
 }
