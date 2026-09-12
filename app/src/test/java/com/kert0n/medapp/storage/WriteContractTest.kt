@@ -6,6 +6,7 @@ import com.kert0n.medapp.storage.intake.IntakeStorageRepository
 import com.kert0n.medapp.storage.medkit.MedKitStorageRepository
 import com.kert0n.medapp.storage.pack.PackageStorageRepository
 import com.kert0n.medapp.storage.stock.StockMovementStorageRepository
+import java.lang.reflect.Method
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -23,8 +24,10 @@ import org.junit.Test
  * не видно в ревью без такой проверки — как не видно каскада, поставленного «на всякий случай»
  * (`ForeignKeysTest`).
  *
- * Поэтому каждый метод порта хранения назван здесь и назван его формой. Незнакомый метод —
- * падение: договор пополняется явно, а не молчаливым умолчанием.
+ * Поэтому каждый метод порта хранения назван здесь своей формой **и подписью**. Одного имени мало:
+ * метод с прежним именем, но принимающий теперь прочитанную сущность вместо действия, или его
+ * перегрузка рядом прошли бы проверку по имени незамеченными (CodeRabbit на #17). Незнакомый метод
+ * или изменившаяся подпись — падение: договор пополняется явно, а не молчаливым умолчанием.
  */
 class WriteContractTest {
 
@@ -56,69 +59,75 @@ class WriteContractTest {
         UNGUARDED
     }
 
-    private val contract: Map<String, Shape> = mapOf(
+    /** Форма метода и его подпись — `(параметры): возврат` простыми именами типов. */
+    private data class Clause(val shape: Shape, val signature: String)
+
+    private infix fun Shape.by(signature: String) = Clause(this, signature)
+
+    private val contract: Map<String, Clause> = mapOf(
         // Упаковка
-        "PackageStorageRepository.observe" to Shape.READ,
-        "PackageStorageRepository.find" to Shape.READ,
-        "PackageStorageRepository.list" to Shape.READ,
-        "PackageStorageRepository.contentsOf" to Shape.READ,
-        "PackageStorageRepository.observeSyncState" to Shape.READ,
-        "PackageStorageRepository.add" to Shape.CREATION,
-        "PackageStorageRepository.describe" to Shape.NAMED_FIELDS,
-        "PackageStorageRepository.saveClaims" to Shape.NAMED_FIELDS,
-        "PackageStorageRepository.end" to Shape.ACTION,
-        "PackageStorageRepository.mark" to Shape.NAMED_FIELDS,
-        "PackageStorageRepository.adjust" to Shape.ACTION,
-        "PackageStorageRepository.applySnapshot" to Shape.SNAPSHOT,
+        "PackageStorageRepository.observe" to (Shape.READ by "(Uuid): Flow<PackageProjection>"),
+        "PackageStorageRepository.find" to (Shape.READ by "(Uuid): Package"),
+        "PackageStorageRepository.list" to (Shape.READ by "(PackageQuery, LocalDate): Flow<List<PackageProjection>>"),
+        "PackageStorageRepository.contentsOf" to (Shape.READ by "(Uuid): List<Package>"),
+        "PackageStorageRepository.observeSyncState" to (Shape.READ by "(Uuid): Flow<PackageSyncState>"),
+        "PackageStorageRepository.add" to (Shape.CREATION by "(Package, PackageSyncState): Unit"),
+        "PackageStorageRepository.describe" to (Shape.NAMED_FIELDS by "(Uuid, PackageFacts): Boolean"),
+        "PackageStorageRepository.saveClaims" to (Shape.NAMED_FIELDS by "(Uuid, Claims): Unit"),
+        "PackageStorageRepository.mark" to (Shape.NAMED_FIELDS by "(Uuid, PackageStatus): Boolean"),
+        "PackageStorageRepository.end" to (Shape.ACTION by "(PackageEnding, Instant): Boolean"),
+        "PackageStorageRepository.adjust" to (Shape.ACTION by "(PackageAdjustment, CourseReallocation, Instant): Boolean"),
+        "PackageStorageRepository.applySnapshot" to (Shape.SNAPSHOT by "(PackageSnapshot, Instant): SnapshotApplied"),
         // Лечение
-        "CourseStorageRepository.observeDrafts" to Shape.READ,
-        "CourseStorageRepository.observePlan" to Shape.READ,
-        "CourseStorageRepository.observeRecords" to Shape.READ,
-        "CourseStorageRepository.observeRecord" to Shape.READ,
-        "CourseStorageRepository.findDraft" to Shape.READ,
-        "CourseStorageRepository.findPlan" to Shape.READ,
-        "CourseStorageRepository.findRecord" to Shape.READ,
-        "CourseStorageRepository.courseHolding" to Shape.READ,
-        "CourseStorageRepository.rename" to Shape.NAMED_FIELDS,
-        "CourseStorageRepository.setTotalDoses" to Shape.GUARDED,
-        "CourseStorageRepository.updateSources" to Shape.GUARDED,
-        "CourseStorageRepository.reallocate" to Shape.ACTION,
-        "CourseStorageRepository.activate" to Shape.ACTION,
-        "CourseStorageRepository.close" to Shape.ACTION,
+        "CourseStorageRepository.observeDrafts" to (Shape.READ by "(): Flow<List<CourseDraftProjection>>"),
+        "CourseStorageRepository.observePlan" to (Shape.READ by "(Uuid): Flow<CourseProjection>"),
+        "CourseStorageRepository.observeRecords" to (Shape.READ by "(): Flow<List<CourseRecordProjection>>"),
+        "CourseStorageRepository.observeRecord" to (Shape.READ by "(Uuid): Flow<CourseRecordProjection>"),
+        "CourseStorageRepository.findDraft" to (Shape.READ by "(Uuid): CourseDraft"),
+        "CourseStorageRepository.findPlan" to (Shape.READ by "(Uuid): Course"),
+        "CourseStorageRepository.findRecord" to (Shape.READ by "(Uuid): CourseRecord"),
+        "CourseStorageRepository.courseHolding" to (Shape.READ by "(Uuid): Uuid"),
+        "CourseStorageRepository.rename" to (Shape.NAMED_FIELDS by "(Uuid, String, String): Boolean"),
+        // `long` — редакция: `value class Revision` на JVM разворачивается в своё число.
+        "CourseStorageRepository.setTotalDoses" to (Shape.GUARDED by "(Course, long): Boolean"),
+        "CourseStorageRepository.updateSources" to (Shape.GUARDED by "(Course, long): Boolean"),
+        "CourseStorageRepository.reallocate" to (Shape.ACTION by "(CourseReallocation): Boolean"),
+        "CourseStorageRepository.activate" to (Shape.ACTION by "(CourseDraft\$Activation, List<CourseIntake>): Unit"),
+        "CourseStorageRepository.close" to (Shape.ACTION by "(CourseCompletion\$Closing): Unit"),
         // Черновик — сам себе правка: человек держит его на экране целиком, и записывается он
         // целиком же, а начатое лечение поверх не затирается (проверка живёт в реализации).
-        "CourseStorageRepository.saveDraft" to Shape.UNGUARDED,
+        "CourseStorageRepository.saveDraft" to (Shape.UNGUARDED by "(CourseDraft): Boolean"),
         // Аптечка
-        "MedKitStorageRepository.observeAll" to Shape.READ,
-        "MedKitStorageRepository.observe" to Shape.READ,
-        "MedKitStorageRepository.observeSyncedAt" to Shape.READ,
-        "MedKitStorageRepository.find" to Shape.READ,
-        "MedKitStorageRepository.delete" to Shape.NAMED_FIELDS,
-        "MedKitStorageRepository.mark" to Shape.NAMED_FIELDS,
-        "MedKitStorageRepository.applyServerParticipants" to Shape.NAMED_FIELDS,
+        "MedKitStorageRepository.observeAll" to (Shape.READ by "(): Flow<List<MedKitProjection>>"),
+        "MedKitStorageRepository.observe" to (Shape.READ by "(Uuid): Flow<MedKitProjection>"),
+        "MedKitStorageRepository.observeSyncedAt" to (Shape.READ by "(Uuid): Flow<Instant>"),
+        "MedKitStorageRepository.find" to (Shape.READ by "(Uuid): MedKit"),
+        "MedKitStorageRepository.delete" to (Shape.NAMED_FIELDS by "(Uuid): Boolean"),
+        "MedKitStorageRepository.mark" to (Shape.NAMED_FIELDS by "(Uuid, MedKitStatus): Boolean"),
+        "MedKitStorageRepository.applyServerParticipants" to (Shape.NAMED_FIELDS by "(Uuid, long, Instant): Unit"),
         // Долг: заведение и правка местных сведений одним методом. Пока у него нет ни одного
         // вызывающего в продукте; экран правки придёт в PR 7 и должен принести названные поля,
         // как `rename` у записи эпизода, — иначе он затрёт то, что сделал сосед.
-        "MedKitStorageRepository.save" to Shape.UNGUARDED,
+        "MedKitStorageRepository.save" to (Shape.UNGUARDED by "(MedKit, Instant): Unit"),
         // Публикация
-        "PublicationStorage.medKit" to Shape.READ,
-        "PublicationStorage.contentsOf" to Shape.READ,
-        "PublicationStorage.publish" to Shape.SNAPSHOT,
+        "PublicationStorage.medKit" to (Shape.READ by "(Uuid): MedKit"),
+        "PublicationStorage.contentsOf" to (Shape.READ by "(Uuid): List<Package>"),
+        "PublicationStorage.publish" to (Shape.SNAPSHOT by "(Uuid, List<PackageSnapshot>, Instant): PublicationStorage\$Switch"),
         // Приём
-        "IntakeStorageRepository.observeOfCourse" to Shape.READ,
-        "IntakeStorageRepository.ofCourse" to Shape.READ,
-        "IntakeStorageRepository.find" to Shape.READ,
-        "IntakeStorageRepository.syncStateOf" to Shape.READ,
-        "IntakeStorageRepository.plannedBefore" to Shape.READ,
-        "IntakeStorageRepository.save" to Shape.ACTION,
-        "IntakeStorageRepository.record" to Shape.ACTION,
-        "IntakeStorageRepository.materialise" to Shape.CREATION,
-        "IntakeStorageRepository.prunePlanned" to Shape.NAMED_FIELDS,
+        "IntakeStorageRepository.observeOfCourse" to (Shape.READ by "(Uuid): Flow<List<IntakeProjection>>"),
+        "IntakeStorageRepository.ofCourse" to (Shape.READ by "(Uuid): List<? extends Intake>"),
+        "IntakeStorageRepository.find" to (Shape.READ by "(Uuid): Intake"),
+        "IntakeStorageRepository.syncStateOf" to (Shape.READ by "(Uuid): IntakeSyncState"),
+        "IntakeStorageRepository.plannedBefore" to (Shape.READ by "(Instant): List<CourseIntake>"),
+        "IntakeStorageRepository.save" to (Shape.ACTION by "(RecordedIntake): Unit"),
+        "IntakeStorageRepository.record" to (Shape.ACTION by "(IntakeOutcome): Boolean"),
+        "IntakeStorageRepository.materialise" to (Shape.CREATION by "(List<CourseIntake>): Integer"),
+        "IntakeStorageRepository.prunePlanned" to (Shape.NAMED_FIELDS by "(Uuid, Set<ScheduledOccurrence>): Integer"),
         // История остатка — только дописывается.
-        "StockMovementStorageRepository.observeOfPackage" to Shape.READ,
-        "StockMovementStorageRepository.ofPackage" to Shape.READ,
-        "StockMovementStorageRepository.observedBetween" to Shape.READ,
-        "StockMovementStorageRepository.record" to Shape.CREATION
+        "StockMovementStorageRepository.observeOfPackage" to (Shape.READ by "(Uuid): Flow<List<StockMovement>>"),
+        "StockMovementStorageRepository.ofPackage" to (Shape.READ by "(Uuid): List<? extends StockMovement>"),
+        "StockMovementStorageRepository.observedBetween" to (Shape.READ by "(Instant, Instant): List<? extends StockMovement>"),
+        "StockMovementStorageRepository.record" to (Shape.CREATION by "(StockMovement): Unit")
     )
 
     /**
@@ -139,25 +148,50 @@ class WriteContractTest {
         PublicationStorage::class.java
     )
 
-    private fun methods(): Set<String> = ports.flatMapTo(LinkedHashSet()) { port ->
+    /**
+     * Методы портов по имени — списком подписей: перегрузка даёт под одним именем две строки, и
+     * договор с одной подписью её не пропустит.
+     */
+    private fun methods(): Map<String, List<String>> = ports.flatMap { port ->
         port.declaredMethods
             .filterNot { it.isSynthetic || it.isBridge }
             // Kotlin дописывает к имени хеш, когда аргумент — `value class` (`Revision`):
             // договор называет метод так, как он записан в исходнике.
-            .map { "${port.simpleName}.${it.name.substringBefore('-')}" }
+            .map { "${port.simpleName}.${it.name.substringBefore('-')}" to signatureOf(it) }
+    }.groupBy({ it.first }, { it.second })
+
+    /**
+     * `(параметры): возврат` простыми именами. У `suspend` на JVM последний параметр —
+     * `Continuation<? super T>`, а возврат — `Object`: настоящий возврат читается из продолжения.
+     */
+    private fun signatureOf(method: Method): String {
+        val params = method.genericParameterTypes.map { it.typeName }
+        val suspending = params.lastOrNull()?.startsWith("kotlin.coroutines.Continuation") == true
+        val arguments = if (suspending) params.dropLast(1) else params
+        val returns = if (suspending) params.last().substringAfter("? super ").removeSuffix(">") else method.genericReturnType.typeName
+        return "(${arguments.joinToString(", ") { simple(it) }}): ${simple(returns)}"
     }
 
+    private fun simple(type: String): String = type.replace(Regex("""\b(?:[a-z_]\w*\.)+(?=[A-Za-z_])"""), "")
+
     @Test
-    fun everyPortMethodNamesItsShape() {
+    fun everyPortMethodNamesItsShapeAndSignature() {
         val found = methods()
         assertTrue("у портов не нашлось ни одного метода — читается не то", found.isNotEmpty())
-        assertEquals("методы без договора: ${found - contract.keys}", emptySet<String>(), found - contract.keys)
-        assertEquals("договор называет то, чего нет: ${contract.keys - found}", emptySet<String>(), contract.keys - found)
+        assertEquals("методы без договора: ${found.keys - contract.keys}", emptySet<String>(), found.keys - contract.keys)
+        assertEquals("договор называет то, чего нет: ${contract.keys - found.keys}", emptySet<String>(), contract.keys - found.keys)
+        val changed = found.filter { (name, signatures) -> signatures != listOf(contract.getValue(name).signature) }
+        assertEquals(
+            "подпись разошлась с договором (или появилась перегрузка) — форму нужно назвать заново: " +
+                changed.map { (name, signatures) -> "$name: договор ${contract.getValue(name).signature}, в коде $signatures" },
+            emptyMap<String, List<String>>(),
+            changed
+        )
     }
 
     @Test
     fun onlyTheNamedDebtTakesAReadEntityWithoutARevision() {
-        val unguarded = contract.filterValues { it == Shape.UNGUARDED }.keys
+        val unguarded = contract.filterValues { it.shape == Shape.UNGUARDED }.keys
         assertEquals(
             "прочитанный экземпляр без редакции принимает метод, которого нет в списке долга",
             known,
