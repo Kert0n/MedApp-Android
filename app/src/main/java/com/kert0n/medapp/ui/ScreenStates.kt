@@ -73,6 +73,21 @@ fun ErrorMessage(
     reason: LoadFailure,
     modifier: Modifier = Modifier,
     onRetry: (() -> Unit)? = null
+) = ErrorMessage(
+    text = stringResource(reason.text),
+    modifier = modifier,
+    onRetry = onRetry.takeIf { reason.isWorthRetrying }
+)
+
+/**
+ * Та же беда словами вызывающего — для случаев, у которых своей [LoadFailure] нет: утрата ключа
+ * это не «не загрузилось», а состояние, из которого человек выходит решением.
+ */
+@Composable
+fun ErrorMessage(
+    text: String,
+    modifier: Modifier = Modifier,
+    onRetry: (() -> Unit)? = null
 ) {
     StateFrame(modifier) {
         Column(
@@ -80,12 +95,12 @@ fun ErrorMessage(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                text = stringResource(reason.text),
+                text = text,
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.error,
                 textAlign = TextAlign.Center
             )
-            if (onRetry != null && reason.isWorthRetrying) {
+            if (onRetry != null) {
                 Button(onClick = onRetry, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) {
                     Text(stringResource(R.string.action_retry))
                 }
@@ -110,6 +125,7 @@ private val LoadFailure.text: Int
         LoadFailure.NO_CONNECTION -> R.string.failure_no_connection
         LoadFailure.SERVER_UNAVAILABLE -> R.string.failure_server_unavailable
         LoadFailure.NOT_AUTHORIZED -> R.string.failure_not_authorized
+        LoadFailure.DEVICE_STORAGE -> R.string.failure_device_storage
     }
 
 /** Повтор тем же осмыслен не всегда: отказ в пропуске им не лечится (PLAN G2). */

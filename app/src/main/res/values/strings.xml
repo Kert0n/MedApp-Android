@@ -7,6 +7,7 @@
     <string name="failure_no_connection">Нет связи с сервером. Проверьте подключение.</string>
     <string name="failure_server_unavailable">Сервер не отвечает. Попробуйте позже.</string>
     <string name="failure_not_authorized">Сервер не принял учётную запись этого устройства.</string>
+    <string name="failure_device_storage">Не удалось сохранить данные на устройстве.</string>
 
     <!-- Нижняя навигация -->
     <string name="tab_med_kits">Аптечки</string>
@@ -14,6 +15,12 @@
     <string name="tab_scanner">Сканер</string>
     <string name="tab_analytics">Аналитика</string>
     <string name="tab_settings">Настройки</string>
+
+    <!-- Первичная настройка -->
+    <string name="setup_checking">Настраиваем приложение…</string>
+    <string name="setup_key_lost">Ключ этого устройства больше не открывается, и учётная запись
+        недоступна. Локальные аптечки, курсы и история целы. Общие аптечки придётся подключить
+        заново по приглашению — но сначала нужно решить, заводить ли новую учётную запись.</string>
 
     <!-- Экраны, которых ещё нет -->
     <string name="screen_not_ready">Этот экран ещё не готов.</string>

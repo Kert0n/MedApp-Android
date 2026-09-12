@@ -4,7 +4,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import com.kert0n.medapp.app.navigation.MedAppShell
 import com.kert0n.medapp.ui.theme.MedAppTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -17,7 +16,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MedAppTheme {
-                MedAppShell()
+                MedAppApp()
             }
         }
     }
