@@ -11,6 +11,7 @@ import com.kert0n.medapp.fixture.expiry
 import com.kert0n.medapp.fixture.fileDatabase
 import com.kert0n.medapp.fixture.inMemoryDatabase
 import com.kert0n.medapp.fixture.save
+import com.kert0n.medapp.fixture.left
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.reopenFileDatabase
 import com.kert0n.medapp.fixture.tablets
@@ -19,6 +20,7 @@ import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import java.math.BigDecimal
 import java.time.Instant
+import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -79,7 +81,7 @@ class PackageDaoTest {
     fun repeatedServerSnapshotKeepsLocalDetails() = runTest {
         packages.save(local)
 
-        val fromServer = requireNotNull(local.correctTo(tablets("12"))).describe(
+        val fromServer = local.correctTo(tablets("12"), Uuid.random(), Instant.EPOCH).left().describe(
             local.facts.copy(shared = local.facts.shared.copy(name = "Paracetamol"))
         )
         packages.applySnapshot(

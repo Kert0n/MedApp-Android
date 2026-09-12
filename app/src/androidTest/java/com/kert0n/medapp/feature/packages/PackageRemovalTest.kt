@@ -89,24 +89,37 @@ class PackageRemovalTest {
         assertTrue(plan.sources.isEmpty())
         assertEquals(Revision(2), plan.revision)
         assertNull(database.courses().courseHolding(PACK))
-        assertEquals(1, database.stockMovements().ofPackage(PACK).size)
+        // Выброшенное объясняет себя: к приходу добавляется утилизация всего остатка. Без неё
+        // двадцать таблеток исчезли бы из учёта никем не принятыми, и «истрачено» не сошлось (H6).
+        val history = database.stockMovements().ofPackage(PACK).map { it.toDomain(VOCABULARY) }
+        assertEquals(2, history.size)
+        assertEquals(tablets("20"), history.filterIsInstance<StockMovement.Disposal>().single().amount)
         val intake = requireNotNull(database.intakes().find(INTAKE)).toDomain(VOCABULARY)
         assertEquals("Парацетамол", intake.taken?.pkg?.name)
         assertEquals(emptyList<SyncCommand>(), commands())
     }
 
-    /** Общая коробка: курс теряет её сразу, серверу — `Delete`, строка живёт до ответа с нулём в проекции. */
+    /**
+     * Общая коробка: решение и подтверждение — разные моменты (PLAN E1, E6). Серверу уходит
+     * `Delete` со своим предусловием, а коробка до ответа **цела**: сосед мог отложить её себе, и
+     * выбросить её молча нельзя. Лечение держит её источником, следа ещё нет, а проекция уже
+     * показывает ноль — человеку видно, что коробка помечена.
+     */
     @Test
-    fun aSharedPackageLeavesByCommandAndStaysUntilTheServerAnswers() = runTest {
+    fun aSharedPackageIsMarkedAndWaitsForTheShelfToAgree() = runTest {
         database.medKits().upsert(
             medKit(id = HOME_KIT, publication = MedKit.Publication.PUBLISHED, participantCount = 2).toMedKitStorageEntity()
         )
 
         val outcome = removal.remove(PACK)
 
-        assertEquals(PackageRemoval.Outcome.REMOVED, outcome)
+        assertEquals(PackageRemoval.Outcome.MARKED, outcome)
         assertNotNull(database.packageRepository().find(PACK))
-        assertTrue(requireNotNull(database.courseRepository().findPlan(COURSE)).sources.isEmpty())
+        assertEquals(
+            listOf(PACK),
+            requireNotNull(database.courseRepository().findPlan(COURSE)).sources.map { it.pkg.id }
+        )
+        assertEquals(1, database.stockMovements().ofPackage(PACK).size)
         assertEquals(listOf(PackageSyncCommand.Delete(PACK)), commands())
         val projection = requireNotNull(database.packageRepository().observe(PACK).first())
         assertEquals(tablets("0"), projection.availability.effective)

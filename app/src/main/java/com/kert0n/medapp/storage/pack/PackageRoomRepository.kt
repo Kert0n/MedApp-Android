@@ -3,7 +3,9 @@ package com.kert0n.medapp.storage.pack
 import androidx.room.withTransaction
 import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.pack.PackageAfter
 import com.kert0n.medapp.domain.pack.PackageAvailability
+import com.kert0n.medapp.domain.pack.PackageEnding
 import com.kert0n.medapp.domain.pack.PackageFacts
 import com.kert0n.medapp.domain.pack.PackageProjection
 import com.kert0n.medapp.domain.value.Quantity
@@ -14,6 +16,7 @@ import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.storage.course.CourseDao
 import com.kert0n.medapp.storage.course.CourseReallocation
+import com.kert0n.medapp.storage.course.releaseSource
 import com.kert0n.medapp.storage.course.toSourceStorageEntities
 import com.kert0n.medapp.storage.course.toStorageEntity as toCourseStorageEntity
 import com.kert0n.medapp.storage.database.MedAppDatabase
@@ -62,7 +65,14 @@ class PackageRoomRepository @Inject constructor(
     override suspend fun describe(packageId: Uuid, facts: PackageFacts): Boolean =
         change(packageId) { it.describe(facts) }
 
-    override suspend fun discard(packageId: Uuid): Boolean = packages.delete(packageId) > 0
+    override suspend fun end(ending: PackageEnding, at: Instant): Boolean = database.withTransaction {
+        if (packages.find(ending.record.id) == null) return@withTransaction false
+        finish(ending, at)
+        true
+    }
+
+    private suspend fun finish(ending: PackageEnding, at: Instant) =
+        packages.end(ending, courses, movements, vocabulary.snapshot(), at)
 
     override suspend fun contentsOf(medKitId: Uuid): List<Package> = database.withTransaction {
         val words = vocabulary.snapshot()
@@ -95,23 +105,22 @@ class PackageRoomRepository @Inject constructor(
         at: Instant
     ): Boolean = database.withTransaction {
         val stored = packages.find(adjustment.packageId) ?: return@withTransaction false
-        val applied = adjustment.applyTo(stored.toDomain(vocabulary.snapshot()), at)
-        // След пишется раньше строки: у кончившейся коробки строки не остаётся, а история — за
-        // записью, и её след переживает (D7).
-        applied.movement?.let { movements.insert(it.toMovementStorageEntity()) }
-        val left = applied.pack
-        if (left == null) {
-            packages.delete(adjustment.packageId)
-        } else {
-            // Версии и время сверки остаются те, что записал снимок сервера: их двигает сеть (E4).
-            save(left, stored.pack.syncState())
-        }
-        reallocation?.let { (plan, expected) ->
-            courses.updateAllocations(
-                plan.toCourseStorageEntity(),
-                plan.medicine.toSourceStorageEntities(plan.id),
-                expected
-            )
+        when (val after = adjustment.applyTo(stored.toDomain(vocabulary.snapshot()), at)) {
+            is PackageAfter.Left -> {
+                after.trace?.let { movements.insert(it.toMovementStorageEntity()) }
+                // Версии и время сверки остаются те, что записал снимок сервера: их двигает сеть (E4).
+                save(after.pkg, stored.pack.syncState())
+                // Пересчитанное обеспечение относится к пережившей переход коробке. У кончившейся
+                // источник уже снят доменным переходом внутри конца, и считать по ней нечего.
+                reallocation?.let { (plan, expected) ->
+                    courses.updateAllocations(
+                        plan.toCourseStorageEntity(),
+                        plan.medicine.toSourceStorageEntities(plan.id),
+                        expected
+                    )
+                }
+            }
+            is PackageAfter.Ended -> finish(after.ending, at)
         }
         true
     }

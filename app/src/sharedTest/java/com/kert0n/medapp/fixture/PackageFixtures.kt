@@ -5,6 +5,8 @@ import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.medkit.MedKitRef
 import com.kert0n.medapp.domain.pack.ExpiryDate
 import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.pack.PackageAfter
+import com.kert0n.medapp.domain.pack.PackageEnding
 import com.kert0n.medapp.domain.pack.PackageFacts
 import com.kert0n.medapp.domain.pack.PackageProjection
 import com.kert0n.medapp.domain.pack.PackageSharedFacts
@@ -74,6 +76,17 @@ fun pack(
 /** Проекция пачки без очереди и выделений: оценка равна подтверждённому остатку. */
 fun Package.projected(hasUnconfirmedChanges: Boolean = false): PackageProjection =
     projection(PackageAvailability(this, effective = quantity), hasUnconfirmedChanges)
+
+/**
+ * Оставшаяся после перехода коробка. Тест, который её ждёт, говорит об этом прямо, а не молча
+ * разворачивает `null`: у перехода два исхода, и перепутать их в проверке так же легко, как в коде.
+ */
+fun PackageAfter.left(): Package =
+    (this as? PackageAfter.Left)?.pkg ?: error("ожидалась оставшаяся коробка, а не $this")
+
+/** Конец коробки со своим следом — второй исход того же перехода. */
+fun PackageAfter.ended(): PackageEnding =
+    (this as? PackageAfter.Ended)?.ending ?: error("ожидался конец коробки, а не $this")
 
 /** Сведения, взятые у пачки: круговой тест начинается с того, что уже сохранено. */
 fun factsOf(pkg: Package): PackageFacts = pkg.facts

@@ -17,9 +17,10 @@ import kotlin.uuid.Uuid
  * синхронизации живёт в `PackageSyncState` слоя данных. Аптечку пачка держит ссылкой [MedKitRef].
  *
  * Состояний у коробки нет: она либо есть, либо её нет. Пустой коробки не бывает — кончившаяся
- * (расход, утилизация, пересчёт в ноль) перестаёт существовать так же, как выброшенная, и
- * переходы отвечают на это `null` (PLAN D3). Что от неё остаётся навсегда — [record]: за неё
- * держатся приёмы и движения (D6, D7).
+ * (расход, утилизация, пересчёт в ноль) перестаёт существовать так же, как выброшенная, и переходы
+ * отвечают на это [PackageAfter.Ended] с [PackageEnding] внутри: у конца есть след, объясняющий,
+ * куда делся остаток, и выбирает его переход, а не тот, кто записывает (PLAN D3, H6). Что от
+ * коробки остаётся навсегда — [record]: за неё держатся приёмы и движения (D6, D7).
  *
  * Объект действителен в пределах транзакции, которая его прочитала: пачка на руках после
  * первого же приёма — пачка с прежним остатком, если её не перечитать.
@@ -88,28 +89,58 @@ class Package(
         else Result.success(TakenDose(ref, amount, at))
 
     /**
-     * Расход — приём, плановый или разовый. В минус не списывает (PLAN D5); `null` — коробка
-     * кончилась, и её больше нет.
+     * Расход — приём, плановый или разовый. В минус не списывает (PLAN D5). Следа в истории
+     * расход не оставляет: приём и есть учётная запись о нём (PLAN D7, H6).
      */
-    fun consume(amount: Dose): Package? = withQuantity(quantity - amount.quantity)
+    fun consume(amount: Dose): PackageAfter = after(quantity - amount.quantity, trace = null)
 
     /**
      * Утилизация: выбросили [amount] — просроченное, испорченное. В минус пачка не уходит, поэтому
-     * «выбросил больше, чем было» списывает остаток целиком. Сколько ушло на самом деле, видно по
-     * разнице остатков — это и записывает история (PLAN D7). `null` — коробка кончилась.
+     * «выбросил больше, чем было» списывает остаток целиком, а в историю идёт то, что **ушло на
+     * самом деле** — разница остатков до и после (PLAN D7).
      */
-    fun dispose(amount: Quantity): Package? = withQuantity(quantity.minusOrZero(amount))
+    fun dispose(
+        amount: Quantity,
+        movementId: Uuid,
+        at: Instant,
+        reason: StockMovement.Disposal.Reason = StockMovement.Disposal.Reason.OTHER,
+        note: String? = null
+    ): PackageAfter {
+        val left = quantity.minusOrZero(amount)
+        return after(left, StockMovement.Disposal(movementId, ref, quantity - left, reason, at, at, note))
+    }
 
     /**
      * Пересчёт: «пересчитал и увидел столько» — замена значения, а не дельта (E1). Единица та же:
-     * смена единицы — отдельный сценарий (D3). Ноль — коробки больше нет: `null`.
+     * смена единицы — отдельный сценарий (D3).
      */
-    fun correctTo(actual: Quantity): Package? {
+    fun correctTo(actual: Quantity, movementId: Uuid, at: Instant, note: String? = null): PackageAfter {
         require(actual.unit == quantity.unit) {
             "пересчёт не меняет единицу: это отдельный сценарий"
         }
-        return withQuantity(actual)
+        return after(actual, StockMovement.Recount(movementId, ref, quantity, actual, at, at, note))
     }
+
+    /**
+     * Человек выбросил коробку целиком (ТЗ 4.1.1.3.5). Это утилизация всего остатка, и объясняется
+     * она так же: без её следа «истрачено за период» не сошлось бы — остаток исчез бы, никем не
+     * принятый и ничем не объяснённый (PLAN H6).
+     */
+    fun thrownOut(
+        movementId: Uuid,
+        at: Instant,
+        reason: StockMovement.Disposal.Reason = StockMovement.Disposal.Reason.OTHER,
+        note: String? = null
+    ): PackageEnding = when (val after = dispose(quantity, movementId, at, reason, note)) {
+        is PackageAfter.Ended -> after.ending
+        is PackageAfter.Left -> error("выброшенная целиком коробка не остаётся: ${after.pkg}")
+    }
+
+    /**
+     * Пачки нет на сервере, и нет по нашей же причине — мы сами её туда и отправили удалять либо
+     * израсходовали до конца. О количестве это не говорит ничего, поэтому следа нет (PLAN D7).
+     */
+    fun goneOnServer(): PackageEnding = PackageEnding(this, trace = null)
 
     /** Заменяет описательные сведения целиком — и серверные поля, и локальные (PLAN D3). */
     fun describe(facts: PackageFacts): Package = changed(facts = facts)
@@ -131,11 +162,17 @@ class Package(
      * последний виденный остаток уходит из учёта записью в историю (PLAN D7); самой пачки после
      * этого не остаётся. Тождество записи называет вызывающий: повтор не заводит вторую.
      */
-    fun lost(movementId: Uuid, at: Instant): StockMovement.AccessLoss =
-        StockMovement.AccessLoss(movementId, ref, quantity, observedAt = at)
+    fun lost(movementId: Uuid, at: Instant): PackageEnding =
+        PackageEnding(this, StockMovement.AccessLoss(movementId, ref, quantity, observedAt = at))
 
-    private fun withQuantity(left: Quantity): Package? =
-        if (left.isZero) null else changed(quantity = left)
+    /**
+     * Чем кончился переход: пустой коробки не бывает, поэтому ушедшая в ноль кончается, а [trace]
+     * объясняет, куда делся её остаток. У оставшейся след тот же — он о том, что произошло, а не о
+     * том, чем это кончилось.
+     */
+    private fun after(left: Quantity, trace: StockMovement?): PackageAfter =
+        if (left.isZero) PackageAfter.Ended(PackageEnding(this, trace))
+        else PackageAfter.Left(changed(quantity = left), trace)
 
     /**
      * Изменённый экземпляр; [id] и [addedAt] не меняются. Явный `claims = null` очищает брони,

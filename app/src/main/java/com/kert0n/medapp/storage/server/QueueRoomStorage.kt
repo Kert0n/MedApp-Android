@@ -3,7 +3,7 @@ package com.kert0n.medapp.storage.server
 import androidx.room.withTransaction
 import com.kert0n.medapp.domain.medkit.MedKitRef
 import com.kert0n.medapp.domain.pack.Package
-import com.kert0n.medapp.domain.stock.StockMovement
+import com.kert0n.medapp.domain.pack.PackageEnding
 import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.network.server.RawResponse
 import com.kert0n.medapp.queue.Delivery
@@ -23,12 +23,12 @@ import com.kert0n.medapp.queue.settlement
 import com.kert0n.medapp.queue.unknownRoot
 import com.kert0n.medapp.queue.medkit.toPreparedRequest as toMedKitPreparedRequest
 import com.kert0n.medapp.storage.course.CourseDao
-import com.kert0n.medapp.storage.course.dropSource
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.storage.intake.IntakeDao
 import com.kert0n.medapp.storage.medkit.MedKitDao
 import com.kert0n.medapp.storage.pack.PackageDao
 import com.kert0n.medapp.storage.pack.applySnapshot
+import com.kert0n.medapp.storage.pack.end
 import com.kert0n.medapp.storage.stock.StockMovementDao
 import com.kert0n.medapp.storage.stock.toStorageEntity as toMovementStorageEntity
 import com.kert0n.medapp.storage.value.VocabularyDao
@@ -168,26 +168,24 @@ class QueueRoomStorage @Inject constructor(
     private suspend fun apply(id: Uuid, effect: Settlement.Effect, at: Instant) {
         when (effect) {
             is Settlement.Effect.LayDown -> layDown(effect.snapshot, at)
-            // Коробки у нас больше нет — строки не остаётся, курс теряет источник (D3, D5).
-            // На сервере её нет по нашей же причине — о количестве это не говорит ничего (D7);
-            // утрачен доступ — последний виденный остаток уходит из учёта записью в историю.
-            is Settlement.Effect.PackageGone -> gone(effect.packageId, movement = null, at)
-            is Settlement.Effect.PackageLost -> gone(effect.packageId, movement = { it.lost(Uuid.random(), at) }, at)
+            // Коробки у нас больше нет. Чем это объясняется, решает переход самой пачки: «нет на
+            // сервере» по нашей же причине — о количестве это не говорит ничего; утрачен доступ —
+            // последний виденный остаток уходит из учёта записью в историю (PLAN D7).
+            is Settlement.Effect.PackageGone -> ended(effect.packageId, at) { it.goneOnServer() }
+            is Settlement.Effect.PackageLost -> ended(effect.packageId, at) { it.lost(Uuid.random(), at) }
             is Settlement.Effect.Account -> intakes.setAccounting(id, effect.accounting)
             is Settlement.Effect.Cascade -> cascade(id, effect)
         }
     }
 
-    private suspend fun gone(
-        packageId: Uuid,
-        movement: ((Package) -> StockMovement)?,
-        at: Instant
-    ) {
+    /**
+     * Конец коробки по ответу сервера: назвать его — дело самой пачки, она же приносит и след.
+     * Пачки уже нет — применять нечего: повтор эффекта второй записи не заводит.
+     */
+    private suspend fun ended(packageId: Uuid, at: Instant, ending: (Package) -> PackageEnding) {
         val words = vocabulary.snapshot()
         val pkg = packages.find(packageId)?.toDomain(words) ?: return
-        movement?.let { movements.insert(it(pkg).toMovementStorageEntity()) }
-        courses.dropSource(pkg.ref, words, at)
-        packages.delete(packageId)
+        packages.end(ending(pkg), courses, movements, words, at)
     }
 
     /** Разрешённый снимок поверх подтверждённого остатка и броней; разрешать здесь нечего. */

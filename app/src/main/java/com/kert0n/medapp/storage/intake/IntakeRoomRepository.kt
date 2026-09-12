@@ -12,7 +12,10 @@ import com.kert0n.medapp.storage.course.toSourceStorageEntities
 import com.kert0n.medapp.storage.course.toStorageEntity as toCourseStorageEntity
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.storage.database.chunkedForQuery
+import com.kert0n.medapp.domain.pack.PackageAfter
 import com.kert0n.medapp.storage.pack.PackageDao
+import com.kert0n.medapp.storage.pack.end
+import com.kert0n.medapp.storage.stock.StockMovementDao
 import com.kert0n.medapp.storage.pack.toDetailsStorageEntity
 import com.kert0n.medapp.storage.pack.toStorageEntity as toPackageStorageEntity
 import com.kert0n.medapp.storage.pack.toStorageEntity as toRecordStorageEntity
@@ -29,6 +32,7 @@ class IntakeRoomRepository @Inject constructor(
     private val intakes: IntakeDao,
     private val packages: PackageDao,
     private val courses: CourseDao,
+    private val movements: StockMovementDao,
     private val vocabulary: VocabularyDao
 ) : IntakeStorageRepository {
 
@@ -98,16 +102,16 @@ class IntakeRoomRepository @Inject constructor(
         if (!applied) return@withTransaction false
 
         source?.let {
-            val spent = it.toDomain(vocabulary.snapshot()).consume(requireNotNull(outcome.taken).amount)
-            if (spent == null) {
-                // Коробка кончилась — строки после неё не остаётся; приём держится за запись (D3, D6).
-                packages.delete(it.pack.id)
-            } else {
+            val words = vocabulary.snapshot()
+            when (val spent = it.toDomain(words).consume(requireNotNull(outcome.taken).amount)) {
+                // Коробка кончилась. Следа у расхода нет — приём и есть учётная запись о нём, — а
+                // держится он за вечную запись и конец переживает (PLAN D3, D6, H6).
+                is PackageAfter.Ended -> packages.end(spent.ending, courses, movements, words, outcome.answeredAt)
                 // Расход не трогает обвязку доставки: версия и картина броней остаются прежними (E3).
-                packages.save(
-                    spent.record.toRecordStorageEntity(),
-                    spent.toPackageStorageEntity(it.pack.syncState()),
-                    spent.toDetailsStorageEntity()
+                is PackageAfter.Left -> packages.save(
+                    spent.pkg.record.toRecordStorageEntity(),
+                    spent.pkg.toPackageStorageEntity(it.pack.syncState()),
+                    spent.pkg.toDetailsStorageEntity()
                 )
             }
         }

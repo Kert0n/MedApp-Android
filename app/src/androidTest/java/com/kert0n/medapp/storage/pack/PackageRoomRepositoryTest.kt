@@ -12,6 +12,7 @@ import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.inMemoryDatabase
 import com.kert0n.medapp.fixture.medKit
 import com.kert0n.medapp.fixture.millilitres
+import com.kert0n.medapp.fixture.left
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.projected
 import com.kert0n.medapp.fixture.packageRepository
@@ -262,7 +263,7 @@ class PackageRoomRepositoryTest {
     @Test
     fun describingDoesNotWriteBackAStaleAmount() = runTest {
         val sync = PackageSyncState(PACK, version = ResourceVersion(5), syncedAt = at)
-        repository.applySnapshot(PackageSnapshot(requireNotNull(paracetamol.correctTo(tablets("11"))), sync), at)
+        repository.applySnapshot(PackageSnapshot(paracetamol.correctTo(tablets("11"), Uuid.random(), at).left(), sync), at)
 
         val renamed = paracetamol.facts.let { it.copy(shared = it.shared.copy(name = "Панадол")) }
 

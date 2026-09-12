@@ -170,6 +170,13 @@ interface CourseDao {
     @Query("SELECT package_id FROM course_sources WHERE course_id = :courseId")
     suspend fun sourcePackagesOf(courseId: Uuid): List<Uuid>
 
+    /**
+     * Какое лечение держит эту коробку источником — по составу, а не по назначениям: назначения
+     * бывают только у начатого, а состав есть и у черновика (PLAN D5, F1).
+     */
+    @Query("SELECT course_id FROM course_sources WHERE package_id = :packageId")
+    suspend fun coursesHolding(packageId: Uuid): List<Uuid>
+
     /** Какие из названных коробок ещё есть: источником бывает только живая (PLAN D3). */
     @Query("SELECT id FROM packages WHERE id IN (:packageIds)")
     suspend fun livingPackagesAmong(packageIds: List<Uuid>): List<Uuid>
@@ -198,17 +205,37 @@ interface CourseDao {
 }
 
 /**
- * Источник не переживает коробку: курс, державший пачку [pkg], теряет её доменным переходом —
- * с ростом редакции и освобождением назначения, — а не молча каскадом схемы (PLAN D5, F5).
- * Зовётся там, где коробки не стало без решения человека о курсе: кончилась, утрачен доступ,
- * исчезла на сервере. `false` — пачку никакой курс не держал.
+ * Источник не переживает коробку: **каждое** лечение, державшее пачку [pkg], теряет её доменным
+ * переходом — с ростом редакции и освобождением назначения, — а не молча каскадом схемы
+ * (PLAN D5, F5). Зовётся один раз, из двери конца коробки, и только оттуда.
+ *
+ * Лечение ищется по составу, а не по назначениям: назначения бывают только у начатого, а состав
+ * есть и у черновика, и вырезанный каскадом источник черновика человек обнаружил бы сам, вернувшись
+ * к недоделанному курсу.
  */
-suspend fun CourseDao.dropSource(pkg: PackageRef, vocabulary: Vocabulary, at: Instant): Boolean {
-    val courseId = courseHolding(pkg.id) ?: return false
-    val row = findPlan(courseId) ?: return false
-    val course = row.toPlan(vocabulary)
-    val detached = course.detach(pkg, at)
-    updateAllocations(detached.toStorageEntity(), detached.medicine.toSourceStorageEntities(detached.id), course.revision)
+suspend fun CourseDao.releaseSource(pkg: PackageRef, vocabulary: Vocabulary, at: Instant) {
+    for (courseId in coursesHolding(pkg.id)) {
+        val row = findPlan(courseId) ?: continue
+        if (row.isDraft) {
+            val draft = row.toDraft(vocabulary).detach(pkg, at)
+            saveCourse(
+                course = draft.toStorageEntity(),
+                times = draft.schedule?.toTimeStorageEntities(draft.id).orEmpty(),
+                sources = draft.medicine.toSourceStorageEntities(draft.id)
+            )
+        } else {
+            val plan = row.toPlan(vocabulary)
+            val detached = plan.detach(pkg, at)
+            // Ноль изменённых строк здесь незаконен: план прочитан этой же транзакцией. Молча
+            // пропустить значило бы оставить курс с источником, которого уже нет.
+            check(
+                updateAllocations(
+                    detached.toStorageEntity(),
+                    detached.medicine.toSourceStorageEntities(detached.id),
+                    plan.revision
+                )
+            ) { "курс $courseId прочитан этой же транзакцией, а выделения писать некуда" }
+        }
+    }
     releasePackage(pkg.id)
-    return true
 }

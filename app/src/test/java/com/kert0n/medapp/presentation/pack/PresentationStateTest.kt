@@ -18,6 +18,8 @@ import com.kert0n.medapp.fixture.TABLET_FORM_ID
 import com.kert0n.medapp.fixture.factsOf
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.dose
+import com.kert0n.medapp.fixture.ended
+import com.kert0n.medapp.fixture.left
 import com.kert0n.medapp.fixture.tablets
 
 import java.math.BigDecimal
@@ -53,7 +55,7 @@ class PresentationStateTest {
         runCurrent()
         assertEquals("20", state.value.packages.single().quantity.amount)
 
-        val consumed = requireNotNull(original.consume(dose("1")))
+        val consumed = original.consume(dose("1")).left()
         assertEquals(original, consumed) // Доменное тождество не меняем ради интерфейса.
         assertNotEquals(original.projected(), consumed.projected()) // Наружу уходит проекция, и она различает.
         updates.emit(listOf(consumed.projected()))
@@ -66,7 +68,7 @@ class PresentationStateTest {
         assertEquals("В поездку", state.value.packages.single().note)
 
         // Кончившаяся коробка перестаёт существовать — из списка она уходит целиком (PLAN D3).
-        assertNull(edited.consume(dose("19")))
+        edited.consume(dose("19")).ended()
         updates.emit(emptyList())
         runCurrent()
         assertEquals(emptyList<Any>(), state.value.packages)

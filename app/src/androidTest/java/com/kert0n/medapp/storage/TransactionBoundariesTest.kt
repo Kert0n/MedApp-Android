@@ -173,7 +173,7 @@ class TransactionBoundariesTest {
         packages.add(ibuprofen)
         val extended = activation.course.attach(ibuprofen, 3.doses, LATER).getOrThrow()
 
-        assertTrue(packages.discard(OTHER_PACK))
+        assertTrue(packages.end(ibuprofen.thrownOut(Uuid.random(), LATER), LATER))
         assertFalse(courses.updateSources(extended, expected = activation.course.revision))
         assertEquals(listOf(PACK), requireNotNull(courses.findPlan(COURSE)).sources.map { it.pkg.id })
 

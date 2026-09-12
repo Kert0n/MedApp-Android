@@ -78,7 +78,7 @@ fun MedAppDatabase.courseRepository() = com.kert0n.medapp.storage.course.CourseR
 )
 
 fun MedAppDatabase.intakeRepository() = com.kert0n.medapp.storage.intake.IntakeRoomRepository(
-    this, intakes(), packages(), courses(), vocabulary()
+    this, intakes(), packages(), courses(), stockMovements(), vocabulary()
 )
 
 fun MedAppDatabase.medKitRepository() = com.kert0n.medapp.storage.medkit.MedKitRoomRepository(
@@ -110,11 +110,6 @@ suspend fun com.kert0n.medapp.storage.pack.PackageDao.save(
     pkg.toPackageDetailsStorageEntity()
 )
 
-/** Движения — репозиторием: сценарию утраты доступа нужен его порт. */
-fun MedAppDatabase.stockMovementRepository() = com.kert0n.medapp.storage.stock.StockMovementRoomRepository(
-    stockMovements(), vocabulary()
-)
-
 /** Служба очереди поверх той же базы: пара «изменение и команда» одной транзакцией. */
 fun MedAppDatabase.queueService() = com.kert0n.medapp.queue.QueueService(transactions(), queueStorage())
 
@@ -131,7 +126,7 @@ class Scenarios(database: MedAppDatabase, now: java.time.Instant) {
     private val transactions = database.transactions()
 
     val packageRemoval = com.kert0n.medapp.feature.packages.PackageRemoval(
-        packages, courses, database.stockMovementRepository(), queue, transactions, clock
+        packages, queue, transactions, clock
     )
     val packageRelocation = com.kert0n.medapp.feature.packages.PackageRelocation(
         packages, medKits, courses, queue, transactions, clock

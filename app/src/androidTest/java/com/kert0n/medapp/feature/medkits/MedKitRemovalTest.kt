@@ -125,7 +125,10 @@ class MedKitRemovalTest {
         assertNull(database.packageRepository().find(PACK))
         assertNull(database.packageRepository().find(OTHER_PACK))
         assertEquals(emptyList<Uuid>(), sourcesOfCourse())
-        assertEquals(1, database.stockMovements().ofPackage(PACK).size)
+        // Выброшенное объясняет себя: к приходу добавляется утилизация всего остатка (PLAN H6).
+        val history = database.stockMovements().ofPackage(PACK).map { it.toDomain(VOCABULARY) }
+        assertEquals(2, history.size)
+        assertEquals(tablets("20"), history.filterIsInstance<StockMovement.Disposal>().single().amount)
 
         assertNotNull(database.courses().findRecord(COURSE))
         val intake = requireNotNull(database.intakes().find(INTAKE)).toDomain(VOCABULARY)
@@ -187,7 +190,10 @@ class MedKitRemovalTest {
         assertNull(database.packageRepository().find(PACK))
         assertEquals(emptyList<Uuid>(), sourcesOfCourse())
         assertNotNull(database.courses().findRecord(COURSE))
-        assertEquals(1, database.stockMovements().ofPackage(PACK).size)
+        // Выброшенное объясняет себя: к приходу добавляется утилизация всего остатка (PLAN H6).
+        val history = database.stockMovements().ofPackage(PACK).map { it.toDomain(VOCABULARY) }
+        assertEquals(2, history.size)
+        assertEquals(tablets("20"), history.filterIsInstance<StockMovement.Disposal>().single().amount)
         assertEquals(listOf(MedKitSyncCommand.Delete(HOME_KIT)), commands())
     }
 

@@ -2,6 +2,7 @@ package com.kert0n.medapp.feature.intake
 
 import com.kert0n.medapp.domain.course.CourseCompletion
 import com.kert0n.medapp.domain.course.CourseProgress
+import com.kert0n.medapp.domain.pack.PackageAfter
 import com.kert0n.medapp.domain.pack.PackageAvailability
 import com.kert0n.medapp.feature.course.CourseClosing
 import com.kert0n.medapp.domain.intake.CourseIntake
@@ -81,11 +82,13 @@ class IntakeConfirmation @Inject constructor(
         // Местную коробку расход опустошает здесь же, и кончившаяся коробка источником не бывает:
         // курс теряет её тем же решением, что записывает приём (D3). У общей истина — сервер.
         val spendsLocally = !pkg.medKit.answersToServer
-        val emptied = spendsLocally && pkg.consume(amount) == null
+        val emptied = spendsLocally && pkg.consume(amount) is PackageAfter.Ended
         val allocated = course.sources.firstOrNull { it.pkg == pkg.ref }?.allocatedDoses
         val reallocation = when {
             allocated == null || finished -> null
-            emptied -> CourseReallocation(course.detach(pkg.ref, now), course.revision)
+            // Кончившуюся коробку курс теряет её же концом — одним переходом внутри записи приёма
+            // (PLAN D3, D5). Второй раз отвязывать нечего, и считать по ней обеспечение не из чего.
+            emptied -> null
             else -> {
                 val availableAfter = PackageAvailability(pkg, effective = pkg.quantity).availableToMe.minusOrZero(amount.quantity)
                 val doses = course.dosesAfterIntake(pkg.ref, amount, availableAfter)

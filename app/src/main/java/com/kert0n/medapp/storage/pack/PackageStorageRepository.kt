@@ -2,6 +2,7 @@ package com.kert0n.medapp.storage.pack
 
 import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.pack.PackageEnding
 import com.kert0n.medapp.domain.pack.PackageProjection
 import com.kert0n.medapp.domain.pack.PackageFacts
 import com.kert0n.medapp.network.pack.PackageSnapshot
@@ -47,12 +48,19 @@ interface PackageStorageRepository {
     suspend fun describe(packageId: Uuid, facts: PackageFacts): Boolean
 
     /**
-     * Человек выбросил коробку: живая строка уходит со своими частями — сведениями, бронями,
-     * связями с курсами; порознь их не бывает (PLAN D3, F2). Запись о коробке и всё, что за неё
-     * держится — приёмы и движения, — остаются (D6, D7). Что коробка не источник курса, решает
-     * сценарий до этого, доменом. `false` — пачки и так нет.
+     * Коробки больше нет — **единственная дверь** к этому, и звать её можно только с [PackageEnding],
+     * который построил переход пачки. Одной транзакцией ложится всё, чего порознь не бывает
+     * (PLAN D3, D7, F5):
+     *
+     * - след, объясняющий, куда делся остаток, — его выбрал вид конца, а не вызывающий;
+     * - источник, снятый **доменным переходом** у каждого лечения, которое коробку держало, — и у
+     *   начатого, и у черновика, — с ростом редакции;
+     * - живая строка со своими частями: сведениями и бронями.
+     *
+     * Запись о коробке и всё, что за неё держится — приёмы и движения, — остаются (D6, D7).
+     * `false` — пачки и так нет.
      */
-    suspend fun discard(packageId: Uuid): Boolean
+    suspend fun end(ending: PackageEnding, at: Instant): Boolean
 
     /**
      * Живые пачки аптечки — сущности для сценария, который разбирает её по коробкам в своей

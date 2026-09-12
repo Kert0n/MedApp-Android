@@ -2,6 +2,7 @@ package com.kert0n.medapp.storage.pack
 
 import com.kert0n.medapp.domain.medkit.MedKitRef
 import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.pack.PackageAfter
 import com.kert0n.medapp.domain.stock.StockMovement
 import com.kert0n.medapp.domain.value.Quantity
 import java.time.Instant
@@ -60,36 +61,18 @@ sealed interface PackageAdjustment {
     ) : PackageAdjustment
 
     /**
-     * Применяет переход к нынешнему состоянию пачки и записывает его след. Оба конца следа —
-     * «было» и «стало» — известны только здесь, потому что «было» прочитано в той же транзакции.
+     * Применяет переход к нынешнему состоянию пачки: что с ней стало и чем это объясняется,
+     * отвечает сама пачка — «было» она знает, а «сколько ушло на самом деле» её правило (PLAN D7).
+     * Хранение называет действие и записывает ответ, но не решает, что действие значит.
      *
-     * У переноса следа нет: остаток он не меняет, а где коробка лежит, знает сама пачка (PLAN D7).
+     * У переноса следа нет: остаток он не меняет, а где коробка лежит, знает сама пачка.
      */
-    fun applyTo(pack: Package, at: Instant): Applied {
+    fun applyTo(pack: Package, at: Instant): PackageAfter {
         require(pack.id == packageId) { "переход применяется к своей пачке" }
         return when (this) {
-            is Recount -> Applied(
-                pack.correctTo(actual),
-                StockMovement.Recount(movementId, pack.ref, pack.quantity, actual, at, at, note)
-            )
-            is Disposal -> {
-                // В историю идёт то, что действительно ушло, — разница остатков до и после
-                // перехода: сколько уходит, когда выбросили больше, чем было, решает пачка.
-                val disposed = pack.dispose(amount)
-                val left = disposed?.quantity ?: Quantity.zero(pack.quantity.unit)
-                Applied(
-                    disposed,
-                    StockMovement.Disposal(movementId, pack.ref, pack.quantity - left, reason, at, at, note)
-                )
-            }
-            is Transfer -> Applied(pack.moveTo(target))
+            is Recount -> pack.correctTo(actual, movementId, at, note)
+            is Disposal -> pack.dispose(amount, movementId, at, reason, note)
+            is Transfer -> PackageAfter.Left(pack.moveTo(target))
         }
     }
-
-    /**
-     * Новое состояние пачки и запись о том, как оно получилось. `null` вместо пачки — коробка
-     * кончилась, и строки после перехода не остаётся (PLAN D3); запись бывает не у всякого
-     * перехода: перенос остаток не трогает, и в истории расхода ему места нет.
-     */
-    data class Applied(val pack: Package?, val movement: StockMovement? = null)
 }

@@ -6,7 +6,13 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
+import com.kert0n.medapp.domain.pack.PackageEnding
+import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.network.pack.PackageSnapshot
+import com.kert0n.medapp.storage.course.CourseDao
+import com.kert0n.medapp.storage.course.releaseSource
+import com.kert0n.medapp.storage.stock.StockMovementDao
+import com.kert0n.medapp.storage.stock.toStorageEntity
 import java.time.Instant
 import java.time.LocalDate
 import kotlin.uuid.Uuid
@@ -192,9 +198,12 @@ interface PackageDao {
     suspend fun allocationsOf(packageIds: List<Uuid>): List<PackageAllocationRow>
 
     /**
-     * Коробки больше нет: живая строка уходит и уносит свои части каскадом — сведения, брони,
-     * связи с курсами (PLAN F2). Запись о коробке и всё, что за неё держится, остаются. Ноль
-     * строк значит «пачки и так нет».
+     * Живая строка уходит и уносит свои части каскадом — сведения и брони (PLAN F2). Запись о
+     * коробке и всё, что за неё держится, остаются. Ноль строк значит «пачки и так нет».
+     *
+     * **Зовётся только из [end].** Сама по себе строка — половина конца: без следа остаток
+     * пропадает без объяснения, а без доменного перехода лечение теряет источник мимо своей же
+     * редакции.
      */
     @Query("DELETE FROM packages WHERE id = :id")
     suspend fun delete(id: Uuid): Int
@@ -215,6 +224,30 @@ suspend fun PackageDao.applySnapshot(snapshot: PackageSnapshot, observedAt: Inst
         snapshot.pack.claims?.toStorageEntity(snapshot.pack.id),
         observedAt
     )
+
+/**
+ * Конец коробки — **одно место на всё приложение**: расход, утилизация, пересчёт в ноль,
+ * выбрасывание, утрата доступа и «на сервере её нет» приходят сюда одним значением [PackageEnding],
+ * и каждый вид конца уже принёс с собой свой след.
+ *
+ * Порядок важен: след пишется раньше строки, потому что держится он за вечную запись и должен
+ * пережить коробку (PLAN D7); источник снимается доменным переходом каждого лечения, которое
+ * коробку держало, — с ростом редакции, — потому что состав курса не меняется мимо самого курса
+ * (PLAN D5, F5); строка уходит последней.
+ *
+ * Зовётся внутри уже открытой транзакции того сценария, который коробку и кончает.
+ */
+suspend fun PackageDao.end(
+    ending: PackageEnding,
+    courses: CourseDao,
+    movements: StockMovementDao,
+    vocabulary: Vocabulary,
+    at: Instant
+) {
+    ending.trace?.let { movements.insert(it.toStorageEntity()) }
+    courses.releaseSource(ending.pkg.ref, vocabulary, at)
+    delete(ending.record.id)
+}
 
 /**
  * Ложится ли пришедшая версия поверх известной: запоздалый снимок свежий не перекрывает

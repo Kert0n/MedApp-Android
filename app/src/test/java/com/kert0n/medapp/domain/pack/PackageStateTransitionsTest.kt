@@ -79,6 +79,6 @@ class PackageStateTransitionsTest {
         // она держится за ссылку на пачку, а не за саму пачку — той больше не будет.
         val movementId = Uuid.random()
         val lost = pack(quantity = tablets("7")).lost(movementId, LATER)
-        assertEquals(StockMovement.AccessLoss(movementId, pack().ref, tablets("7"), observedAt = LATER), lost)
+        assertEquals(StockMovement.AccessLoss(movementId, pack().ref, tablets("7"), observedAt = LATER), lost.trace)
     }
 }
