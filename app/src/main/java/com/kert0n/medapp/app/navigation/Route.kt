@@ -34,4 +34,15 @@ sealed interface Route {
     /** Заведение и правка аптечки; `null` — новая, её идентификатор придумает сценарий. */
     @Serializable
     data class MedKitForm(val medKitId: Uuid? = null) : Route
+
+    /** Что лежит в этой аптечке (экран 4). */
+    @Serializable
+    data class MedKitContents(val medKitId: Uuid) : Route
+
+    /**
+     * Заведение упаковки (экран 7); [medKitId] — аптечка, из которой человек пришёл, и `null`,
+     * когда он ещё не выбрал её.
+     */
+    @Serializable
+    data class PackageForm(val medKitId: Uuid? = null) : Route
 }

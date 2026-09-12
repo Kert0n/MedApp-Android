@@ -27,6 +27,8 @@ import kotlin.reflect.typeOf
 import kotlin.uuid.Uuid
 import androidx.navigation.toRoute
 import com.kert0n.medapp.feature.medkits.MedKitFormScreen
+import com.kert0n.medapp.feature.packs.MedKitContentsScreen
+import com.kert0n.medapp.feature.packs.PackageFormScreen
 import com.kert0n.medapp.feature.medkits.MedKitListScreen
 import com.kert0n.medapp.ui.EmptyState
 
@@ -77,7 +79,7 @@ private fun MedAppNavHost(navController: NavHostController, modifier: Modifier =
     NavHost(navController, startDestination = Route.MedKits, modifier = modifier) {
         composable<Route.MedKits> {
             MedKitListScreen(
-                onOpen = { /* содержимое аптечки — следующий коммит */ },
+                onOpen = { navController.navigate(Route.MedKitContents(it)) },
                 onAdd = { navController.navigate(Route.MedKitForm()) }
             )
         }
@@ -89,11 +91,27 @@ private fun MedAppNavHost(navController: NavHostController, modifier: Modifier =
             val route = entry.toRoute<Route.MedKitForm>()
             MedKitFormScreen(route.medKitId, onDone = { navController.popBackStack() })
         }
+        composable<Route.MedKitContents>(typeMap = RouteTypes) { entry ->
+            val route = entry.toRoute<Route.MedKitContents>()
+            MedKitContentsScreen(
+                medKitId = route.medKitId,
+                onBack = { navController.popBackStack() },
+                onOpen = { /* карточка упаковки — следующий коммит */ },
+                onAdd = { navController.navigate(Route.PackageForm(route.medKitId)) }
+            )
+        }
+        composable<Route.PackageForm>(typeMap = RouteTypes) { entry ->
+            val route = entry.toRoute<Route.PackageForm>()
+            PackageFormScreen(route.medKitId, onDone = { navController.popBackStack() })
+        }
     }
 }
 
 /** Чем маршруты возят идентификаторы: один набор на всё приложение. */
-private val RouteTypes = mapOf(typeOf<Uuid?>() to UuidNavType)
+private val RouteTypes = mapOf(
+    typeOf<Uuid>() to UuidNavType,
+    typeOf<Uuid?>() to UuidOrNoneNavType
+)
 
 @Composable
 private fun NotReadyYet() = EmptyState(text = stringResource(R.string.screen_not_ready))
