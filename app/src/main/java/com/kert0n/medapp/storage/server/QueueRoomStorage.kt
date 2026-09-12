@@ -26,6 +26,7 @@ import com.kert0n.medapp.storage.intake.IntakeDao
 import com.kert0n.medapp.storage.medkit.MedKitDao
 import com.kert0n.medapp.storage.pack.PackageDao
 import com.kert0n.medapp.storage.pack.toDetailsStorageEntity
+import com.kert0n.medapp.storage.pack.applySnapshot
 import com.kert0n.medapp.storage.pack.toStorageEntity
 import com.kert0n.medapp.storage.value.VocabularyDao
 import java.time.Instant
@@ -185,11 +186,7 @@ class QueueRoomStorage @Inject constructor(
 
     /** Разрешённый снимок поверх подтверждённого остатка и броней; разрешать здесь нечего. */
     private suspend fun layDown(snapshot: PackageSnapshot, at: Instant) {
-        packages.applySnapshot(
-            snapshot.pack.toStorageEntity(snapshot.sync),
-            snapshot.pack.claims?.toStorageEntity(snapshot.pack.id),
-            observedAt = at
-        )
+        packages.applySnapshot(snapshot, observedAt = at)
     }
 
     /** Зависимость значит «нужен эффект»: не будет его у родителя — не будет и у зависимых, и у их зависимых. */

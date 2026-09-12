@@ -66,7 +66,7 @@ class PackageDaoTest {
     @Test
     fun snapshotOfAnUnknownPackageCreatesItsDetailsRow() = runTest {
         val observed = Instant.parse("2026-09-10T12:00:00Z")
-        packages.applyServerSnapshot(local.toStorageEntity(), observed)
+        packages.applySnapshot(local.toStorageEntity(), claims = null, observedAt = observed)
         val restored = requireNotNull(packages.find(PACK)).toDomain(VOCABULARY)
         assertEquals(observed, restored.addedAt)
         assertNull(restored.facts.expiresOn)
@@ -81,9 +81,10 @@ class PackageDaoTest {
         val fromServer = local.correctTo(tablets("12")).describe(
             local.facts.copy(shared = local.facts.shared.copy(name = "Paracetamol"))
         )
-        packages.applyServerSnapshot(
+        packages.applySnapshot(
             fromServer.toStorageEntity(),
-            Instant.parse("2026-09-11T12:00:00Z")
+            claims = null,
+            observedAt = Instant.parse("2026-09-11T12:00:00Z")
         )
 
         val restored = requireNotNull(packages.find(PACK)).toDomain(VOCABULARY)
@@ -147,6 +148,31 @@ class PackageDaoTest {
         val row = requireNotNull(packages.find(PACK))
         assertEquals(BigDecimal("5"), requireNotNull(row.claims).toDomain().total)
         assertEquals(ResourceVersion(5), row.pack.syncState().claimsVersion)
+    }
+
+    /**
+     * Версия картины броней описывает ту картину, что лежит рядом. Дверь, пишущая версию без
+     * картины, эту пару разводит: запоздалая версия садится на свежие брони, и следующий снимок
+     * — уже по правилам — принимает устаревшую картину как новость (PLAN B3, E1).
+     *
+     * Красная проверка: дверь, пишущая серверную строку вместе с `claims_version`, краснит это.
+     */
+    @Test
+    fun noDoorMovesTheClaimsVersionWithoutTheClaims() = runTest {
+        givenSnapshot(version = 10, claimsVersion = 5, quantity = tablets("20"), total = "8")
+
+        // Снимок пачки версии 10 с запоздалой версией броней 4 — картины броней он не несёт.
+        packages.applySnapshot(
+            pack(quantity = tablets("12")).toStorageEntity(
+                PackageSyncState(PACK, version = ResourceVersion(10), claimsVersion = ResourceVersion(4))
+            ),
+            claims = null,
+            observedAt = observed
+        )
+
+        val row = requireNotNull(packages.find(PACK))
+        assertEquals(ResourceVersion(5), row.pack.syncState().claimsVersion)
+        assertEquals(BigDecimal("8"), requireNotNull(row.claims).toDomain().total)
     }
 
     private val observed = Instant.parse("2026-09-11T12:00:00Z")

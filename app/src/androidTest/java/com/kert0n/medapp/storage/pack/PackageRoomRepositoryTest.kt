@@ -19,6 +19,7 @@ import com.kert0n.medapp.fixture.queueRepository
 import com.kert0n.medapp.fixture.source
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.queue.pack.PackageSyncCommand
+import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.queue.SyncOperationStatus
@@ -62,6 +63,10 @@ class PackageRoomRepositoryTest {
 
     /** Все запросы к базе — чтобы посчитать, сколько раз список читал очередь. */
     private val counted = mutableListOf<String>()
+
+    /** Снимок с сервера несёт и брони: их версия без самой картины никуда не ездит (PLAN B3). */
+    private fun withClaims(quantity: com.kert0n.medapp.domain.value.Quantity) =
+        pack(quantity = quantity, claims = Claims(total = BigDecimal("0")))
 
     @Before
     fun openDatabase() = runTest {
@@ -169,7 +174,7 @@ class PackageRoomRepositoryTest {
     @Test
     fun syncStateIsObservedByItsOwnMethod() = runTest {
         val sync = PackageSyncState(PACK, ResourceVersion(5), ResourceVersion(2), syncedAt = at)
-        repository.applyServerSnapshot(paracetamol.correctTo(tablets("11")), sync, at)
+        repository.applySnapshot(PackageSnapshot(withClaims(tablets("11")), sync), at)
 
         assertEquals(sync, repository.observeSyncState(PACK).first())
         assertNull(repository.observeSyncState(OTHER_PACK).first())
@@ -253,7 +258,7 @@ class PackageRoomRepositoryTest {
     @Test
     fun describingDoesNotWriteBackAStaleAmount() = runTest {
         val sync = PackageSyncState(PACK, version = ResourceVersion(5), syncedAt = at)
-        repository.applyServerSnapshot(paracetamol.correctTo(tablets("11")), sync, at)
+        repository.applySnapshot(PackageSnapshot(paracetamol.correctTo(tablets("11")), sync), at)
 
         val renamed = paracetamol.facts.let { it.copy(shared = it.shared.copy(name = "Панадол")) }
 
@@ -268,7 +273,7 @@ class PackageRoomRepositoryTest {
     @Test
     fun snapshotKeepsLocalDetailsAndPreconditions() = runTest {
         val sync = PackageSyncState(PACK, version = ResourceVersion(5), claimsVersion = ResourceVersion(2), syncedAt = at)
-        repository.applyServerSnapshot(paracetamol.correctTo(tablets("11")), sync, at)
+        repository.applySnapshot(PackageSnapshot(withClaims(tablets("11")), sync), at)
 
         assertEquals(tablets("11"), requireNotNull(repository.find(PACK)).quantity)
         assertEquals(sync, requireNotNull(database.packages().find(PACK)).pack.syncState())
@@ -285,7 +290,10 @@ class PackageRoomRepositoryTest {
         queue.enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
         givenActiveCourseTaking(doses = 4)
         val sync = PackageSyncState(PACK, version = ResourceVersion(5), claimsVersion = ResourceVersion(2), syncedAt = at)
-        repository.applyServerSnapshot(pack(quantity = millilitres("100")), sync, at)
+        repository.applySnapshot(
+            PackageSnapshot(pack(quantity = millilitres("100"), claims = Claims(BigDecimal("0"))), sync),
+            at
+        )
 
         val availability = requireNotNull(repository.observe(PACK).first()).availability
         assertEquals(millilitres("100"), availability.effective)

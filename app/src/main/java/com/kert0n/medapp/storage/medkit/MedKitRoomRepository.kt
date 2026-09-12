@@ -6,6 +6,7 @@ import com.kert0n.medapp.domain.medkit.MedKitProjection
 import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.storage.pack.PackageDao
+import com.kert0n.medapp.storage.pack.applySnapshot
 import com.kert0n.medapp.storage.pack.toStorageEntity
 import java.time.Instant
 import javax.inject.Inject
@@ -44,12 +45,6 @@ class MedKitRoomRepository @Inject constructor(
             // Снимок чужой аптечки сюда не ложится — и откатывает переключение вместе с собой.
             require(snapshots.all { it.pack.medKit.id == medKit.id }) { "публикуются снимки этой аптечки" }
             medKits.upsert(medKit.toStorageEntity(syncedAt = at))
-            for (snapshot in snapshots) {
-                packages.applySnapshot(
-                    snapshot.pack.toStorageEntity(snapshot.sync),
-                    snapshot.pack.claims?.toStorageEntity(snapshot.pack.id),
-                    observedAt = at
-                )
-            }
+            for (snapshot in snapshots) packages.applySnapshot(snapshot, observedAt = at)
         }
 }

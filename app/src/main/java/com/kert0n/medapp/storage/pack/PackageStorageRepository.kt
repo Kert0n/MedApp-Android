@@ -4,6 +4,7 @@ import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageProjection
 import com.kert0n.medapp.domain.pack.PackageFacts
+import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.storage.course.CourseReallocation
 import java.time.Instant
@@ -54,9 +55,10 @@ interface PackageStorageRepository {
 
     /**
      * Снимок переписывает серверную часть целиком и не касается личных сведений (PLAN E4).
-     * Меньшая версия большую не откатывает: `false` — снимок старее того, что есть, и не применён.
+     * Половины применяются порознь, каждая по своей версии: запоздалая свежую не откатывает, и
+     * версия картины броней никогда не расходится с самой картиной (PLAN B3, E1).
      */
-    suspend fun applyServerSnapshot(pkg: Package, sync: PackageSyncState, observedAt: Instant): Boolean
+    suspend fun applySnapshot(snapshot: PackageSnapshot, observedAt: Instant): SnapshotApplied
 
     /**
      * Обвязка синхронизации пачки для экрана состояния синхронизации (PLAN H3 №28): версии и

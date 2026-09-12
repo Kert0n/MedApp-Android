@@ -10,6 +10,7 @@ import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.queue.PackageQueueState
 import com.kert0n.medapp.queue.pack.PackageSyncCommand
+import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.storage.course.CourseDao
 import com.kert0n.medapp.storage.course.CourseReallocation
@@ -78,11 +79,8 @@ class PackageRoomRepository @Inject constructor(
             true
         }
 
-    override suspend fun applyServerSnapshot(
-        pkg: Package,
-        sync: PackageSyncState,
-        observedAt: Instant
-    ): Boolean = packages.applyServerSnapshot(pkg.toStorageEntity(sync), observedAt)
+    override suspend fun applySnapshot(snapshot: PackageSnapshot, observedAt: Instant): SnapshotApplied =
+        packages.applySnapshot(snapshot, observedAt)
 
     override suspend fun saveClaims(packageId: Uuid, claims: Claims?) {
         if (claims == null) packages.deleteClaims(packageId)

@@ -143,8 +143,10 @@ class QueueRoomStorageTest {
         val first = (storage.take(operation, null, at) as Take.Sending).operation.prepared
         // Версия пачки ушла вперёд — а замороженный запрос остался с прежней (PLAN E2).
         val moved = pack(quantity = tablets("20"), form = TABLET_FORM)
-        database.packages().applyServerSnapshot(
-            moved.toStorageEntity(PackageSyncState(PACK, ResourceVersion(9), ResourceVersion(1), at)), at
+        database.packages().applySnapshot(
+            moved.toStorageEntity(PackageSyncState(PACK, ResourceVersion(9), ResourceVersion(1), at)),
+            claims = null,
+            observedAt = at
         )
 
         val second = (storage.take(operation, null, at.plusSeconds(60)) as Take.Sending).operation.prepared

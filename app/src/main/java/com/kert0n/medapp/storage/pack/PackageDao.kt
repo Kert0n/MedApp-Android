@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
+import com.kert0n.medapp.network.pack.PackageSnapshot
 import java.time.Instant
 import java.time.LocalDate
 import kotlin.uuid.Uuid
@@ -59,19 +60,6 @@ interface PackageDao {
         // половине: её версию — свою или прежнюю — ставит этот запрос, и только он.
         setClaimsVersion(pack.id, if (claimsLayDown) pack.claimsVersion else known?.claimsVersion)
         return SnapshotApplied(pack = packLaysDown, claims = claimsLayDown)
-    }
-
-    /**
-     * Серверная строка пачки с той обвязкой, которую назвал вызывающий: здесь половины не
-     * разъезжаются — обе версии пришли одним [PackageStorageEntity]. Личных сведений снимок не
-     * касается: они лежат в другой таблице (PLAN E4, F1). `false` — снимок старее того, что
-     * есть, и не применён.
-     */
-    @Transaction
-    suspend fun applyServerSnapshot(pack: PackageStorageEntity, observedAt: Instant): Boolean {
-        if (!pack.version.laysOver(versionsOf(pack.id)?.version)) return false
-        writeServerPart(pack, observedAt)
-        return true
     }
 
     /**
@@ -183,6 +171,18 @@ interface PackageDao {
     @Query("DELETE FROM packages WHERE id = :id")
     suspend fun delete(id: Uuid)
 }
+
+/**
+ * Снимок пачки, разрешённый в домен, — в базу. Единственная дверь: половины расходятся только
+ * тут, и только по своим версиям, поэтому версия картины броней всегда описывает ту картину,
+ * что лежит рядом (PLAN B3, E1).
+ */
+suspend fun PackageDao.applySnapshot(snapshot: PackageSnapshot, observedAt: Instant): SnapshotApplied =
+    applySnapshot(
+        snapshot.pack.toStorageEntity(snapshot.sync),
+        snapshot.pack.claims?.toStorageEntity(snapshot.pack.id),
+        observedAt
+    )
 
 /**
  * Ложится ли пришедшая версия поверх известной: запоздалый снимок свежий не перекрывает
