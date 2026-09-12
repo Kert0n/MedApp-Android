@@ -3,6 +3,7 @@ package com.kert0n.medapp.feature.bootstrap
 import com.kert0n.medapp.domain.Unavailability
 import com.kert0n.medapp.domain.account.AccountReadiness
 import com.kert0n.medapp.domain.account.DeviceAccount
+import com.kert0n.medapp.domain.value.DosageForm
 import com.kert0n.medapp.domain.value.QuantityUnit
 import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.domain.value.VocabularyLibrary
@@ -30,13 +31,16 @@ class AppStartTest {
 
     private class Library(
         private var vocabulary: Vocabulary,
-        private val problem: Unavailability? = null
+        private val problem: Unavailability? = null,
+        private val refreshedTo: Vocabulary? = null
     ) : VocabularyLibrary {
         var refreshed = 0
         override suspend fun known(): Vocabulary = vocabulary
         override suspend fun refresh(): Unavailability? {
             refreshed++
-            if (problem == null) vocabulary = Vocabulary(listOf(QuantityUnit(Uuid.random(), "штука")), emptyList())
+            if (problem == null) {
+                vocabulary = refreshedTo ?: Vocabulary(listOf(QuantityUnit(Uuid.random(), "штука")), emptyList())
+            }
             return problem
         }
     }
@@ -85,6 +89,33 @@ class AppStartTest {
         val state = AppStart(Account(AccountReadiness.Ready), library).begin()
 
         assertEquals(AppStartState.Setup(Unavailability.NO_CONNECTION), state)
+    }
+
+    /**
+     * Словарь из одних форм количества не измеряет: «не пуст» и «есть чем считать» — разные
+     * вопросы, и настройка спрашивает второй.
+     *
+     * Красная проверка: сравнить снимок с пустым словарём — случай краснеет, приложение
+     * открывается без единиц.
+     */
+    @Test
+    fun formsWithoutUnitsAreNotEnoughToStart() = runTest {
+        val onlyForms = Vocabulary(emptyList(), listOf(DosageForm(Uuid.random(), "таблетки")))
+        val library = Library(onlyForms, problem = Unavailability.NO_CONNECTION)
+
+        val state = AppStart(Account(AccountReadiness.Ready), library).begin()
+
+        assertEquals(AppStartState.Setup(Unavailability.NO_CONNECTION), state)
+    }
+
+    /** Сервер ответил, а единиц всё равно нет: считать по-прежнему нечем, и настройка не закончена. */
+    @Test
+    fun aRefreshThatBroughtNoUnitsDoesNotFinishTheSetup() = runTest {
+        val library = Library(Vocabulary.empty, refreshedTo = Vocabulary.empty)
+
+        val state = AppStart(Account(AccountReadiness.Ready), library).begin()
+
+        assertEquals(AppStartState.Setup(Unavailability.SERVER_SILENT), state)
     }
 
     /**

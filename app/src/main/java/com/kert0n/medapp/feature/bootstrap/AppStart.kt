@@ -1,8 +1,8 @@
 package com.kert0n.medapp.feature.bootstrap
 
 import com.kert0n.medapp.domain.account.AccountReadiness
+import com.kert0n.medapp.domain.Unavailability
 import com.kert0n.medapp.domain.account.DeviceAccount
-import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.domain.value.VocabularyLibrary
 import javax.inject.Inject
 
@@ -32,8 +32,10 @@ class AppStart @Inject constructor(
      * поэтому пополняется он, лишь когда не знаем ни одной единицы.
      */
     private suspend fun vocabularyKnown(): AppStartState {
-        if (vocabulary.known() != Vocabulary.empty) return AppStartState.Ready
-        val problem = vocabulary.refresh() ?: return AppStartState.Ready
-        return AppStartState.Setup(problem)
+        if (vocabulary.known().knowsUnits) return AppStartState.Ready
+        vocabulary.refresh()?.let { return AppStartState.Setup(it) }
+        // Пополнили, а единиц всё равно нет: сервер ответил, но считать по-прежнему нечем.
+        return if (vocabulary.known().knowsUnits) AppStartState.Ready
+        else AppStartState.Setup(Unavailability.SERVER_SILENT)
     }
 }
