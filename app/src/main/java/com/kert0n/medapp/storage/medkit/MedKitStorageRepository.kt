@@ -4,6 +4,7 @@ import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.medkit.MedKitProjection
 import com.kert0n.medapp.network.pack.PackageSnapshot
 import java.time.Instant
+import java.time.LocalDate
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.Flow
 
@@ -13,8 +14,14 @@ import kotlinx.coroutines.flow.Flow
  */
 interface MedKitStorageRepository {
 
-    /** Потоки несут проекции — величины для экрана; сущность отдаёт `find` в транзакции сценария (PLAN H1). */
-    fun observeAll(): Flow<List<MedKitProjection>>
+    /**
+     * Потоки несут проекции — величины для экрана; сущность отдаёт `find` в транзакции сценария
+     * (PLAN H1). Вместе с аптечкой приходит её содержимое: сколько упаковок и сколько просрочено,
+     * — это первое, что человек видит в списке (PLAN H3 №2).
+     *
+     * `today` аргументом, потому что база системных часов не читает.
+     */
+    fun observeAll(today: LocalDate): Flow<List<MedKitProjection>>
 
     fun observe(id: Uuid): Flow<MedKitProjection?>
 
@@ -27,6 +34,19 @@ interface MedKitStorageRepository {
     fun observeSyncedAt(id: Uuid): Flow<Instant?>
 
     suspend fun save(medKit: MedKit, syncedAt: Instant? = null)
+
+    /**
+     * Строка аптечки уходит. Содержимое к этому моменту уже переехало или удалено — что с ним
+     * делать, решает сценарий, а не хранение (PLAN E6, F5). `false` — аптечки и так нет.
+     */
+    suspend fun delete(id: Uuid): Boolean
+
+    /**
+     * Переименование и место хранения — и только они: публикация, число участников и момент
+     * сверки остаются нынешними. Переход применяется к тому, что лежит в базе, а не к тому, что
+     * экран прочитал когда-то раньше (PLAN F5). `false` — аптечки больше нет.
+     */
+    suspend fun describe(id: Uuid, name: String, location: String?): Boolean
 
     /** Снимок трогает только число участников: остального сервер о нашей аптечке не знает. */
     suspend fun applyServerParticipants(id: Uuid, participantCount: Long, syncedAt: Instant)

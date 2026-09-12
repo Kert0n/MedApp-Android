@@ -82,6 +82,10 @@ fun MedAppDatabase.medKitRepository() = com.kert0n.medapp.storage.medkit.MedKitR
     this, medKits(), packages()
 )
 
+fun MedAppDatabase.movementRepository() = com.kert0n.medapp.storage.stock.StockMovementRoomRepository(
+    stockMovements(), vocabulary()
+)
+
 fun MedAppDatabase.queueRepository() = com.kert0n.medapp.storage.server.SyncOperationRoomRepository(
     syncOperations(), vocabulary()
 )

@@ -582,16 +582,20 @@ class TransactionBoundariesTest {
         assertEquals(1, database.stockMovements().ofPackage(PACK).size)
     }
 
+    /**
+     * Перенос меняет место и только его: остаток он не трогает, а в истории расхода ему места
+     * нет — где коробка лежит, знает сама пачка (PLAN D7).
+     */
     @Test
-    fun transferMovesThePackageAndRecordsBothEnds() = runTest {
+    fun transferMovesThePackageAndLeavesNoTrace() = runTest {
         packages.adjust(
-            PackageAdjustment.Transfer(PACK, medKit(id = SHARED_KIT, name = "Дача").ref, movementId),
+            PackageAdjustment.Transfer(PACK, medKit(id = SHARED_KIT, name = "Дача").ref),
             at = LATER
         )
 
         assertEquals(SHARED_KIT, requireNotNull(packages.find(PACK)).medKit.id)
-        val transfer = database.stockMovements().ofPackage(PACK).single().toDomain(VOCABULARY)
-        assertEquals(StockMovement.Transfer::class, transfer::class)
+        assertEquals(tablets("20"), requireNotNull(packages.find(PACK)).quantity)
+        assertTrue(database.stockMovements().ofPackage(PACK).isEmpty())
     }
 
     /** Упавшая команда очереди откатывает и остаток, и движение: половины пересчёта не бывает. */

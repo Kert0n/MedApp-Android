@@ -31,6 +31,35 @@ class ThemeTest {
         return scheme
     }
 
+    /**
+     * Оба набора читаются одной композицией: содержимое правилу задают один раз, а нужны здесь
+     * сразу обе схемы — тем и проверяется, что тёмная берёт свой тон, а не тот же самый.
+     */
+    private fun accents(): Pair<MedAppAccents, MedAppAccents> {
+        lateinit var light: MedAppAccents
+        lateinit var dark: MedAppAccents
+        compose.setContent {
+            MedAppTheme(darkTheme = false) { light = MaterialTheme.accents }
+            MedAppTheme(darkTheme = true) { dark = MaterialTheme.accents }
+        }
+        return light to dark
+    }
+
+    /**
+     * Янтарный приходит от темы, а не от экрана: «занято» и «не хватает» — не беда, и красным о
+     * них не говорят (PLAN H3).
+     *
+     * Красная проверка: не подставить набор в тему — обе схемы вернут светлый, и тёмный случай
+     * краснеет.
+     */
+    @Test
+    fun amberComesFromTheThemeAndChangesWithTheLight() {
+        val (light, dark) = accents()
+
+        assertEquals(Color(0xFF8A5300), light.reserved)
+        assertEquals(Color(0xFFFFB95C), dark.reserved)
+    }
+
     @Test
     fun lightSchemeIsTheGreenPaletteOfThePlan() {
         val scheme = schemeOf(darkTheme = false)

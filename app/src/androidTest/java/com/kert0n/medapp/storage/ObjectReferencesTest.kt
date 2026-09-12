@@ -108,7 +108,6 @@ class ObjectReferencesTest {
                 pkg = paracetamol.ref,
                 before = tablets("20"),
                 after = tablets("19"),
-                medKit = medKit().ref,
                 occurredAt = Instant.EPOCH.plusSeconds(i.toLong()),
                 observedAt = LATER.plusSeconds(i.toLong())
             )

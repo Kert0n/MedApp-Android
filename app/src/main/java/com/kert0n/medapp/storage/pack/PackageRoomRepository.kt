@@ -59,6 +59,12 @@ class PackageRoomRepository @Inject constructor(
     override suspend fun describe(packageId: Uuid, facts: PackageFacts): Boolean =
         change(packageId) { it.describe(facts) }
 
+    override suspend fun delete(packageId: Uuid): Boolean = packages.delete(packageId) > 0
+
+    override suspend fun moveContents(from: Uuid, to: Uuid): Int = packages.moveContents(from, to)
+
+    override suspend fun deleteContentsOf(medKitId: Uuid): Int = packages.deleteContentsOf(medKitId)
+
     override suspend fun loseAccess(packageId: Uuid): Boolean = database.withTransaction {
         val changed = change(packageId) { it.loseAccess() }
         if (changed) packages.deleteClaims(packageId)
@@ -100,7 +106,8 @@ class PackageRoomRepository @Inject constructor(
             applied.pack.toStorageEntity(stored.pack.syncState()),
             applied.pack.toDetailsStorageEntity()
         )
-        movements.insert(applied.movement.toMovementStorageEntity())
+        // След есть не у всякого перехода: перенос остаток не меняет и записи не оставляет (D7).
+        applied.movement?.let { movements.insert(it.toMovementStorageEntity()) }
         reallocation?.let { (plan, expected) ->
             courses.updateAllocations(
                 plan.toCourseStorageEntity(),

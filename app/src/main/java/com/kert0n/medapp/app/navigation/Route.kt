@@ -1,5 +1,6 @@
 package com.kert0n.medapp.app.navigation
 
+import kotlin.uuid.Uuid
 import kotlinx.serialization.Serializable
 
 /**
@@ -11,7 +12,7 @@ import kotlinx.serialization.Serializable
  * объект, положенный в него, к моменту восстановления был бы устаревшей копией того, что лежит в
  * базе. Ключ приглашения там же оказался бы в логах навигации.
  *
- * Пять мест — нижняя навигация; экраны вглубь добавляются своими PR и носят идентификаторы.
+ * Пять мест — нижняя навигация; экраны вглубь носят идентификаторы того, что показывают.
  */
 sealed interface Route {
 
@@ -29,4 +30,36 @@ sealed interface Route {
 
     @Serializable
     data object Settings : Route
+
+    /** Заведение и правка аптечки; `null` — новая, её идентификатор придумает сценарий. */
+    @Serializable
+    data class MedKitForm(val medKitId: Uuid? = null) : Route
+
+    /** Что лежит в этой аптечке (экран 4). */
+    @Serializable
+    data class MedKitContents(val medKitId: Uuid) : Route
+
+    /** Поиск по всем доступным аптечкам (экран 5): тот же список без названной аптечки. */
+    @Serializable
+    data object AllMedicines : Route
+
+    /**
+     * Заведение (экран 7) и правка (экран 8) упаковки: поля те же, и маршрут один. [medKitId] —
+     * аптечка, из которой человек пришёл, `null` — он ещё не выбрал её; [packageId] назван, когда
+     * правится уже заведённая пачка.
+     */
+    @Serializable
+    data class PackageForm(val medKitId: Uuid? = null, val packageId: Uuid? = null) : Route
+
+    /** Всё известное об одной упаковке (экран 6). */
+    @Serializable
+    data class PackageCard(val packageId: Uuid) : Route
+
+    /** Пересчёт и утилизация (экран 9): количество меняется здесь и только здесь. */
+    @Serializable
+    data class PackageAmount(val packageId: Uuid) : Route
+
+    /** Перенос упаковки в другую аптечку (экран 11). */
+    @Serializable
+    data class PackageTransfer(val packageId: Uuid) : Route
 }

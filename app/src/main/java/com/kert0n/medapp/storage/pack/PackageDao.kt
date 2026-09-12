@@ -168,8 +168,23 @@ interface PackageDao {
     )
     suspend fun allocationsOf(packageIds: List<Uuid>): List<PackageAllocationRow>
 
+    /**
+     * Удаление уносит части пачки каскадом — сведения, брони, историю остатка и связи с курсами
+     * (PLAN F2). Ноль строк значит «пачки и так нет».
+     */
     @Query("DELETE FROM packages WHERE id = :id")
-    suspend fun delete(id: Uuid)
+    suspend fun delete(id: Uuid): Int
+
+    /**
+     * Содержимое аптечки переехало целиком — и живое, и архивное: переезжает место, а не каждая
+     * коробка по отдельности (PLAN E6).
+     */
+    @Query("UPDATE packages SET med_kit_id = :target WHERE med_kit_id = :source")
+    suspend fun moveContents(source: Uuid, target: Uuid): Int
+
+    /** Аптечку выбросили вместе с лекарствами: пачки уходят со всеми своими частями. */
+    @Query("DELETE FROM packages WHERE med_kit_id = :medKitId")
+    suspend fun deleteContentsOf(medKitId: Uuid): Int
 }
 
 /**

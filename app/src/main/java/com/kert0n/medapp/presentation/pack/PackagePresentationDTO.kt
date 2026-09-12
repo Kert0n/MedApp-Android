@@ -18,6 +18,9 @@ import kotlin.uuid.Uuid
  * quantity — подтверждённый остаток; effective, availableToMe и freeForAnyone — оценка с
  * незакрытыми командами поверх, чужими бронями и своим выделением (PLAN D4, E1).
  *
+ * hasReservedByOthers приходит готовым, а не сравнением строки с нулём: «заявлено ли что-то не
+ * мной» — вопрос к величине, и отвечает на него она сама.
+ *
  * Версии предусловия здесь нет: человеку она ничего не говорит, а экрану состояния синхронизации
  * нужен момент последней сверки, который маппер получает аргументом.
  *
@@ -49,6 +52,8 @@ data class PackagePresentationDTO(
     val effective: QuantityPresentationDTO,
     val availableToMe: QuantityPresentationDTO,
     val freeForAnyone: QuantityPresentationDTO,
+    val reservedByOthers: QuantityPresentationDTO,
+    val hasReservedByOthers: Boolean,
     val hasUnconfirmedChanges: Boolean,
     val syncedAt: Instant?
 )

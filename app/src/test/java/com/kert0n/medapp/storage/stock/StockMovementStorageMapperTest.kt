@@ -1,25 +1,22 @@
 package com.kert0n.medapp.storage.stock
 
 import com.kert0n.medapp.domain.stock.StockMovement
-import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.LATER
 import com.kert0n.medapp.fixture.PACK
-import com.kert0n.medapp.fixture.SHARED_KIT
 import com.kert0n.medapp.fixture.TABLETS
-import com.kert0n.medapp.fixture.medKit
+import com.kert0n.medapp.fixture.VOCABULARY
+import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.tablets
+import com.kert0n.medapp.fixture.toStorageRow
 import java.math.BigDecimal
 import java.time.Instant
 import kotlin.uuid.Uuid
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
-import com.kert0n.medapp.fixture.VOCABULARY
-import com.kert0n.medapp.fixture.pack
-import com.kert0n.medapp.fixture.toStorageRow
 
 /**
- * Все шесть видов движения записываются одной таблицей и читаются обратно теми же самыми:
+ * Все пять видов движения записываются одной таблицей и читаются обратно теми же самыми:
  * дискриминатор в колонке, варианты — в своём корне (PLAN D7, F1).
  */
 class StockMovementStorageMapperTest {
@@ -29,18 +26,15 @@ class StockMovementStorageMapperTest {
     private val observed: Instant = LATER
 
     private val paracetamol = pack(id = PACK)
-    private val home = medKit(id = HOME_KIT)
-    private val shared = medKit(id = SHARED_KIT, name = "Общая")
 
     private val everyKind: List<StockMovement> = listOf(
-        StockMovement.Receipt(id, paracetamol.ref, tablets("20"), home.ref, occurred, observed, "куплено"),
-        StockMovement.Recount(id, paracetamol.ref, tablets("20"), tablets("18.5"), home.ref, occurred, observed),
+        StockMovement.Receipt(id, paracetamol.ref, tablets("20"), occurred, observed, "куплено"),
+        StockMovement.Recount(id, paracetamol.ref, tablets("20"), tablets("18.5"), occurred, observed),
         StockMovement.Disposal(
-            id, paracetamol.ref, tablets("3"), StockMovement.Disposal.Reason.EXPIRED, home.ref, occurred, observed
+            id, paracetamol.ref, tablets("3"), StockMovement.Disposal.Reason.EXPIRED, occurred, observed
         ),
-        StockMovement.Transfer(id, paracetamol.ref, tablets("5"), home.ref, shared.ref, occurred, observed),
-        StockMovement.RemoteChange(id, paracetamol.ref, BigDecimal("-2.5"), TABLETS, shared.ref, observed),
-        StockMovement.AccessLoss(id, paracetamol.ref, tablets("7"), shared.ref, observed)
+        StockMovement.RemoteChange(id, paracetamol.ref, BigDecimal("-2.5"), TABLETS, observed),
+        StockMovement.AccessLoss(id, paracetamol.ref, tablets("7"), observed)
     )
 
     @Test
@@ -53,24 +47,9 @@ class StockMovementStorageMapperTest {
     @Test
     fun kindIsWrittenAsItsOwnCode() {
         assertEquals(
-            listOf("RECEIPT", "RECOUNT", "DISPOSAL", "TRANSFER", "REMOTE_CHANGE", "ACCESS_LOSS"),
+            listOf("RECEIPT", "RECOUNT", "DISPOSAL", "REMOTE_CHANGE", "ACCESS_LOSS"),
             everyKind.map { it.toStorageEntity().kind.name }
         )
-    }
-
-    /** Перенос — одна запись с двумя концами: знак в отчёте берётся из аптечки, а не из строк. */
-    @Test
-    fun transferKeepsBothEndsInOneRow() {
-        val transfer = everyKind.filterIsInstance<StockMovement.Transfer>().single()
-        val stored = transfer.toStorageEntity()
-
-        assertEquals(HOME_KIT, stored.sourceMedKitId)
-        assertEquals(SHARED_KIT, stored.targetMedKitId)
-        assertNull(stored.medKitId)
-
-        val restored = transfer.toStorageRow().toDomain(VOCABULARY)
-        assertEquals(BigDecimal("-5"), restored.deltaIn(medKit(id = HOME_KIT).ref))
-        assertEquals(BigDecimal("5"), restored.deltaIn(medKit(id = SHARED_KIT).ref))
     }
 
     /** У чужого изменения и утраты доступа момента события нет: мы знаем только, когда узнали. */
@@ -84,6 +63,10 @@ class StockMovementStorageMapperTest {
         assertEquals(observed, remote.toStorageEntity().observedAt)
     }
 
+    /**
+     * Пересчёт хранит оба остатка, а не их разницу: разницу всегда можно посчитать, а «было»
+     * восстановить из неё нельзя.
+     */
     @Test
     fun recountKeepsBothSidesAndNotTheDifference() {
         val recount = everyKind.filterIsInstance<StockMovement.Recount>().single()
@@ -92,6 +75,6 @@ class StockMovementStorageMapperTest {
         assertEquals("20", stored.beforeAmount)
         assertEquals("18.5", stored.afterAmount)
         assertNull(stored.delta)
-        assertEquals(BigDecimal("-1.5"), recount.toStorageRow().toDomain(VOCABULARY).deltaIn(medKit(id = HOME_KIT).ref))
+        assertEquals(recount, recount.toStorageRow().toDomain(VOCABULARY))
     }
 }

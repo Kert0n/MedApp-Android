@@ -33,6 +33,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -43,8 +44,12 @@ import com.kert0n.medapp.fixture.intakeRepository
 import com.kert0n.medapp.fixture.FIRST_SCHEDULED_ON
 
 /**
- * История не удаляется вместе с упаковкой: приёмы и движения держат её ключами `RESTRICT`,
- * а архивирование пачки их не касается вовсе (PLAN D7, F1).
+ * Что переживает удаление упаковки, а что уходит вместе с ней (PLAN D3, D6, D7, F2).
+ *
+ * Приём — факт лечения: он держится на записи эпизода и на себе самом, поэтому остаётся, а ссылка
+ * на исчезнувшую пачку пустеет. Движение — запись о самой пачке: без неё оно не значит ничего и
+ * уходит с ней. Архивирование при этом не трогает ни того, ни другого: кончившаяся пачка — не
+ * удалённая.
  */
 class HistoryDaoTest {
 
@@ -148,30 +153,54 @@ class HistoryDaoTest {
         assertEquals(IntakeAccounting.LOCAL_APPLIED, stored.accounting)
     }
 
+    /**
+     * Приём переживает удаление пачки: количество и момент записаны в нём самом, а ссылка
+     * пустеет (`SET NULL`, PLAN D6).
+     *
+     * Красная проверка: вернуть ключу `RESTRICT` — человек не сможет выбросить коробку, из
+     * которой хоть раз принимал, и случай краснеет.
+     */
     @Test
-    fun packageWithAnIntakeCannotBeDeleted() = runTest {
-        intakes.upsert(plannedIntake().toStorageEntity())
-        val refusal = rejectedByDatabase { database.packages().delete(PACK) }
-        assertTrue("$refusal", refusal is SQLiteConstraintException)
+    fun anIntakeOutlivesThePackageItCameFrom() = runTest {
+        intakes.upsert(plannedIntake().confirm(pack().take(dose("2"), LATER).getOrThrow()).toStorageEntity())
+
+        assertEquals(1, database.packages().delete(PACK))
+
+        val left = requireNotNull(intakes.find(INTAKE)).toDomain(VOCABULARY)
+        assertEquals(IntakeStatus.TAKEN, left.status)
+        assertEquals(dose("2"), left.taken?.amount)
+        assertNull(left.taken?.pkg)
     }
 
+    /** Движение — запись о пачке: без неё оно не значит ничего и уходит вместе с ней (D7). */
     @Test
-    fun packageWithAMovementCannotBeDeleted() = runTest {
+    fun movementsGoAwayWithTheirPackage() = runTest {
         movements.insert(
-            StockMovement.Receipt(movementId, pack().ref, tablets("20"), medKit().ref, Instant.EPOCH, LATER)
+            StockMovement.Receipt(movementId, pack().ref, tablets("20"), Instant.EPOCH, LATER)
                 .toMovementStorageEntity()
         )
-        val refusal = rejectedByDatabase { database.packages().delete(PACK) }
-        assertTrue("$refusal", refusal is SQLiteConstraintException)
+
+        assertEquals(1, database.packages().delete(PACK))
+
+        assertTrue(movements.ofPackage(PACK).isEmpty())
     }
 
-    /** Архивирование — не удаление: приёмы, движения и внеплановые факты остаются на месте. */
+    /** Части пачки уходят с ней: без сведений упаковки не бывает, это не половина (PLAN F1). */
+    @Test
+    fun theDetailsOfAPackageGoAwayWithIt() = runTest {
+        assertEquals(1, database.packages().delete(PACK))
+
+        assertNull(database.packages().find(PACK))
+        assertNotNull(database.packages().find(OTHER_PACK))
+    }
+
+    /** Архивирование — не удаление: пачка на месте, и приёмы с движениями тоже (PLAN D3). */
     @Test
     fun archivingKeepsIntakesAndMovements() = runTest {
         intakes.upsert(plannedIntake().confirm(pack().take(dose("2"), LATER).getOrThrow()).toStorageEntity())
         intakes.upsert(unplannedIntake(id = OTHER_INTAKE).toStorageEntity())
         movements.insert(
-            StockMovement.Receipt(movementId, pack().ref, tablets("20"), medKit().ref, Instant.EPOCH, LATER)
+            StockMovement.Receipt(movementId, pack().ref, tablets("20"), Instant.EPOCH, LATER)
                 .toMovementStorageEntity()
         )
 
@@ -203,10 +232,10 @@ class HistoryDaoTest {
 
     @Test
     fun movementsOfAPackageComeBackInTimeOrder() = runTest {
-        val first = StockMovement.Receipt(movementId, pack().ref, tablets("20"), medKit().ref, Instant.EPOCH, Instant.EPOCH)
+        val first = StockMovement.Receipt(movementId, pack().ref, tablets("20"), Instant.EPOCH, Instant.EPOCH)
         val second = StockMovement.Recount(
             Uuid.parse("00000000-0000-4000-8000-000000000082"),
-            pack().ref, tablets("20"), tablets("18"), medKit().ref, FIRST_PLANNED_AT, FIRST_PLANNED_AT
+            pack().ref, tablets("20"), tablets("18"), FIRST_PLANNED_AT, FIRST_PLANNED_AT
         )
         movements.insert(second.toMovementStorageEntity())
         movements.insert(first.toMovementStorageEntity())

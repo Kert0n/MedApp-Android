@@ -34,7 +34,7 @@ class MedKit(
     val ref: MedKitRef get() = MedKitRef(id, publication)
 
     /** Как аптечку видит экран: величина, наружу уходит она, а не сущность. */
-    fun projection(): MedKitProjection = MedKitProjection(
+    fun projection(contents: MedKitContents = MedKitContents()): MedKitProjection = MedKitProjection(
         id = id,
         name = name,
         location = location,
@@ -42,7 +42,8 @@ class MedKit(
         participantCount = participantCount,
         createdAt = createdAt,
         isShared = isShared,
-        acceptsInvitations = acceptsInvitations
+        acceptsInvitations = acceptsInvitations,
+        contents = contents
     )
 
     /**

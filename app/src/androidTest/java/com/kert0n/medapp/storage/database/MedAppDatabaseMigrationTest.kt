@@ -4,7 +4,10 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import androidx.room.testing.MigrationTestHelper
 import androidx.test.platform.app.InstrumentationRegistry
+import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.PACK
+import com.kert0n.medapp.fixture.SHARED_KIT
+import com.kert0n.medapp.fixture.TABLETS_ID
 import com.kert0n.medapp.fixture.fileDatabase
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.tablets
@@ -20,8 +23,9 @@ import org.junit.Test
  * Схема переживает обновление приложения. Экспорт схемы — необходимое, но не достаточное:
  * проверка открывает базу объявленной версии и сверяет её со скомпилированной (PLAN F4).
  *
- * Первый настоящий переход — 1→2: колонка `outcome_unknown` у очереди (PLAN E3, F4). База
- * прошлой версии с операцией переезжает целиком, а колонка у старой строки — «исход известен».
+ * Переход 1→2 — колонка `outcome_unknown` у очереди (PLAN E3, F4). Переход 2→3 — движение стало
+ * записью о пачке: колонки аптечек ушли вместе с переносами (D7). База прошлой версии переезжает
+ * целиком, а не заводится заново.
  */
 class MedAppDatabaseMigrationTest {
 
@@ -59,6 +63,42 @@ class MedAppDatabaseMigrationTest {
         assertEquals(0, row.getInt(2))
         row.close()
         v2.close()
+    }
+
+    /**
+     * Движение стало записью о пачке: колонки аптечек ушли, а переносы вместе с ними — они
+     * говорили только о местах (PLAN D7). Остальная история переезжает целиком.
+     */
+    @Test
+    fun movementsOfVersionTwoLoseTheirMedKitsAndKeepTheirHistory() {
+        val file = "migrate-2-3.db"
+        val receipt = "00000000-0000-4000-8000-000000000101"
+        val transfer = "00000000-0000-4000-8000-000000000102"
+        helper.createDatabase(file, 2).use { v2 ->
+            v2.execSQL(
+                "INSERT INTO stock_adjustments " +
+                    "(id, package_id, kind, unit_id, observed_at, occurred_at, amount, med_kit_id) " +
+                    "VALUES ('$receipt', '$PACK', 'RECEIPT', '$TABLETS_ID', 10, 10, '20', '$HOME_KIT')"
+            )
+            v2.execSQL(
+                "INSERT INTO stock_adjustments " +
+                    "(id, package_id, kind, unit_id, observed_at, occurred_at, amount, " +
+                    "source_med_kit_id, target_med_kit_id) " +
+                    "VALUES ('$transfer', '$PACK', 'TRANSFER', '$TABLETS_ID', 20, 20, '20', " +
+                    "'$HOME_KIT', '$SHARED_KIT')"
+            )
+        }
+
+        val v3 = helper.runMigrationsAndValidate(file, 3, true, MedAppDatabase.MIGRATION_2_3)
+
+        val kinds = v3.query("SELECT id, kind FROM stock_adjustments ORDER BY observed_at")
+        val survived = buildList {
+            while (kinds.moveToNext()) add(kinds.getString(0) to kinds.getString(1))
+        }
+        kinds.close()
+        v3.close()
+
+        assertEquals(listOf(receipt to "RECEIPT"), survived)
     }
 
     /**

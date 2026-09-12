@@ -27,6 +27,22 @@ private val DAY_FORMATS = listOf("d.M.uuuu", "d/M/uuuu", "uuuu-MM-dd").map(::str
 private fun strictFormat(pattern: String): DateTimeFormatter =
     DateTimeFormatter.ofPattern(pattern).withResolverStyle(ResolverStyle.STRICT)
 
+/** Записи, которыми срок показывают обратно: те же две, какими его печатают на упаковке. */
+private val MONTH_OUT: DateTimeFormatter = strictFormat("MM.uuuu")
+
+private val DAY_OUT: DateTimeFormatter = strictFormat("dd.MM.uuuu")
+
+/**
+ * Срок годности строкой — той же записью, какой человек его и видел. «Годен весь март» пришло
+ * в домен как последний день марта (ТЗ и [ExpiryDate.of]), и показывать его числом значило бы
+ * приписывать упаковке точность, которой на ней не напечатано. Срок, кончающийся посреди месяца,
+ * показывается днём: там день и был.
+ */
+fun ExpiryDate.toPresentationDTO(): ExpiryDatePresentationDTO = ExpiryDatePresentationDTO(
+    if (lastDay == YearMonth.from(lastDay).atEndOfMonth()) lastDay.format(MONTH_OUT)
+    else lastDay.format(DAY_OUT)
+)
+
 /**
  * Приведение введённого срока годности к дате.
  *

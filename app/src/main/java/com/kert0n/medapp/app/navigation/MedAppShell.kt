@@ -23,6 +23,16 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.kert0n.medapp.R
+import kotlin.reflect.typeOf
+import kotlin.uuid.Uuid
+import androidx.navigation.toRoute
+import com.kert0n.medapp.feature.medkits.MedKitFormScreen
+import com.kert0n.medapp.feature.packs.MedKitContentsScreen
+import com.kert0n.medapp.feature.packs.PackageAmountScreen
+import com.kert0n.medapp.feature.packs.PackageFormScreen
+import com.kert0n.medapp.feature.packs.PackageScreen
+import com.kert0n.medapp.feature.packs.PackageTransferScreen
+import com.kert0n.medapp.feature.medkits.MedKitListScreen
 import com.kert0n.medapp.ui.EmptyState
 
 /**
@@ -70,13 +80,75 @@ private fun MedAppBottomBar(navController: NavController) {
 @Composable
 private fun MedAppNavHost(navController: NavHostController, modifier: Modifier = Modifier) {
     NavHost(navController, startDestination = Route.MedKits, modifier = modifier) {
-        composable<Route.MedKits> { NotReadyYet() }
+        composable<Route.MedKits> {
+            MedKitListScreen(
+                onOpen = { navController.navigate(Route.MedKitContents(it)) },
+                onAdd = { navController.navigate(Route.MedKitForm()) },
+                onSearch = { navController.navigate(Route.AllMedicines) }
+            )
+        }
         composable<Route.Plan> { NotReadyYet() }
         composable<Route.Scanner> { NotReadyYet() }
         composable<Route.Analytics> { NotReadyYet() }
         composable<Route.Settings> { NotReadyYet() }
+        composable<Route.MedKitForm>(typeMap = RouteTypes) { entry ->
+            val route = entry.toRoute<Route.MedKitForm>()
+            MedKitFormScreen(route.medKitId, onDone = { navController.popBackStack() })
+        }
+        composable<Route.MedKitContents>(typeMap = RouteTypes) { entry ->
+            val route = entry.toRoute<Route.MedKitContents>()
+            MedKitContentsScreen(
+                medKitId = route.medKitId,
+                onBack = { navController.popBackStack() },
+                onOpen = { navController.navigate(Route.PackageCard(it)) },
+                onAdd = { navController.navigate(Route.PackageForm(route.medKitId)) }
+            )
+        }
+        composable<Route.PackageForm>(typeMap = RouteTypes) { entry ->
+            val route = entry.toRoute<Route.PackageForm>()
+            PackageFormScreen(
+                medKitId = route.medKitId,
+                onDone = { navController.popBackStack() },
+                packageId = route.packageId,
+                onChangeAmount = { navController.navigate(Route.PackageAmount(it)) }
+            )
+        }
+        composable<Route.AllMedicines> {
+            MedKitContentsScreen(
+                medKitId = null,
+                onBack = { navController.popBackStack() },
+                onOpen = { navController.navigate(Route.PackageCard(it)) },
+                onAdd = { navController.navigate(Route.PackageForm()) }
+            )
+        }
+        composable<Route.PackageCard>(typeMap = RouteTypes) { entry ->
+            val route = entry.toRoute<Route.PackageCard>()
+            PackageScreen(
+                packageId = route.packageId,
+                onBack = { navController.popBackStack() },
+                onEdit = { medKitId ->
+                    navController.navigate(Route.PackageForm(medKitId, route.packageId))
+                },
+                onChangeAmount = { navController.navigate(Route.PackageAmount(route.packageId)) },
+                onTransfer = { navController.navigate(Route.PackageTransfer(route.packageId)) }
+            )
+        }
+        composable<Route.PackageAmount>(typeMap = RouteTypes) { entry ->
+            val route = entry.toRoute<Route.PackageAmount>()
+            PackageAmountScreen(route.packageId, onDone = { navController.popBackStack() })
+        }
+        composable<Route.PackageTransfer>(typeMap = RouteTypes) { entry ->
+            val route = entry.toRoute<Route.PackageTransfer>()
+            PackageTransferScreen(route.packageId, onDone = { navController.popBackStack() })
+        }
     }
 }
+
+/** Чем маршруты возят идентификаторы: один набор на всё приложение. */
+private val RouteTypes = mapOf(
+    typeOf<Uuid>() to UuidNavType,
+    typeOf<Uuid?>() to UuidOrNoneNavType
+)
 
 @Composable
 private fun NotReadyYet() = EmptyState(text = stringResource(R.string.screen_not_ready))
