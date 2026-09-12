@@ -2,6 +2,7 @@ package com.kert0n.medapp.storage.medkit
 
 import android.database.sqlite.SQLiteConstraintException
 import com.kert0n.medapp.domain.medkit.MedKit
+import com.kert0n.medapp.domain.stock.StockMovement
 import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.SHARED_KIT
 import com.kert0n.medapp.fixture.inMemoryDatabase
@@ -12,8 +13,10 @@ import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.storage.pack.toDetailsStorageEntity
 import com.kert0n.medapp.storage.pack.toStorageEntity
+import com.kert0n.medapp.storage.stock.toStorageEntity as toMovementStorageEntity
 import org.junit.Assert.assertTrue
 import java.time.Instant
+import kotlin.uuid.Uuid
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -85,6 +88,37 @@ class MedKitDaoTest {
     fun aMedKitWithPackagesCannotBeDeleted() = runTest {
         val pkg = pack(medKit = medKit(id = HOME_KIT).ref)
         database.packages().save(pkg.toStorageEntity(PackageSyncState(pkg.id)), pkg.toDetailsStorageEntity())
+
+        val refusal = rejectedByDatabase { medKits.delete(HOME_KIT) }
+
+        assertTrue(refusal.toString(), refusal is SQLiteConstraintException)
+        assertEquals(HOME_KIT, requireNotNull(medKits.find(HOME_KIT)).id)
+    }
+
+    /**
+     * История держит аптечку и после того, как из неё всё унесли: движение случилось в ней, и без
+     * неё его не прочитать (PLAN F2, D7). Поэтому «удалить аптечку» местным удалением строки не
+     * делается — перенос содержимого её не освобождает.
+     */
+    @Test
+    fun aMedKitNamedByHistoryStaysEvenWhenEmptied() = runTest {
+        val moved = pack(medKit = medKit(id = SHARED_KIT).ref)
+        database.packages().save(
+            moved.toStorageEntity(PackageSyncState(moved.id)),
+            moved.toDetailsStorageEntity()
+        )
+        val at = Instant.parse("2026-09-12T12:00:00Z")
+        database.stockMovements().insert(
+            StockMovement.Transfer(
+                id = Uuid.random(),
+                pkg = moved.ref,
+                amount = moved.quantity,
+                source = medKit(id = HOME_KIT).ref,
+                target = medKit(id = SHARED_KIT).ref,
+                occurredAt = at,
+                observedAt = at
+            ).toMovementStorageEntity()
+        )
 
         val refusal = rejectedByDatabase { medKits.delete(HOME_KIT) }
 
