@@ -77,6 +77,20 @@ interface SyncOperationDao {
     )
     suspend fun unclosedOfPackage(packageId: Uuid): List<SyncOperationStorageRow>
 
+    /**
+     * Незакрытые операции сразу по списку пачек — один вопрос вместо запроса на строку: список
+     * из двухсот пачек спрашивал очередь двести раз, а знание то же. Порядок общий по `sequence`,
+     * и внутри каждой пачки он тот же, что у [unclosedOfPackage]; раскладывает по пачкам
+     * вызывающий. Длину списка он же ограничивает пределом переменных SQLite.
+     */
+    @Transaction
+    @Query(
+        "SELECT * FROM sync_operations WHERE package_id IN (:packageIds) " +
+            "AND status NOT IN ('APPLIED', 'REFUSED', 'ACCESS_LOST') " +
+            "ORDER BY sequence"
+    )
+    suspend fun unclosedOfPackages(packageIds: List<Uuid>): List<SyncOperationStorageRow>
+
     @Transaction
     @Query("SELECT * FROM sync_operations WHERE status = :status ORDER BY sequence")
     suspend fun withStatus(status: SyncOperationStatus): List<SyncOperationStorageRow>

@@ -142,8 +142,10 @@ class QueueRoomStorage @Inject constructor(
      */
     override suspend fun settle(id: Uuid, settlement: Settlement, at: Instant) = database.withTransaction {
         val changed = when (val transition = settlement.transition) {
+            // Закрытая операция не повторяется, а счёт попыток — вход задержки и только он:
+            // закрытию нечего им двигать (PLAN E2, E3).
             is Settlement.Transition.Close ->
-                queue.settle(id, transition.status, transition.lastError, at, attempted = 1)
+                queue.settle(id, transition.status, transition.lastError, at, attempted = 0)
             is Settlement.Transition.Reprepare ->
                 queue.reprepare(id, transition.lastError, at, transition.notBefore)
             is Settlement.Transition.Retry -> queue.settle(

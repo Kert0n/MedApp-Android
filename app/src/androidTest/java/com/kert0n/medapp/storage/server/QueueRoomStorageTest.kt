@@ -173,7 +173,9 @@ class QueueRoomStorageTest {
         assertNotNull(pkg.claims)
         val stored = requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable
         assertEquals(SyncOperationStatus.APPLIED, stored.operation.status)
-        assertEquals(1, stored.operation.attempts)
+        // Счёт попыток — вход задержки повтора, и только он: закрытой операции повторяться
+        // незачем, поэтому закрытие его не двигает (PLAN E2, E3).
+        assertEquals(0, stored.operation.attempts)
         assertEquals(IntakeAccounting.REMOTE_APPLIED, requireNotNull(database.intakes().findEntity(INTAKE)).accounting)
         assertEquals(IntakeStatus.TAKEN, requireNotNull(database.intakes().findEntity(INTAKE)).status)
         assertTrue(storage.ready(at.plusSeconds(600)).isEmpty())
@@ -298,6 +300,31 @@ class QueueRoomStorageTest {
         assertEquals(SyncOperationStatus.REFUSED, stored.operation.status)
         assertEquals(IntakeAccounting.REMOTE_REFUSED, requireNotNull(database.intakes().findEntity(INTAKE)).accounting)
         assertEquals(com.kert0n.medapp.fixture.millilitres("17"), requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY).quantity)
+        // Отправки не было вовсе: подготовка закрыла операцию сама, и попытке взяться неоткуда.
+        assertEquals(0, stored.operation.attempts)
+    }
+
+    /**
+     * `attempts` растёт только там, где от него зависит задержка следующего захода — `Retry` и
+     * `defer`. Закрытие не повторяется, и счёт ему не принадлежит (PLAN E2, E3).
+     *
+     * Красная проверка: вернуть закрытию `attempted = 1` — оба случая краснеют.
+     */
+    @Test
+    fun closingDoesNotCountAnAttemptWhileRetryDoes() = runTest {
+        database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
+        storage.take(operation, null, at)
+
+        storage.settle(operation, Delivery.Retry("обрыв", notBefore = at.plusSeconds(30)), at)
+        val retried = (requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable).operation
+        assertEquals(1, retried.attempts)
+
+        storage.take(operation, null, at.plusSeconds(31))
+        storage.settle(operation, Delivery.Applied(PackageState.Present(snapshot)), at.plusSeconds(32))
+
+        val closed = (requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable).operation
+        assertEquals(SyncOperationStatus.APPLIED, closed.status)
+        assertEquals(1, closed.attempts)
     }
 
     /** Полученный ответ записан до применения: он в базе, операция готова к закрытию без сети. */

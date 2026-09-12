@@ -58,6 +58,13 @@ interface PackageStorageRepository {
      */
     suspend fun applyServerSnapshot(pkg: Package, sync: PackageSyncState, observedAt: Instant): Boolean
 
+    /**
+     * Обвязка синхронизации пачки для экрана состояния синхронизации (PLAN H3 №28): версии и
+     * момент последней сверки. Своим методом, а не полем проекции — они принадлежат доставке, а
+     * не пачке, и остальным экранам не нужны. `null` — пачки больше нет.
+     */
+    fun observeSyncState(id: Uuid): Flow<PackageSyncState?>
+
     /** `null` снимает картину броней: аптечка не опубликована либо доступ утрачен. */
     suspend fun saveClaims(packageId: Uuid, claims: Claims?)
 

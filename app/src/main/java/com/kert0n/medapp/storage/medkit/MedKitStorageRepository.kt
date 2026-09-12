@@ -20,6 +20,12 @@ interface MedKitStorageRepository {
 
     suspend fun find(id: Uuid): MedKit?
 
+    /**
+     * Когда с аптечкой последний раз сверялись — экрану состояния синхронизации (PLAN H3 №28).
+     * Момент сверки принадлежит доставке, а не аптечке, и в её проекцию не входит.
+     */
+    fun observeSyncedAt(id: Uuid): Flow<Instant?>
+
     suspend fun save(medKit: MedKit, syncedAt: Instant? = null)
 
     /** Снимок трогает только число участников: остального сервер о нашей аптечке не знает. */

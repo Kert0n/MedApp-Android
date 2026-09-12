@@ -60,9 +60,12 @@ class PackageRoomRepositoryTest {
 
     private val paracetamol = pack(quantity = tablets("20"))
 
+    /** Все запросы к базе — чтобы посчитать, сколько раз список читал очередь. */
+    private val counted = mutableListOf<String>()
+
     @Before
     fun openDatabase() = runTest {
-        database = inMemoryDatabase()
+        database = inMemoryDatabase { sql -> synchronized(counted) { counted += sql } }
         repository = database.packageRepository()
         queue = database.queueRepository()
         database.medKits().upsert(medKit().toMedKitStorageEntity())
@@ -135,6 +138,41 @@ class PackageRoomRepositoryTest {
         val availability = requireNotNull(repository.observe(PACK).first()).availability
         assertEquals(tablets("17"), availability.effective)
         assertEquals(tablets("17"), availability.freeForAnyone)
+    }
+
+    /**
+     * Список спрашивает очередь одним чтением на всю выборку, а не по запросу на пачку: знание
+     * то же, а двести пачек не дают двухсот запросов. Доступности при этом верны у каждой.
+     */
+    @Test
+    fun theListAsksTheQueueOnceForAllPackages() = runTest {
+        val third = Uuid.parse("00000000-0000-4000-8000-000000000024")
+        repository.add(pack(id = OTHER_PACK, name = "Ибупрофен", quantity = tablets("8")))
+        repository.add(pack(id = third, name = "Аспирин", quantity = tablets("5")))
+        queue.enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
+        synchronized(counted) { counted.clear() }
+
+        val listed = repository.list(PackageQuery(), today).first().associate { it.id to it.availability.effective }
+
+        assertEquals(tablets("17"), listed[PACK])
+        assertEquals(tablets("8"), listed[OTHER_PACK])
+        assertEquals(tablets("5"), listed[third])
+        val reads = synchronized(counted) { counted.toList() }
+            .filter { it.contains("FROM sync_operations") || it.contains("FROM `sync_operations`") }
+        assertTrue("чтений sync_operations: ${reads.size} — ${reads}", reads.size <= 2)
+    }
+
+    /**
+     * Обвязка синхронизации — своим методом: версии и момент сверки принадлежат доставке, а не
+     * пачке, и в проекцию не входят (PLAN E4, H3 №28).
+     */
+    @Test
+    fun syncStateIsObservedByItsOwnMethod() = runTest {
+        val sync = PackageSyncState(PACK, ResourceVersion(5), ResourceVersion(2), syncedAt = at)
+        repository.applyServerSnapshot(paracetamol.correctTo(tablets("11")), sync, at)
+
+        assertEquals(sync, repository.observeSyncState(PACK).first())
+        assertNull(repository.observeSyncState(OTHER_PACK).first())
     }
 
     /** Пересчёт заменяет число, а более новый расход ложится поверх него (PLAN E1). */

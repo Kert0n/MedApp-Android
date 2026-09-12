@@ -5,6 +5,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.storage.medkit.toStorageEntity as toMedKitStorageEntity
 import com.kert0n.medapp.storage.value.toStorageEntity
+import java.util.concurrent.Executors
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -14,9 +15,14 @@ import kotlinx.coroutines.runBlocking
  * Словарь и две аптечки фикстур засеяны: строки держат идентификаторы единиц, форм и аптечек, а
  * собираются в домен по словарю и связям, и без них ни одна пачка из базы не читается.
  */
-fun inMemoryDatabase(): MedAppDatabase {
+fun inMemoryDatabase(observeQueries: ((String) -> Unit)? = null): MedAppDatabase {
     val context = InstrumentationRegistry.getInstrumentation().targetContext
-    return Room.inMemoryDatabaseBuilder(context, MedAppDatabase::class.java).build().seeded()
+    val builder = Room.inMemoryDatabaseBuilder(context, MedAppDatabase::class.java)
+    // Перехват запросов нужен там, где проверяется не только ответ, но и сколько его стоило.
+    observeQueries?.let { observe ->
+        builder.setQueryCallback({ sql, _ -> observe(sql) }, Executors.newSingleThreadExecutor())
+    }
+    return builder.build().seeded()
 }
 
 private fun MedAppDatabase.seeded(): MedAppDatabase = apply {

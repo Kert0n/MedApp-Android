@@ -21,10 +21,12 @@ import com.kert0n.medapp.network.server.medAppJson
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import java.time.Instant
 import kotlin.uuid.Uuid
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 
@@ -69,6 +71,19 @@ class MedKitRoomRepositoryTest {
         assertEquals(MedKit.Publication.PUBLISHED, requireNotNull(medKits.find(HOME_KIT)).publication)
         assertEquals(tablets("18"), requireNotNull(database.packageRepository().find(PACK)).quantity)
         assertEquals(ResourceVersion(3), requireNotNull(database.packages().find(PACK)).pack.syncState().version)
+    }
+
+    /**
+     * Момент сверки — своим методом: он принадлежит доставке, а не аптечке, и нужен экрану
+     * состояния синхронизации (PLAN E4, H3 №28).
+     */
+    @Test
+    fun theMomentOfTheLastSyncIsObservedByItsOwnMethod() = runTest {
+        assertNull(medKits.observeSyncedAt(HOME_KIT).first())
+
+        medKits.applyServerParticipants(HOME_KIT, participantCount = 2, syncedAt = at)
+
+        assertEquals(at, medKits.observeSyncedAt(HOME_KIT).first())
     }
 
     /** Снимок, называющий другую аптечку, откатывает и переключение: половины передачи не бывает. */
