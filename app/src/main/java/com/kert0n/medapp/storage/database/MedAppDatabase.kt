@@ -99,8 +99,9 @@ abstract class MedAppDatabase : RoomDatabase() {
          *   утраченные, с `added_at` из деталей;
          * - у `packages` нет `lifecycle` и `access`, а сама строка держится за запись: кончившаяся
          *   и утраченная коробка строки не имеют — такие строки не переезжают;
-         * - приёмы и движения держатся за запись (`RESTRICT`), части живой коробки — детали,
-         *   брони, связи с курсами — уходят вместе с ней (`CASCADE`);
+         * - приёмы и движения держатся за запись (`RESTRICT`); части живой коробки — сведения и
+         *   брони — уходят вместе с ней (`CASCADE`), а связи с лечением снимает домен, и схема их
+         *   держит (`RESTRICT`): состав курса не меняется мимо самого курса;
          * - движение стало записью о пачке: колонок аптечек нет, переносов как вида нет (D7).
          *
          * Ни убрать колонку с внешним ключом, ни поменять его поведение SQLite не умеет, поэтому
@@ -285,7 +286,7 @@ abstract class MedAppDatabase : RoomDatabase() {
                             FOREIGN KEY(`course_id`) REFERENCES `courses`(`id`)
                                 ON UPDATE NO ACTION ON DELETE RESTRICT ,
                             FOREIGN KEY(`package_id`) REFERENCES `packages`(`id`)
-                                ON UPDATE NO ACTION ON DELETE CASCADE
+                                ON UPDATE NO ACTION ON DELETE RESTRICT
                         )
                     """.trimIndent(),
                     copy = """
@@ -305,7 +306,7 @@ abstract class MedAppDatabase : RoomDatabase() {
                             `package_id` TEXT NOT NULL, `course_id` TEXT NOT NULL,
                             PRIMARY KEY(`package_id`),
                             FOREIGN KEY(`package_id`) REFERENCES `packages`(`id`)
-                                ON UPDATE NO ACTION ON DELETE CASCADE ,
+                                ON UPDATE NO ACTION ON DELETE RESTRICT ,
                             FOREIGN KEY(`course_id`) REFERENCES `courses`(`id`)
                                 ON UPDATE NO ACTION ON DELETE RESTRICT
                         )

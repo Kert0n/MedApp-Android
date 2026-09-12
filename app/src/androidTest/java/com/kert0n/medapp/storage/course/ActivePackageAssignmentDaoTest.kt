@@ -133,15 +133,17 @@ class ActivePackageAssignmentDaoTest {
     }
 
     /**
-     * Удалённая пачка освобождает себя сама: назначение — это «пачка занята курсом», и без пачки
-     * его не существует (PLAN D3, D5).
+     * Занятость пачки снимает курс, а не схема: пока назначение есть, строки пачки не убрать.
+     * Каскад освободил бы её молча — мимо редакции курса, которая занятость и охраняет
+     * (PLAN D3, D5, F2).
      */
     @Test
-    fun aDeletedPackageReleasesItself() = runTest {
+    fun aPackageAssignedToACourseIsNotRemovedSilently() = runTest {
         courses.assignPackage(ActivePackageAssignmentStorageEntity(PACK, COURSE))
 
-        database.packages().delete(PACK)
+        val refusal = runCatching { database.packages().delete(PACK) }.exceptionOrNull()
 
-        assertEquals(null, courses.courseHolding(PACK))
+        assertTrue("$refusal", refusal is SQLiteConstraintException)
+        assertEquals(COURSE, courses.courseHolding(PACK))
     }
 }

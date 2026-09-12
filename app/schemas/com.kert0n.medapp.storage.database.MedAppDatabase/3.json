@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 3,
-    "identityHash": "b2850effdac4e770a378ea4f0d30ea79",
+    "identityHash": "534341d51d6ef37a3e1f00293adca9de",
     "entities": [
       {
         "tableName": "quantity_units",
@@ -686,7 +686,7 @@
       },
       {
         "tableName": "course_sources",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`course_id` TEXT NOT NULL, `package_id` TEXT NOT NULL, `position` INTEGER NOT NULL, `allocated_doses` INTEGER NOT NULL, PRIMARY KEY(`course_id`, `package_id`), FOREIGN KEY(`course_id`) REFERENCES `courses`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`package_id`) REFERENCES `packages`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`course_id` TEXT NOT NULL, `package_id` TEXT NOT NULL, `position` INTEGER NOT NULL, `allocated_doses` INTEGER NOT NULL, PRIMARY KEY(`course_id`, `package_id`), FOREIGN KEY(`course_id`) REFERENCES `courses`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`package_id`) REFERENCES `packages`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
         "fields": [
           {
             "fieldPath": "courseId",
@@ -755,7 +755,7 @@
           },
           {
             "table": "packages",
-            "onDelete": "CASCADE",
+            "onDelete": "RESTRICT",
             "onUpdate": "NO ACTION",
             "columns": [
               "package_id"
@@ -768,7 +768,7 @@
       },
       {
         "tableName": "active_package_assignments",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`package_id` TEXT NOT NULL, `course_id` TEXT NOT NULL, PRIMARY KEY(`package_id`), FOREIGN KEY(`package_id`) REFERENCES `packages`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`course_id`) REFERENCES `courses`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`package_id` TEXT NOT NULL, `course_id` TEXT NOT NULL, PRIMARY KEY(`package_id`), FOREIGN KEY(`package_id`) REFERENCES `packages`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`course_id`) REFERENCES `courses`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
         "fields": [
           {
             "fieldPath": "packageId",
@@ -803,7 +803,7 @@
         "foreignKeys": [
           {
             "table": "packages",
-            "onDelete": "CASCADE",
+            "onDelete": "RESTRICT",
             "onUpdate": "NO ACTION",
             "columns": [
               "package_id"
@@ -1400,7 +1400,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'b2850effdac4e770a378ea4f0d30ea79')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '534341d51d6ef37a3e1f00293adca9de')"
     ]
   }
 }

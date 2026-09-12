@@ -184,6 +184,25 @@ class TransactionBoundariesTest {
         assertEquals(current.revision, requireNotNull(courses.findPlan(COURSE)).revision)
     }
 
+    /**
+     * Черновик теряет коробку так же, как начатое лечение, — доменным переходом. Пачку он не
+     * занимает, назначения у него нет, и по назначениям его не найти; каскад вырезал бы источник
+     * молча, и человек, вернувшись к недоделанному курсу, не нашёл бы пачки и не узнал бы, куда
+     * она делась (PLAN D5, F2).
+     */
+    @Test
+    fun aDraftLosesTheBoxItHeldWhenTheBoxEnds() = runTest {
+        val ibuprofen = pack(id = OTHER_PACK, quantity = tablets("10"), form = TABLET_FORM)
+        packages.add(ibuprofen)
+        assertTrue(courses.saveDraft(course(dose = dose("2"), form = TABLET_FORM, sources = listOf(source(ibuprofen, 3)))))
+        assertEquals(listOf(OTHER_PACK), database.courses().sourcePackagesOf(COURSE))
+
+        assertTrue(packages.end(ibuprofen.thrownOut(Uuid.random(), LATER), LATER))
+
+        assertEquals(emptyList<Uuid>(), database.courses().sourcePackagesOf(COURSE))
+        assertNotNull(courses.findDraft(COURSE))
+    }
+
     /** Пересчёт обеспечения состав не меняет: иначе назначения пачек разошлись бы с источниками. */
     @Test
     fun reallocationWithAnotherCompositionIsRefused() = runTest {

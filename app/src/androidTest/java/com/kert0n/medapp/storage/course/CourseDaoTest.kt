@@ -79,13 +79,11 @@ class CourseDaoTest {
 
     /**
      * Пачку выбросили: курс теряет её как источник, но сам остаётся — лечение назначено человеку,
-     * а не коробке (PLAN D5, D3).
-     *
-     * Красная проверка: держать источник ключом `RESTRICT` — выбросить пачку, подключённую к
-     * курсу, станет нельзя вовсе, и случай краснеет.
+     * а не коробке (PLAN D5, D3). Снимает источник доменный переход, и редакция уходит вперёд:
+     * тот, кто читал курс до этого, узнает, что состав уже другой.
      */
     @Test
-    fun aDeletedPackageTakesItsSourceButNotTheCourse() = runTest {
+    fun aReleasedSourceLeavesTheCourseAndMovesItsRevision() = runTest {
         val plan = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 4)))
         courses.saveCourse(
             plan.toStorageEntity(),
@@ -93,10 +91,12 @@ class CourseDaoTest {
             plan.medicine.toSourceStorageEntities(COURSE)
         )
 
+        courses.releaseSource(pack(id = PACK).ref, VOCABULARY, LATER)
         assertEquals(1, database.packages().delete(PACK))
 
         val left = requireNotNull(courses.findPlan(COURSE)).toPlan(VOCABULARY)
         assertEquals(listOf(OTHER_PACK), left.sources.map { it.pkg.id })
+        assertEquals(plan.revision.next(), left.revision)
     }
 
     /** Уникальность позиции ловит сбой перетаскивания: два источника на одном месте невозможны. */
@@ -240,9 +240,13 @@ class CourseDaoTest {
         assertEquals(corrected.revision, restored.revision)
     }
 
-    /** Источник без пачки не остаётся: он о ней и есть, поэтому уходит вместе с ней. */
+    /**
+     * Состав курса не меняется мимо самого курса: пока пачка в источниках, строки её не убрать.
+     * Каскад дал бы верный набор строк при прежней редакции — курс не узнал бы, что изменился
+     * (PLAN D5, F2).
+     */
     @Test
-    fun aSourceDoesNotOutliveItsPackage() = runTest {
+    fun aPackageHeldAsASourceIsNotRemovedSilently() = runTest {
         val plan = activeCourse(sources = listOf(source(PACK, 5)))
         courses.saveCourse(
             plan.toStorageEntity(),
@@ -250,8 +254,9 @@ class CourseDaoTest {
             plan.medicine.toSourceStorageEntities(COURSE)
         )
 
-        database.packages().delete(PACK)
+        val refusal = runCatching { database.packages().delete(PACK) }.exceptionOrNull()
 
-        assertTrue(requireNotNull(courses.findPlan(COURSE)).sources.isEmpty())
+        assertTrue("$refusal", refusal is SQLiteConstraintException)
+        assertEquals(listOf(PACK), courses.sourcePackagesOf(COURSE))
     }
 }
