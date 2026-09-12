@@ -61,6 +61,10 @@ class PackageRoomRepository @Inject constructor(
 
     override suspend fun delete(packageId: Uuid): Boolean = packages.delete(packageId) > 0
 
+    override suspend fun moveContents(from: Uuid, to: Uuid): Int = packages.moveContents(from, to)
+
+    override suspend fun deleteContentsOf(medKitId: Uuid): Int = packages.deleteContentsOf(medKitId)
+
     override suspend fun loseAccess(packageId: Uuid): Boolean = database.withTransaction {
         val changed = change(packageId) { it.loseAccess() }
         if (changed) packages.deleteClaims(packageId)

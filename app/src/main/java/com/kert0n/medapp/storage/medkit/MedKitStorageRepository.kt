@@ -28,6 +28,12 @@ interface MedKitStorageRepository {
 
     suspend fun save(medKit: MedKit, syncedAt: Instant? = null)
 
+    /**
+     * Строка аптечки уходит. Содержимое к этому моменту уже переехало или удалено — что с ним
+     * делать, решает сценарий, а не хранение (PLAN E6, F5). `false` — аптечки и так нет.
+     */
+    suspend fun delete(id: Uuid): Boolean
+
     /** Снимок трогает только число участников: остального сервер о нашей аптечке не знает. */
     suspend fun applyServerParticipants(id: Uuid, participantCount: Long, syncedAt: Instant)
 

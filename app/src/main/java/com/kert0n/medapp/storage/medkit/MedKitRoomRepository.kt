@@ -33,6 +33,8 @@ class MedKitRoomRepository @Inject constructor(
     override suspend fun save(medKit: MedKit, syncedAt: Instant?) =
         medKits.upsert(medKit.toStorageEntity(syncedAt))
 
+    override suspend fun delete(id: Uuid): Boolean = medKits.delete(id) > 0
+
     override suspend fun applyServerParticipants(
         id: Uuid,
         participantCount: Long,
