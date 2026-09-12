@@ -34,7 +34,7 @@ class PackageStorageRow(
 ) {
     fun toDomain(vocabulary: Vocabulary): Package = Package(
         id = pack.id,
-        medKit = requireNotNull(medKit) { "пачка лежит в аптечке, которой нет: ${pack.medKitId}" }.toRef(),
+        medKit = pack.medKitRow(medKit).toRef(),
         facts = PackageFacts(
             shared = pack.sharedFacts(vocabulary),
             expiresOn = details.expiry(),

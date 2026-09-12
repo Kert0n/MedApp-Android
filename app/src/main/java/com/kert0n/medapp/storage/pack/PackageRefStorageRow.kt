@@ -24,6 +24,6 @@ class PackageRefStorageRow(
         form = pack.sharedFacts(vocabulary).form,
         lifecycle = pack.lifecycle,
         access = pack.access,
-        medKit = requireNotNull(medKit) { "пачка лежит в аптечке, которой нет: ${pack.medKitId}" }.toRef()
+        medKit = pack.medKitRow(medKit).toRef()
     )
 }
