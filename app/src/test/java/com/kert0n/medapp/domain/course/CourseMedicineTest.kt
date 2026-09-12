@@ -38,8 +38,8 @@ class CourseMedicineTest {
         // Порядок — приоритет расходования, и новая пачка встаёт после уже подключённых:
         // допить начатую и перейти к следующей — обычное намерение.
         val withTwo = draftWithDose()
-            .attach(home.ref, doses = 5.doses, at = LATER).getOrThrow()
-            .attach(dacha.ref, doses = 4.doses, at = LATER).getOrThrow()
+            .attach(home, doses = 5.doses, at = LATER).getOrThrow()
+            .attach(dacha, doses = 4.doses, at = LATER).getOrThrow()
         assertEquals(listOf(PACK, OTHER_PACK), withTwo.sources.map { it.pkg.id })
         assertEquals(listOf(5.doses, 4.doses), withTwo.sources.map { it.allocatedDoses })
         assertEquals(9.doses, withTwo.allocatedDosesTotal)
@@ -56,16 +56,16 @@ class CourseMedicineTest {
 
     @Test
     fun samePackageDoesNotEnterTheStackTwice() {
-        val once = draftWithDose().attach(home.ref, doses = 5.doses, at = LATER).getOrThrow()
-        val again = once.attach(home.ref, doses = 1.doses, at = LATER)
+        val once = draftWithDose().attach(home, doses = 5.doses, at = LATER).getOrThrow()
+        val again = once.attach(home, doses = 1.doses, at = LATER)
         assertEquals(CourseRejected.Reason.ALREADY_ATTACHED, again.rejection())
     }
 
     @Test
     fun reorderMovesPriority() {
         val stack = draftWithDose()
-            .attach(home.ref, doses = 5.doses, at = LATER).getOrThrow()
-            .attach(dacha.ref, doses = 4.doses, at = LATER).getOrThrow()
+            .attach(home, doses = 5.doses, at = LATER).getOrThrow()
+            .attach(dacha, doses = 4.doses, at = LATER).getOrThrow()
         val swapped = stack.reorder(from = 1, to = 0, at = LATER)
         assertEquals(listOf(OTHER_PACK, PACK), swapped.sources.map { it.pkg.id })
         assertEquals(listOf(4.doses, 5.doses), swapped.sources.map { it.allocatedDoses })
@@ -73,14 +73,14 @@ class CourseMedicineTest {
 
     @Test
     fun reorderOutsideTheStackIsAProgrammerError() {
-        val stack = draftWithDose().attach(home.ref, doses = 5.doses, at = LATER).getOrThrow()
+        val stack = draftWithDose().attach(home, doses = 5.doses, at = LATER).getOrThrow()
         assertThrows(IllegalArgumentException::class.java) { stack.reorder(0, 1, LATER) }
     }
 
     @Test
     fun allocationOfASourceIsTheReservationInPackageUnits() {
         // Целевой объём серверной брони = выделение × доза (PLAN D5).
-        val stack = draftWithDose().attach(home.ref, doses = 5.doses, at = LATER).getOrThrow()
+        val stack = draftWithDose().attach(home, doses = 5.doses, at = LATER).getOrThrow()
         assertEquals(Quantity(BigDecimal("10"), TABLETS), stack.allocatedOf(home.ref))
         assertNull(stack.allocatedOf(dacha.ref))
     }
@@ -88,14 +88,14 @@ class CourseMedicineTest {
     @Test
     fun allocationOfAPackOutsideTheMedicineIsUnknown() {
         // Выдумывать выделение пачке, которой в препарате нет, нельзя.
-        val stack = draftWithDose().attach(home.ref, doses = 5.doses, at = LATER).getOrThrow()
+        val stack = draftWithDose().attach(home, doses = 5.doses, at = LATER).getOrThrow()
         assertNull(stack.allocatedOf(dacha.ref))
         assertEquals(5.doses, stack.allocatedDosesTotal)
     }
 
     @Test
     fun changingSourcesAgesTheRevision() {
-        val attached = draftWithDose().attach(home.ref, doses = 5.doses, at = LATER)
+        val attached = draftWithDose().attach(home, doses = 5.doses, at = LATER)
         assertEquals(Revision(1), attached.getOrThrow().revision)
         assertEquals(Revision(2), attached.getOrThrow().detach(home.ref, LATER).revision)
     }
@@ -104,7 +104,7 @@ class CourseMedicineTest {
     fun sourcesOfAnActiveCourseAreStillEditable() {
         // Это не изменение назначенной дозы или календаря, поэтому менять можно (PLAN D5).
         val active = activeCourse(sources = listOf(source(PACK, 5)))
-        val widened = active.attach(dacha.ref, doses = 4.doses, at = LATER).getOrThrow()
+        val widened = active.attach(dacha, doses = 4.doses, at = LATER).getOrThrow()
         assertEquals(9.doses, widened.allocatedDosesTotal)
         assertEquals(schedule(), widened.schedule)
         assertEquals(dose("2"), widened.dose)
@@ -143,7 +143,7 @@ class CourseMedicineTest {
     @Test
     fun draftWithSourcesButNoScheduleIsRejectedForActivationNotForSaving() {
         // Черновик с выбранными пачками сохраняется: броней у него нет, упаковку он не занимает.
-        val chosen = draftWithDose().attach(home.ref, doses = 5.doses, at = LATER).getOrThrow()
+        val chosen = draftWithDose().attach(home, doses = 5.doses, at = LATER).getOrThrow()
         assertEquals(listOf(PACK), chosen.sources.map { it.pkg.id })
         assertEquals(CourseRejected.Reason.SCHEDULE_MISSING, chosen.activate(LATER).rejection())
     }
@@ -153,7 +153,7 @@ class CourseMedicineTest {
         // Активация не меняет ни расписания, ни источников: материализованным пунктам нечего
         // объявлять устаревшими.
         val ready = prescribedDraft(schedule = schedule(), totalDoses = 7)
-            .attach(home.ref, doses = 5.doses, at = LATER).getOrThrow()
+            .attach(home, doses = 5.doses, at = LATER).getOrThrow()
         assertEquals(ready.revision, ready.activate(LATER).getOrThrow().course.revision)
     }
 

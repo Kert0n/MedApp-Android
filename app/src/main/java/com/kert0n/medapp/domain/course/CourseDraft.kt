@@ -1,6 +1,7 @@
 package com.kert0n.medapp.domain.course
 
 import com.kert0n.medapp.domain.pack.Availability
+import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageRef
 import com.kert0n.medapp.domain.value.DosageForm
 import com.kert0n.medapp.domain.value.Dose
@@ -118,7 +119,7 @@ class CourseDraft(
      * первая пачка: пока доза и форма не названы, сверять не с чем, и отказ говорит, чего не
      * хватает.
      */
-    fun attach(pkg: PackageRef, doses: Doses, at: Instant): Result<CourseDraft> {
+    fun attach(pkg: Package, doses: Doses, at: Instant): Result<CourseDraft> {
         val dose = dose ?: return rejected(CourseRejected.Reason.DOSE_MISSING)
         val form = form ?: return rejected(CourseRejected.Reason.FORM_MISSING)
         return medicine.attach(pkg, doses, dose, form)

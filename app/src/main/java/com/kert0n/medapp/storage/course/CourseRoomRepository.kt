@@ -96,6 +96,10 @@ class CourseRoomRepository @Inject constructor(
     }
 
     override suspend fun updateSources(course: Course, expected: Revision): Boolean = database.withTransaction {
+        // Состав правили из редакции, которой уже нет, — например, коробку из него выбросили, и
+        // курс её уже потерял: писать некуда, и исключением это не является (PLAN F5).
+        val stored = courses.findPlan(course.id) ?: return@withTransaction false
+        if (stored.course.revision != expected.number) return@withTransaction false
         val revised = courses.updateAllocations(
             course.toStorageEntity(),
             course.medicine.toSourceStorageEntities(course.id),

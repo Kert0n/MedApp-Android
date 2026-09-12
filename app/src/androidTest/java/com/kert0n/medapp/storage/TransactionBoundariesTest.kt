@@ -51,6 +51,7 @@ import kotlin.uuid.Uuid
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import com.kert0n.medapp.domain.course.Revision
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -147,7 +148,7 @@ class TransactionBoundariesTest {
         val ibuprofen = pack(id = OTHER_PACK, quantity = tablets("10"), form = TABLET_FORM)
         packages.add(ibuprofen)
 
-        val extended = activation.course.attach(ibuprofen.ref, 3.doses, LATER).getOrThrow()
+        val extended = activation.course.attach(ibuprofen, 3.doses, LATER).getOrThrow()
         assertTrue(courses.updateSources(extended, expected = activation.course.revision))
         assertEquals(COURSE, courses.courseHolding(PACK))
         assertEquals(COURSE, courses.courseHolding(OTHER_PACK))
@@ -159,6 +160,30 @@ class TransactionBoundariesTest {
         assertEquals(listOf(OTHER_PACK), requireNotNull(courses.findPlan(COURSE)).sources.map { it.pkg.id })
     }
 
+    /**
+     * Курс не воскрешает удалённое: состав, прочитанный до того, как коробку выбросили, называет
+     * коробку, которой нет, — и «писать некуда» вместо исключения ключа (PLAN D3, F5). Так же
+     * отвечает состав из прежней редакции — курс её уже потерял и редакцию поднял.
+     */
+    @Test
+    fun sourcesReadBeforeThePackageWasThrownOutAreNotWrittenBack() = runTest {
+        val activation = draft()
+        courses.activate(activation, planned = listOf(plannedIntake()))
+        val ibuprofen = pack(id = OTHER_PACK, quantity = tablets("10"), form = TABLET_FORM)
+        packages.add(ibuprofen)
+        val extended = activation.course.attach(ibuprofen, 3.doses, LATER).getOrThrow()
+
+        assertTrue(packages.delete(OTHER_PACK))
+        assertFalse(courses.updateSources(extended, expected = activation.course.revision))
+        assertEquals(listOf(PACK), requireNotNull(courses.findPlan(COURSE)).sources.map { it.pkg.id })
+
+        // Коробку выбросили, и курс потерял её доменным переходом: редакция ушла вперёд.
+        val current = requireNotNull(courses.findPlan(COURSE))
+        val stale = current.detach(paracetamol.ref, LATER)
+        assertFalse(courses.updateSources(stale, expected = Revision(current.revision.number - 1)))
+        assertEquals(current.revision, requireNotNull(courses.findPlan(COURSE)).revision)
+    }
+
     /** Пересчёт обеспечения состав не меняет: иначе назначения пачек разошлись бы с источниками. */
     @Test
     fun reallocationWithAnotherCompositionIsRefused() = runTest {
@@ -166,7 +191,7 @@ class TransactionBoundariesTest {
         courses.activate(activation, planned = listOf(plannedIntake()))
         val ibuprofen = pack(id = OTHER_PACK, quantity = tablets("10"), form = TABLET_FORM)
         packages.add(ibuprofen)
-        val extended = activation.course.attach(ibuprofen.ref, 3.doses, LATER).getOrThrow()
+        val extended = activation.course.attach(ibuprofen, 3.doses, LATER).getOrThrow()
 
         val failure = runCatching {
             courses.reallocate(CourseReallocation(extended, activation.course.revision))

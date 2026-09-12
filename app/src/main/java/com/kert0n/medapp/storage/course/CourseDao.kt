@@ -66,7 +66,9 @@ interface CourseDao {
      * Пересчитанные выделения живого плана. Запись условна по редакции: план, закрытый или уже
      * пересчитанный между чтением и записью, не возвращается и не переписывается результатом,
      * посчитанным из прошлого состава — ноль изменённых строк значит, что писать некуда
-     * (PLAN D5, F5).
+     * (PLAN D5, F5). Состав из коробок, которых больше нет, тоже некуда писать: курс, прочитанный
+     * до того, как коробку выбросили, не воскрешает её источником — ответ `false`, а не
+     * исключение ключа.
      *
      * Меняются только редакция, время правки, источники и число доз мимо плана: доза и
      * расписание действующего курса неизменны, и пересчёт обеспечения их не касается.
@@ -77,6 +79,8 @@ interface CourseDao {
         sources: List<CourseSourceStorageEntity>,
         expected: Revision
     ): Boolean {
+        val named = sources.map { it.packageId }
+        if (livingPackagesAmong(named).size != named.size) return false
         val revised = reviseIfRevisionIs(
             course.id, expected.number, course.revision, course.takenOffPlan, course.updatedAt
         )
@@ -165,6 +169,10 @@ interface CourseDao {
 
     @Query("SELECT package_id FROM course_sources WHERE course_id = :courseId")
     suspend fun sourcePackagesOf(courseId: Uuid): List<Uuid>
+
+    /** Какие из названных коробок ещё есть: источником бывает только живая (PLAN D3). */
+    @Query("SELECT id FROM packages WHERE id IN (:packageIds)")
+    suspend fun livingPackagesAmong(packageIds: List<Uuid>): List<Uuid>
 
     @Query("DELETE FROM courses WHERE id = :id")
     suspend fun deletePlan(id: Uuid)
