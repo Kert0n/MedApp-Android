@@ -348,11 +348,8 @@ class ContractProbe {
         )
 
         assertEquals(ApiFailure.PreconditionFailed, failure(owner.send(stale)))
-        // Расход, не назвавший версию, сервер не применяет вовсе: 428, а не молча (PLAN B3).
-        assertEquals(
-            ApiFailure.PreconditionRequired,
-            failure(owner.synchronise(pack.id, Uuid.random(), PackageSyncNetworkDTO("1", packageVersion = null)))
-        )
+        // 428 сюда не приходит: расход без версии клиент не выражает вовсе — это отвергает сама
+        // форма запроса (`PackageSyncNetworkDTO`, проверено в `WireContractTest`).
         val untouched = success(owner.packageSnapshot(pack.id))
         assertEquals("10.000000", untouched.pack.amount)
         assertEquals(pack.version, untouched.pack.version)
