@@ -5,6 +5,7 @@ import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageEnding
 import com.kert0n.medapp.domain.pack.PackageProjection
 import com.kert0n.medapp.domain.pack.PackageFacts
+import com.kert0n.medapp.domain.pack.PackageStatus
 import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.storage.course.CourseReallocation
@@ -61,6 +62,13 @@ interface PackageStorageRepository {
      * `false` — пачки и так нет.
      */
     suspend fun end(ending: PackageEnding, at: Instant): Boolean
+
+    /**
+     * Решение по коробке принято, а полка ещё не ответила: коробка получает пометку [status]
+     * своим переходом (PLAN E1). Снимает пометку не сценарий, а закрытие команды в очереди, поэтому
+     * `ACTIVE` сюда не передают. `false` — пачки больше нет.
+     */
+    suspend fun mark(packageId: Uuid, status: PackageStatus): Boolean
 
     /**
      * Живые пачки аптечки — сущности для сценария, который разбирает её по коробкам в своей

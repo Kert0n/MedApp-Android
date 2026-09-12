@@ -40,13 +40,13 @@ class SettlementTest {
     fun appliedWithASnapshotClosesLaysItDownAndAccountsTheIntake() {
         val settlement = Delivery.Applied(PackageState.Present(snapshot)).settlement(consume)
         assertEquals(Transition.Close(SyncOperationStatus.APPLIED), settlement.transition)
-        assertEquals(listOf(Effect.Account(IntakeAccounting.REMOTE_APPLIED), Effect.LayDown(snapshot)), settlement.effects)
+        assertEquals(listOf(Effect.Account(IntakeAccounting.REMOTE_APPLIED), Effect.LayDown(snapshot), Effect.Settled), settlement.effects)
     }
 
     @Test
     fun appliedWithThePackageGoneEndsItWithoutATrace() {
         val settlement = Delivery.Applied(PackageState.Gone).settlement(consume)
-        assertEquals(listOf(Effect.Account(IntakeAccounting.REMOTE_APPLIED), Effect.PackageEnded(PACK, Effect.Ending.CONSUMED)), settlement.effects)
+        assertEquals(listOf(Effect.Account(IntakeAccounting.REMOTE_APPLIED), Effect.PackageEnded(PACK, Effect.Ending.CONSUMED), Effect.Settled), settlement.effects)
     }
 
     @Test
@@ -56,7 +56,7 @@ class SettlementTest {
         val settlement = Delivery.Applied(PackageState.None).settlement(leave)
         assertEquals(Transition.Close(SyncOperationStatus.APPLIED), settlement.transition)
         assertEquals(
-            listOf<Effect>(Effect.Account(IntakeAccounting.REMOTE_APPLIED), Effect.MedKitLeft(SHARED_KIT)),
+            listOf(Effect.Account(IntakeAccounting.REMOTE_APPLIED), Effect.MedKitLeft(SHARED_KIT), Effect.Settled),
             settlement.effects
         )
     }
@@ -69,7 +69,8 @@ class SettlementTest {
         assertEquals(
             listOf<Effect>(
                 Effect.Account(IntakeAccounting.REMOTE_APPLIED),
-                Effect.MedKitDismantled(SHARED_KIT, transferTo = HOME_KIT)
+                Effect.MedKitDismantled(SHARED_KIT, transferTo = HOME_KIT),
+                Effect.Settled
             ),
             settlement.effects
         )
@@ -84,7 +85,8 @@ class SettlementTest {
         assertEquals(
             listOf<Effect>(
                 Effect.Account(IntakeAccounting.REMOTE_APPLIED),
-                Effect.PackageEnded(PACK, Effect.Ending.THROWN_OUT)
+                Effect.PackageEnded(PACK, Effect.Ending.THROWN_OUT),
+                Effect.Settled
             ),
             Delivery.Applied(PackageState.Gone).settlement(PackageSyncCommand.Delete(PACK)).effects
         )
@@ -105,7 +107,8 @@ class SettlementTest {
             listOf(
                 Effect.Account(IntakeAccounting.REMOTE_REFUSED),
                 Effect.LayDown(snapshot),
-                Effect.Cascade(SyncOperationStatus.REFUSED, IntakeAccounting.REMOTE_REFUSED)
+                Effect.Cascade(SyncOperationStatus.REFUSED, IntakeAccounting.REMOTE_REFUSED),
+                Effect.Settled
             ),
             settlement.effects
         )
@@ -126,7 +129,8 @@ class SettlementTest {
             listOf(
                 Effect.Account(IntakeAccounting.REMOTE_REFUSED),
                 Effect.PackageEnded(PACK, Effect.Ending.ACCESS_LOST),
-                Effect.Cascade(SyncOperationStatus.ACCESS_LOST, IntakeAccounting.REMOTE_REFUSED)
+                Effect.Cascade(SyncOperationStatus.ACCESS_LOST, IntakeAccounting.REMOTE_REFUSED),
+                Effect.Settled
             ),
             settlement.effects
         )
@@ -138,10 +142,26 @@ class SettlementTest {
         assertEquals(
             listOf(
                 Effect.Account(IntakeAccounting.REMOTE_REFUSED),
-                Effect.Cascade(SyncOperationStatus.ACCESS_LOST, IntakeAccounting.REMOTE_REFUSED)
+                Effect.Cascade(SyncOperationStatus.ACCESS_LOST, IntakeAccounting.REMOTE_REFUSED),
+                Effect.Settled
             ),
             settlement.effects
         )
+    }
+
+    /**
+     * Пометку снимает только закрытие: отказ возвращает вещь в оборот, применение отпускает её, а
+     * «устарело» и повтор — ещё не ответ, и решение продолжает ждать (PLAN E1).
+     */
+    @Test
+    fun onlyAClosedCommandReleasesTheMark() {
+        val delete = PackageSyncCommand.Delete(PACK)
+        for (closing in listOf(Delivery.Applied(PackageState.None), Delivery.Refused(RefusalReason.STALE, PackageState.None), Delivery.AccessLost)) {
+            assertEquals(Effect.Settled, closing.settlement(delete).effects.last())
+        }
+        for (waiting in listOf(Delivery.Stale(snapshot), Delivery.Retry("обрыв"))) {
+            assertEquals(false, Effect.Settled in waiting.settlement(delete).effects)
+        }
     }
 
     @Test

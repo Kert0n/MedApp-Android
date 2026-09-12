@@ -8,6 +8,7 @@ import com.kert0n.medapp.domain.pack.PackageAvailability
 import com.kert0n.medapp.domain.pack.PackageEnding
 import com.kert0n.medapp.domain.pack.PackageFacts
 import com.kert0n.medapp.domain.pack.PackageProjection
+import com.kert0n.medapp.domain.pack.PackageStatus
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.queue.PackageQueueState
@@ -62,6 +63,16 @@ class PackageRoomRepository @Inject constructor(
 
     override suspend fun describe(packageId: Uuid, facts: PackageFacts): Boolean =
         change(packageId) { it.describe(facts) }
+
+    override suspend fun mark(packageId: Uuid, status: PackageStatus): Boolean =
+        change(packageId) {
+            when (status) {
+                PackageStatus.CHANGING -> it.markChanging()
+                PackageStatus.REMOVING -> it.markRemoving()
+                PackageStatus.LOST -> it.markLost()
+                PackageStatus.ACTIVE -> throw IllegalArgumentException("пометку снимает ответ полки, а не решение")
+            }
+        }
 
     override suspend fun end(ending: PackageEnding, at: Instant): Boolean = database.withTransaction {
         if (packages.find(ending.record.id) == null) return@withTransaction false

@@ -2,6 +2,9 @@ package com.kert0n.medapp.storage.server
 
 import androidx.room.withTransaction
 import com.kert0n.medapp.domain.medkit.MedKitRef
+import com.kert0n.medapp.domain.medkit.MedKitStatus
+import com.kert0n.medapp.domain.pack.PackageStatus
+import com.kert0n.medapp.storage.medkit.toStorageEntity as toMedKitStorageEntity
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageEnding
 import com.kert0n.medapp.network.pack.PackageSnapshot
@@ -178,7 +181,37 @@ class QueueRoomStorage @Inject constructor(
             is Settlement.Effect.MedKitLeft -> left(effect.medKitId, at)
             is Settlement.Effect.Account -> intakes.setAccounting(id, effect.accounting)
             is Settlement.Effect.Cascade -> cascade(id, effect)
+            is Settlement.Effect.Settled -> settled(id)
         }
+    }
+
+    /**
+     * Команда закрыта: вещь, которой она касалась, отпускается, если других незакрытых команд у неё
+     * нет (PLAN E1). У команды коробки это коробка; у команды полки — сама полка и те её коробки,
+     * которые не ждут своих команд: пометку им ставило решение полки, и ответ на него их отпускает.
+     * Кончившейся вещи нет — отпускать нечего.
+     */
+    private suspend fun settled(id: Uuid) {
+        val operation = queue.find(id)?.operation ?: return
+        val packageId = operation.packageId
+        val medKitId = operation.medKitId
+        when {
+            packageId != null -> release(packageId)
+            medKitId != null && queue.unclosedOwnOfMedKit(medKitId) == 0 -> {
+                val shelf = medKits.find(medKitId) ?: return
+                val kit = shelf.toDomain()
+                if (kit.status != MedKitStatus.ACTIVE) medKits.upsert(kit.settled().toMedKitStorageEntity(shelf.syncedAt))
+                for (row in packages.ofMedKit(medKitId)) release(row.pack.id)
+            }
+        }
+    }
+
+    /** Коробка без незакрытых команд возвращается в оборот; ждущая — нет: ответит её команда. */
+    private suspend fun release(packageId: Uuid) {
+        if (queue.unclosedOfPackages(listOf(packageId)).isNotEmpty()) return
+        val row = packages.find(packageId) ?: return
+        val pkg = row.toDomain(vocabulary.snapshot())
+        if (pkg.status != PackageStatus.ACTIVE) packages.save(pkg.settled(), row.pack.syncState())
     }
 
     /**
@@ -214,7 +247,9 @@ class QueueRoomStorage @Inject constructor(
             val pkg = row.toDomain(words)
             when {
                 transferTo == null -> packages.end(pkg.thrownOut(Uuid.random(), at), courses, movements, words, at)
-                target != null -> packages.save(pkg.moveTo(target), row.pack.syncState())
+                // Переехавшая коробка отпускается ответом полки — там, куда её поставили: на прежней
+                // полке её уже не найти (PLAN E1).
+                target != null -> packages.save(pkg.moveTo(target), row.pack.syncState()).also { release(pkg.id) }
                 else -> packages.end(pkg.lost(Uuid.random(), at), courses, movements, words, at)
             }
         }
@@ -245,6 +280,7 @@ class QueueRoomStorage @Inject constructor(
             for (dependent in queue.unclosedDependentsOf(pending.removeFirst())) {
                 queue.settle(dependent, effect.status, com.kert0n.medapp.queue.RefusalReason.SUPERSEDED.name, at = null, attempted = 0)
                 intakes.setAccounting(dependent, effect.accounting)
+                settled(dependent)
                 pending += dependent
             }
         }

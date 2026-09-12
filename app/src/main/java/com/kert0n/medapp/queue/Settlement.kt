@@ -69,6 +69,15 @@ class Settlement(val transition: Transition, effects: List<Effect> = emptyList()
         /** Учёт расхода у приёма, который поставил эту операцию. */
         data class Account(val accounting: IntakeAccounting) : Effect
 
+        /**
+         * Команда закрыта — применена или нет, — и решение, ради которого она стояла, больше не
+         * ждёт. Пометка держится на вещи, пока у неё есть незакрытая команда: последняя закрытая
+         * снимает её (PLAN E1). Применённый конец строки не оставляет, и снимать тогда нечего;
+         * неразрешимый сбой возвращает вещь в оборот, и человек решает заново. Кого касается,
+         * хранение знает по строке операции — ей же принадлежат пачка и полка команды.
+         */
+        data object Settled : Effect
+
         /** Незакрытые зависимые закрываются [status], их приёмы получают [accounting]; и так до конца цепочки. */
         data class Cascade(val status: SyncOperationStatus, val accounting: IntakeAccounting) : Effect
     }
@@ -82,7 +91,7 @@ fun Delivery.settlement(command: SyncCommand): Settlement = when (this) {
     is Delivery.Applied -> Settlement(
         Settlement.Transition.Close(SyncOperationStatus.APPLIED),
         listOf(Settlement.Effect.Account(IntakeAccounting.REMOTE_APPLIED)) + state.effects(command) +
-            command.appliedToTheShelf()
+            command.appliedToTheShelf() + Settlement.Effect.Settled
     )
     is Delivery.Stale -> Settlement(
         Settlement.Transition.Reprepare("устарело: ${snapshot.sync.version}", notBefore),
@@ -91,7 +100,8 @@ fun Delivery.settlement(command: SyncCommand): Settlement = when (this) {
     is Delivery.Refused -> Settlement(
         Settlement.Transition.Close(SyncOperationStatus.REFUSED, reason.name),
         listOf(Settlement.Effect.Account(IntakeAccounting.REMOTE_REFUSED)) + state.effects(command) +
-            Settlement.Effect.Cascade(SyncOperationStatus.REFUSED, IntakeAccounting.REMOTE_REFUSED)
+            Settlement.Effect.Cascade(SyncOperationStatus.REFUSED, IntakeAccounting.REMOTE_REFUSED) +
+            Settlement.Effect.Settled
     )
     is Delivery.Retry -> Settlement(
         Settlement.Transition.Retry(error, attempted, outcomeUnknown, notBefore)
@@ -104,7 +114,8 @@ fun Delivery.settlement(command: SyncCommand): Settlement = when (this) {
                     Settlement.Effect.PackageEnded(it.packageId, Settlement.Effect.Ending.ACCESS_LOST)
                 }
             ) +
-            Settlement.Effect.Cascade(SyncOperationStatus.ACCESS_LOST, IntakeAccounting.REMOTE_REFUSED)
+            Settlement.Effect.Cascade(SyncOperationStatus.ACCESS_LOST, IntakeAccounting.REMOTE_REFUSED) +
+            Settlement.Effect.Settled
     )
 }
 

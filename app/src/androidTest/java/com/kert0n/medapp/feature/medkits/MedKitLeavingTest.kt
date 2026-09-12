@@ -3,6 +3,8 @@ package com.kert0n.medapp.feature.medkits
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kert0n.medapp.domain.course.CourseDraft
 import com.kert0n.medapp.domain.medkit.MedKit
+import com.kert0n.medapp.domain.medkit.MedKitStatus
+import com.kert0n.medapp.domain.pack.PackageStatus
 import com.kert0n.medapp.domain.stock.StockMovement
 import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.HOME_KIT
@@ -95,6 +97,11 @@ class MedKitLeavingTest {
         assertEquals(emptyList<StockMovement>(), database.stockMovements().ofPackage(PACK).map { it.toDomain(VOCABULARY) })
         assertEquals(listOf(PACK, OTHER_PACK).sorted(), database.courses().sourcePackagesOf(COURSE).sorted())
         assertEquals(listOf(MedKitSyncCommand.Leave(SHARED_KIT)), commands())
+        // Коробки полки видны, но уже не наши; коробка с другой полки не тронута.
+        assertEquals(MedKitStatus.REMOVING, database.medKits().find(SHARED_KIT)?.toDomain()?.status)
+        assertEquals(PackageStatus.LOST, database.packageRepository().find(PACK)?.status)
+        assertEquals(PackageStatus.ACTIVE, database.packageRepository().find(OTHER_PACK)?.status)
+        assertEquals(MedKitLeaving.Outcome.BUSY, leaving.leave(SHARED_KIT))
     }
 
     /**

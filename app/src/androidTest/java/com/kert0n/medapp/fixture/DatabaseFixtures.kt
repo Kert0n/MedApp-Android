@@ -135,6 +135,6 @@ class Scenarios(database: MedAppDatabase, now: java.time.Instant) {
         medKits, packages, packageRemoval, packageRelocation, queue, transactions, clock
     )
     val medKitLeaving = com.kert0n.medapp.feature.medkits.MedKitLeaving(
-        medKits, queue, transactions, clock
+        medKits, packages, queue, transactions, clock
     )
 }

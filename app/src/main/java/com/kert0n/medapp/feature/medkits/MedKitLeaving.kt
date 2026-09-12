@@ -1,10 +1,13 @@
 package com.kert0n.medapp.feature.medkits
 
+import com.kert0n.medapp.domain.medkit.MedKitStatus
+import com.kert0n.medapp.domain.pack.PackageStatus
 import com.kert0n.medapp.queue.QueueService
 import com.kert0n.medapp.queue.QueuedCommand
 import com.kert0n.medapp.queue.Transactions
 import com.kert0n.medapp.queue.medkit.MedKitSyncCommand
 import com.kert0n.medapp.storage.medkit.MedKitStorageRepository
+import com.kert0n.medapp.storage.pack.PackageStorageRepository
 import java.time.Clock
 import javax.inject.Inject
 import kotlin.uuid.Uuid
@@ -23,6 +26,7 @@ import kotlin.uuid.Uuid
  */
 class MedKitLeaving @Inject constructor(
     private val medKits: MedKitStorageRepository,
+    private val packages: PackageStorageRepository,
     private val queue: QueueService,
     private val transactions: Transactions,
     private val clock: Clock
@@ -31,14 +35,22 @@ class MedKitLeaving @Inject constructor(
     suspend fun leave(medKitId: Uuid): Outcome = transactions.run {
         val medKit = medKits.find(medKitId) ?: return@run Outcome.MED_KIT_GONE
         if (!medKit.answersToServer) return@run Outcome.NOT_SHARED
+        if (!medKit.status.allowsDecision) return@run Outcome.BUSY
         val leave = QueuedCommand(Uuid.random(), MedKitSyncCommand.Leave(medKitId))
-        queue.change(medKit.ref, listOf(leave), clock.instant()) { true }
+        queue.change(medKit.ref, listOf(leave), clock.instant()) {
+            // Коробки остаются остальным, а у нас до ответа только видны. Ждущую своего решения не
+            // трогаем — её отпустит её же команда (PLAN E1, E6).
+            for (pkg in packages.contentsOf(medKitId)) {
+                if (pkg.status.allowsUse) check(packages.mark(pkg.id, PackageStatus.LOST)) { "пачка прочитана этой же транзакцией" }
+            }
+            medKits.mark(medKitId, MedKitStatus.REMOVING)
+        }
         Outcome.MARKED
     }
 
     /**
      * Чем кончилось. Пометили — полка остаётся на месте и ждёт ответа сервера; аптечки уже нет —
-     * закрываем молча; местная — выходить неоткуда.
+     * закрываем молча; местная — выходить неоткуда; полка уже ждёт другого решения (E1).
      */
-    enum class Outcome { MARKED, MED_KIT_GONE, NOT_SHARED }
+    enum class Outcome { MARKED, MED_KIT_GONE, NOT_SHARED, BUSY }
 }

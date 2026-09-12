@@ -84,6 +84,16 @@ interface SyncOperationDao {
     )
     suspend fun unclosedOfPackages(packageIds: List<Uuid>): List<SyncOperationStorageRow>
 
+    /**
+     * Сколько у полки незакрытых **своих** команд — о ней самой, а не о её коробках: пометка полки
+     * держится на них, а коробки следят за собой сами (PLAN E1).
+     */
+    @Query(
+        "SELECT COUNT(*) FROM sync_operations WHERE med_kit_id = :medKitId AND package_id IS NULL " +
+            "AND status NOT IN ('APPLIED', 'REFUSED', 'ACCESS_LOST')"
+    )
+    suspend fun unclosedOwnOfMedKit(medKitId: Uuid): Int
+
     @Transaction
     @Query("SELECT * FROM sync_operations WHERE status = :status ORDER BY sequence")
     suspend fun withStatus(status: SyncOperationStatus): List<SyncOperationStorageRow>

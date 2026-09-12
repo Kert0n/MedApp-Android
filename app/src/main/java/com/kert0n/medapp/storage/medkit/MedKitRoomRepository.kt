@@ -3,6 +3,7 @@ package com.kert0n.medapp.storage.medkit
 import androidx.room.withTransaction
 import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.medkit.MedKitProjection
+import com.kert0n.medapp.domain.medkit.MedKitStatus
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.queue.medkit.PublicationStorage
@@ -43,6 +44,17 @@ class MedKitRoomRepository @Inject constructor(
 
     override suspend fun save(medKit: MedKit, syncedAt: Instant?) =
         medKits.upsert(medKit.toStorageEntity(syncedAt))
+
+    override suspend fun mark(medKitId: Uuid, status: MedKitStatus): Boolean = database.withTransaction {
+        val stored = medKits.find(medKitId) ?: return@withTransaction false
+        val marked = when (status) {
+            MedKitStatus.REMOVING -> stored.toDomain().markRemoving()
+            MedKitStatus.PUBLISHING -> stored.toDomain().markPublishing()
+            MedKitStatus.ACTIVE -> throw IllegalArgumentException("пометку снимает ответ сервера, а не решение")
+        }
+        medKits.upsert(marked.toStorageEntity(stored.syncedAt))
+        true
+    }
 
     override suspend fun delete(id: Uuid): Boolean = medKits.delete(id) > 0
 

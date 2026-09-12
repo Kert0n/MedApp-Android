@@ -3,6 +3,7 @@ package com.kert0n.medapp.feature.packages
 import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.medkit.MedKitRef
 import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.pack.PackageStatus
 import com.kert0n.medapp.queue.QueueService
 import com.kert0n.medapp.queue.QueuedCommand
 import com.kert0n.medapp.queue.Transactions
@@ -30,6 +31,9 @@ import kotlin.uuid.Uuid
  *   (E1); расход, поставленный позже, идёт после `Create` по номеру;
  * - общая → местная: сервер не умеет снять коробку на полку, которой не знает. Сначала целевая
  *   аптечка публикуется с согласия человека, потом перенос повторяется как общая → общая.
+ *
+ * Изменение, ушедшее серверу, помечает коробку статусом `CHANGING`: пользоваться ею можно, а
+ * снимает пометку закрытие последней её команды (PLAN E1).
  */
 class PackageRelocation @Inject constructor(
     private val packages: PackageStorageRepository,
@@ -42,6 +46,7 @@ class PackageRelocation @Inject constructor(
 
     suspend fun move(packageId: Uuid, targetMedKitId: Uuid): Outcome = transactions.run {
         val pkg = packages.find(packageId) ?: return@run Outcome.GONE
+        if (!pkg.status.allowsUse) return@run Outcome.UNUSABLE
         val target = medKits.find(targetMedKitId) ?: return@run Outcome.TARGET_GONE
         if (target.id == pkg.medKit.id) return@run Outcome.TARGET_IS_THE_SAME
         relocate(pkg, target, clock.instant())
@@ -61,7 +66,9 @@ class PackageRelocation @Inject constructor(
             // где лежит. Иначе отказ по версии оставил бы её на чужой полке (PLAN E1, E6). Новое
             // место придёт снимком ответа — он же истина по этой коробке.
             from.answersToServer -> {
-                queue.change(to, listOf(command(PackageSyncCommand.Move(pkg.id, to.id))), at) { true }
+                queue.change(to, listOf(command(PackageSyncCommand.Move(pkg.id, to.id))), at) {
+                    packages.mark(pkg.id, PackageStatus.CHANGING)
+                }
                 Outcome.MARKED
             }
             // Своя коробка на общую полку: сервер о ней ещё не знает, спорить не с кем, и место
@@ -91,7 +98,7 @@ class PackageRelocation @Inject constructor(
             ?.allocatedOf(pkg.ref)
             ?.takeUnless { it.isZero }
             ?.let { QueuedCommand(Uuid.random(), PackageSyncCommand.SetClaim(pkg.id, it), dependsOn = setOf(create.id)) }
-        queue.change(to, listOfNotNull(create, claim), at) { true }
+        queue.change(to, listOfNotNull(create, claim), at) { packages.mark(pkg.id, PackageStatus.CHANGING) }
     }
 
     private fun command(command: PackageSyncCommand) = QueuedCommand(Uuid.random(), command)
@@ -100,7 +107,7 @@ class PackageRelocation @Inject constructor(
      * Чем кончилось. Переставили — экран показывает новую полку; пометили — коробка остаётся на
      * прежней и ждёт ответа сервера; коробки уже нет — закрывает молча; цели нет — просит выбрать
      * другую; та же полка — говорит об этом; цель местная, а коробка общая — просит согласия на
-     * публикацию цели (PLAN E5, E6).
+     * публикацию цели (PLAN E5, E6); коробка ждёт удаления или выхода — трогать её нельзя (E1).
      */
-    enum class Outcome { MOVED, MARKED, GONE, TARGET_GONE, TARGET_IS_THE_SAME, TARGET_NEEDS_PUBLICATION }
+    enum class Outcome { MOVED, MARKED, GONE, UNUSABLE, TARGET_GONE, TARGET_IS_THE_SAME, TARGET_NEEDS_PUBLICATION }
 }

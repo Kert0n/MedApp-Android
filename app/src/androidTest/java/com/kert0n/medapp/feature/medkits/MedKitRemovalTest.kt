@@ -3,6 +3,9 @@ package com.kert0n.medapp.feature.medkits
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kert0n.medapp.domain.course.CourseDraft
 import com.kert0n.medapp.domain.medkit.MedKit
+import com.kert0n.medapp.domain.medkit.MedKitStatus
+import com.kert0n.medapp.domain.pack.PackageStatus
+import com.kert0n.medapp.queue.RefusalReason
 import com.kert0n.medapp.domain.stock.StockMovement
 import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.HOME_KIT
@@ -197,6 +200,10 @@ class MedKitRemovalTest {
         assertEquals(HOME_KIT, database.packageRepository().find(PACK)?.medKit?.id)
         assertEquals(listOf(PACK), sourcesOfCourse())
         assertEquals(listOf(MedKitSyncCommand.Delete(HOME_KIT, transferTo = SHARED_KIT)), commands())
+        // Решение видно на вещах: полка убирается, коробки переставляются, и пользоваться ими можно.
+        assertEquals(MedKitStatus.REMOVING, database.medKits().find(HOME_KIT)?.toDomain()?.status)
+        assertEquals(PackageStatus.CHANGING, database.packageRepository().find(PACK)?.status)
+        assertEquals(PackageStatus.CHANGING, database.packageRepository().find(OTHER_PACK)?.status)
     }
 
     /** Сервер согласился — тогда и переезжает содержимое, и уходит сама полка. */
@@ -211,6 +218,39 @@ class MedKitRemovalTest {
         assertEquals(SHARED_KIT, database.packageRepository().find(PACK)?.medKit?.id)
         assertEquals(SHARED_KIT, database.packageRepository().find(OTHER_PACK)?.medKit?.id)
         assertEquals(listOf(PACK), sourcesOfCourse())
+        assertEquals(PackageStatus.ACTIVE, database.packageRepository().find(PACK)?.status)
+    }
+
+    /**
+     * Сервер отказал: пометки сняты и с полки, и с коробок, которые она пометила, — ничего не
+     * тронуто, и человек решает заново (PLAN E1, E6).
+     */
+    @Test
+    fun theServerRefusingReturnsTheShelfAndItsPackagesToUse() = runTest {
+        publish(HOME_KIT)
+        removal.remove(HOME_KIT, transferTo = null)
+
+        val stored = database.syncOperations().all().single().toDomain(VOCABULARY) as StoredSyncOperation.Readable
+        database.queueStorage().settle(
+            stored.operation.id,
+            Delivery.Refused(RefusalReason.INVALID, PackageState.None).settlement(stored.operation.command),
+            LATER
+        )
+
+        assertEquals(MedKitStatus.ACTIVE, database.medKits().find(HOME_KIT)?.toDomain()?.status)
+        assertEquals(PackageStatus.ACTIVE, database.packageRepository().find(PACK)?.status)
+        assertEquals(PackageStatus.ACTIVE, database.packageRepository().find(OTHER_PACK)?.status)
+        assertEquals(MedKitRemoval.Outcome.MARKED, removal.remove(HOME_KIT, transferTo = null))
+    }
+
+    /** Полку, которая уже ждёт ответа, не убирают второй раз. */
+    @Test
+    fun aShelfWaitingForAnAnswerIsNotRemovedAgain() = runTest {
+        publish(HOME_KIT)
+        removal.remove(HOME_KIT, transferTo = null)
+
+        assertEquals(MedKitRemoval.Outcome.BUSY, removal.remove(HOME_KIT, transferTo = null))
+        assertEquals(1, commands().size)
     }
 
     /**
@@ -229,6 +269,7 @@ class MedKitRemovalTest {
         assertEquals(listOf(PACK), sourcesOfCourse())
         assertEquals(1, database.stockMovements().ofPackage(PACK).size)
         assertEquals(listOf(MedKitSyncCommand.Delete(HOME_KIT)), commands())
+        assertEquals(PackageStatus.REMOVING, database.packageRepository().find(PACK)?.status)
     }
 
     /** Сервер согласился — коробок не остаётся, след есть, лечение цело. */

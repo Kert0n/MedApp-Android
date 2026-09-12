@@ -3,6 +3,11 @@ package com.kert0n.medapp.feature.packages
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kert0n.medapp.domain.course.CourseDraft
 import com.kert0n.medapp.domain.medkit.MedKit
+import com.kert0n.medapp.domain.pack.PackageStatus
+import com.kert0n.medapp.fixture.queueStorage
+import com.kert0n.medapp.queue.Delivery
+import com.kert0n.medapp.queue.PackageState
+import com.kert0n.medapp.queue.settlement
 import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.LATER
@@ -96,6 +101,23 @@ class PackageRelocationTest {
         assertEquals(HOME_KIT, requireNotNull(database.packageRepository().find(PACK)).medKit.id)
         assertEquals(listOf(PACK), database.courses().sourcePackagesOf(COURSE))
         assertEquals(listOf(PackageSyncCommand.Move(PACK, SHARED_KIT)), commands())
+        assertEquals(PackageStatus.CHANGING, requireNotNull(database.packageRepository().find(PACK)).status)
+    }
+
+    /** Сервер ответил на последнюю команду коробки — пометка снята, коробка обычная (PLAN E1). */
+    @Test
+    fun theLastAnswerReleasesTheChangingPackage() = runTest {
+        publish(HOME_KIT, SHARED_KIT)
+        relocation.move(PACK, SHARED_KIT)
+
+        val operation = database.syncOperations().all().single().operation.id
+        database.queueStorage().settle(
+            operation,
+            Delivery.Applied(PackageState.None).settlement(PackageSyncCommand.Move(PACK, SHARED_KIT)),
+            LATER
+        )
+
+        assertEquals(PackageStatus.ACTIVE, requireNotNull(database.packageRepository().find(PACK)).status)
     }
 
     /** Местная коробка на общей полке — публикация коробки, а выделение курса едет следом бронью. */
@@ -114,6 +136,7 @@ class PackageRelocationTest {
         val claim = queued[1] as PackageSyncCommand.SetClaim
         assertEquals(tablets("10"), claim.amount)
         assertEquals(2, queued.size)
+        assertEquals(PackageStatus.CHANGING, requireNotNull(database.packageRepository().find(PACK)).status)
         // Обвязки у только что опубликованной коробки ещё нет: первое подтверждённое число даст ответ.
         assertNull(requireNotNull(database.packages().find(PACK)).pack.syncState().version)
     }

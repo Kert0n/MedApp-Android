@@ -4,7 +4,13 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kert0n.medapp.domain.course.CourseDraft
 import com.kert0n.medapp.domain.course.Revision
 import com.kert0n.medapp.domain.medkit.MedKit
+import com.kert0n.medapp.domain.pack.PackageStatus
 import com.kert0n.medapp.domain.stock.StockMovement
+import com.kert0n.medapp.fixture.queueStorage
+import com.kert0n.medapp.queue.Delivery
+import com.kert0n.medapp.queue.PackageState
+import com.kert0n.medapp.queue.RefusalReason
+import com.kert0n.medapp.queue.settlement
 import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.INTAKE
@@ -124,6 +130,43 @@ class PackageRemovalTest {
         val projection = requireNotNull(database.packageRepository().observe(PACK).first())
         assertEquals(tablets("0"), projection.availability.effective)
         assertTrue(projection.hasUnconfirmedChanges)
+        assertEquals(PackageStatus.REMOVING, projection.status)
+    }
+
+    /** Помеченную коробку не выбрасывают второй раз: решение уже принято и ждёт ответа (PLAN E1). */
+    @Test
+    fun aMarkedPackageIsNotRemovedAgain() = runTest {
+        shareTheShelf()
+        removal.remove(PACK)
+
+        assertEquals(PackageRemoval.Outcome.UNUSABLE, removal.remove(PACK))
+        assertEquals(1, commands().size)
+    }
+
+    /**
+     * Полка отказала: коробка возвращается в оборот, лечение её так и не теряло, и человек решает
+     * заново, когда разберётся с конфликтом (PLAN E1).
+     */
+    @Test
+    fun aRefusalReturnsTheMarkedPackageToUse() = runTest {
+        shareTheShelf()
+        removal.remove(PACK)
+
+        val operation = database.syncOperations().all().single()
+        database.queueStorage().settle(
+            operation.operation.id,
+            Delivery.Refused(RefusalReason.STALE, PackageState.None).settlement(PackageSyncCommand.Delete(PACK)),
+            LATER
+        )
+
+        assertEquals(PackageStatus.ACTIVE, requireNotNull(database.packageRepository().find(PACK)).status)
+        assertEquals(PackageRemoval.Outcome.MARKED, removal.remove(PACK))
+    }
+
+    private suspend fun shareTheShelf() {
+        database.medKits().upsert(
+            medKit(id = HOME_KIT, publication = MedKit.Publication.PUBLISHED, participantCount = 2).toMedKitStorageEntity()
+        )
     }
 
     @Test

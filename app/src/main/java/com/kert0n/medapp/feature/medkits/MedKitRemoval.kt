@@ -1,5 +1,7 @@
 package com.kert0n.medapp.feature.medkits
 
+import com.kert0n.medapp.domain.medkit.MedKitStatus
+import com.kert0n.medapp.domain.pack.PackageStatus
 import com.kert0n.medapp.feature.packages.PackageRelocation
 import com.kert0n.medapp.feature.packages.PackageRemoval
 import com.kert0n.medapp.queue.QueueService
@@ -43,6 +45,7 @@ class MedKitRemoval @Inject constructor(
     /** [transferTo] `null` — выбросить вместе с лекарствами; иначе перенести их туда. */
     suspend fun remove(medKitId: Uuid, transferTo: Uuid? = null): Outcome = transactions.run {
         val medKit = medKits.find(medKitId) ?: return@run Outcome.MED_KIT_GONE
+        if (!medKit.status.allowsDecision) return@run Outcome.BUSY
         val target = transferTo?.let { medKits.find(it) ?: return@run Outcome.TARGET_GONE }
         if (target != null && target.id == medKit.id) return@run Outcome.TARGET_IS_THE_SAME
         if (target != null && medKit.answersToServer && !target.answersToServer) {
@@ -51,11 +54,25 @@ class MedKitRemoval @Inject constructor(
         val now = clock.instant()
         if (medKit.answersToServer) {
             val delete = QueuedCommand(Uuid.random(), MedKitSyncCommand.Delete(medKitId, target?.id))
-            queue.change(medKit.ref, listOf(delete), now) { true }
+            // Коробки выбрасываемой полки выведены из оборота, переносимые — только помечены: ими
+            // пользуются, пока сервер переставляет. Ждущую своего решения коробку не трогаем — её
+            // отпустит её же команда (PLAN E1, E6).
+            val fate = if (target == null) PackageStatus.REMOVING else PackageStatus.CHANGING
+            queue.change(medKit.ref, listOf(delete), now) {
+                for (pkg in packages.contentsOf(medKitId)) {
+                    if (pkg.status.allowsUse) check(packages.mark(pkg.id, fate)) { "пачка прочитана этой же транзакцией" }
+                }
+                medKits.mark(medKitId, MedKitStatus.REMOVING)
+            }
             return@run Outcome.MARKED
         }
         for (pkg in packages.contentsOf(medKitId)) {
-            if (target == null) removal.discard(pkg, now) else relocation.relocate(pkg, target, now)
+            if (target == null) {
+                removal.discard(pkg, now)
+            } else {
+                val moved = relocation.relocate(pkg, target, now)
+                check(moved == PackageRelocation.Outcome.MOVED) { "местная коробка переезжает сразу, а не $moved" }
+            }
         }
         check(medKits.delete(medKitId)) { "аптечка прочитана этой же транзакцией" }
         Outcome.REMOVED
@@ -65,12 +82,14 @@ class MedKitRemoval @Inject constructor(
      * Чем кончилось. Случаи различает поведение экрана: убрали — уходим со списка; пометили —
      * полка остаётся на месте и ждёт согласия сервера; аптечки уже нет — закрываем молча; некуда
      * переносить — просим выбрать другую; та же — говорим об этом; цель местная, а полка общая —
-     * просим согласия на публикацию цели (PLAN E5, E6).
+     * просим согласия на публикацию цели (PLAN E5, E6); полка уже ждёт другого решения — ждём его
+     * ответа (E1).
      */
     enum class Outcome {
         REMOVED,
         MARKED,
         MED_KIT_GONE,
+        BUSY,
         TARGET_GONE,
         TARGET_IS_THE_SAME,
         TARGET_NEEDS_PUBLICATION

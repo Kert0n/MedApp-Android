@@ -67,6 +67,7 @@ class WriteContractTest {
         "PackageStorageRepository.describe" to Shape.NAMED_FIELDS,
         "PackageStorageRepository.saveClaims" to Shape.NAMED_FIELDS,
         "PackageStorageRepository.end" to Shape.ACTION,
+        "PackageStorageRepository.mark" to Shape.NAMED_FIELDS,
         "PackageStorageRepository.adjust" to Shape.ACTION,
         "PackageStorageRepository.applySnapshot" to Shape.SNAPSHOT,
         // Лечение
@@ -93,6 +94,7 @@ class WriteContractTest {
         "MedKitStorageRepository.observeSyncedAt" to Shape.READ,
         "MedKitStorageRepository.find" to Shape.READ,
         "MedKitStorageRepository.delete" to Shape.NAMED_FIELDS,
+        "MedKitStorageRepository.mark" to Shape.NAMED_FIELDS,
         "MedKitStorageRepository.applyServerParticipants" to Shape.NAMED_FIELDS,
         // Долг: заведение и правка местных сведений одним методом. Пока у него нет ни одного
         // вызывающего в продукте; экран правки придёт в PR 7 и должен принести названные поля,

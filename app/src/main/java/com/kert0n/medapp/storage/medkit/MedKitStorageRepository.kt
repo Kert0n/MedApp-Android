@@ -2,6 +2,7 @@ package com.kert0n.medapp.storage.medkit
 
 import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.medkit.MedKitProjection
+import com.kert0n.medapp.domain.medkit.MedKitStatus
 import com.kert0n.medapp.network.pack.PackageSnapshot
 import java.time.Instant
 import kotlin.uuid.Uuid
@@ -33,6 +34,13 @@ interface MedKitStorageRepository {
      * делать, решает сценарий, а не хранение (PLAN E6, F5). `false` — аптечки и так нет.
      */
     suspend fun delete(id: Uuid): Boolean
+
+    /**
+     * Решение по полке принято, а сервер ещё не ответил: полка получает пометку [status] своим
+     * переходом (PLAN E1, E6). Снимает её закрытие команды в очереди, поэтому `ACTIVE` сюда не
+     * передают. `false` — аптечки больше нет.
+     */
+    suspend fun mark(medKitId: Uuid, status: MedKitStatus): Boolean
 
     /** Снимок трогает только число участников: остального сервер о нашей аптечке не знает. */
     suspend fun applyServerParticipants(id: Uuid, participantCount: Long, syncedAt: Instant)

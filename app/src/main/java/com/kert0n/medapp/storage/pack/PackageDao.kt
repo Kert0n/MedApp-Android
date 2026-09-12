@@ -17,6 +17,7 @@ import com.kert0n.medapp.storage.stock.StockMovementDao
 import com.kert0n.medapp.storage.stock.toStorageEntity
 import java.time.Instant
 import java.time.LocalDate
+import com.kert0n.medapp.domain.pack.PackageStatus
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.Flow
 
@@ -90,7 +91,11 @@ interface PackageDao {
             PackageRecordStorageEntity(pack.id, pack.name, pack.quantityUnitId, pack.formId, observedAt)
         )
         describeRecord(pack.id, pack.name, pack.quantityUnitId, pack.formId)
+        // Статус — наше неподтверждённое решение, а не сведения сервера: снимок, пришедший, пока
+        // решение ждёт, его не снимает. Снимает его закрытие команды (PLAN E1).
+        val decided = statusOf(pack.id)
         upsertServerPart(pack)
+        decided?.let { setStatus(pack.id, it) }
         insertDetailsIfMissing(PackageDetailsStorageEntity(packageId = pack.id))
     }
 
@@ -103,6 +108,12 @@ interface PackageDao {
     /** Снимок в записи идёт за живой пачкой; момент появления остаётся прежним. */
     @Query("UPDATE package_records SET name = :name, unit_id = :unitId, form_id = :formId WHERE id = :id")
     suspend fun describeRecord(id: Uuid, name: String, unitId: Uuid, formId: Uuid?)
+
+    @Query("SELECT status FROM packages WHERE id = :id")
+    suspend fun statusOf(id: Uuid): PackageStatus?
+
+    @Query("UPDATE packages SET status = :status WHERE id = :id")
+    suspend fun setStatus(id: Uuid, status: PackageStatus)
 
     @Query("SELECT version, claims_version FROM packages WHERE id = :id")
     suspend fun versionsOf(id: Uuid): PackageVersionsStorageRow?

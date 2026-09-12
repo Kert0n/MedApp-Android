@@ -1,6 +1,7 @@
 package com.kert0n.medapp.storage.server
 
 import com.kert0n.medapp.domain.intake.IntakeStatus
+import com.kert0n.medapp.domain.pack.PackageStatus
 import com.kert0n.medapp.fixture.HOME_KIT
 import com.kert0n.medapp.fixture.INTAKE
 import com.kert0n.medapp.fixture.PACK
@@ -232,6 +233,21 @@ class QueueRoomStorageTest {
         assertEquals(at.plusSeconds(1), loss.observedAt)
         assertEquals(emptyList<Uuid>(), database.courses().sourcePackagesOf(COURSE))
         assertTrue(storage.ready(at.plusSeconds(600)).isEmpty())
+    }
+
+    /**
+     * Снимок, пришедший, пока решение ждёт, пометку не снимает: статус — наше решение, а не
+     * сведения сервера, и снимает его только закрытие команды (PLAN E1).
+     */
+    @Test
+    fun aSnapshotDoesNotReleaseTheMark() = runTest {
+        database.packageRepository().mark(PACK, PackageStatus.REMOVING)
+
+        database.packageRepository().applySnapshot(snapshot, at)
+
+        val pkg = requireNotNull(database.packageRepository().find(PACK))
+        assertEquals(tablets("17"), pkg.quantity)
+        assertEquals(PackageStatus.REMOVING, pkg.status)
     }
 
     /** Курс, держащий пачку: назначение и источник, как их пишет активация. */
