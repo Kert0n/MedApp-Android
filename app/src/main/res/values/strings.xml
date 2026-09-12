@@ -1,3 +1,20 @@
 <resources>
     <string name="app_name">MedApp</string>
+
+    <!-- Общие состояния экрана -->
+    <string name="state_loading">Загрузка</string>
+    <string name="action_retry">Повторить</string>
+    <string name="failure_no_connection">Нет связи с сервером. Проверьте подключение.</string>
+    <string name="failure_server_unavailable">Сервер не отвечает. Попробуйте позже.</string>
+    <string name="failure_not_authorized">Сервер не принял учётную запись этого устройства.</string>
+
+    <!-- Нижняя навигация -->
+    <string name="tab_med_kits">Аптечки</string>
+    <string name="tab_plan">План</string>
+    <string name="tab_scanner">Сканер</string>
+    <string name="tab_analytics">Аналитика</string>
+    <string name="tab_settings">Настройки</string>
+
+    <!-- Экраны, которых ещё нет -->
+    <string name="screen_not_ready">Этот экран ещё не готов.</string>
 </resources>
