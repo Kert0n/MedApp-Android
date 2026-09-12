@@ -92,6 +92,38 @@ class SettlementTest {
         )
     }
 
+    /**
+     * Унесённую домой коробку сервер забыл — это не конец коробки: она у человека (PLAN E6). Отказ
+     * возвращает её на прежнюю полку раньше, чем ляжет ответ.
+     */
+    @Test
+    fun aWithdrawnBoxStaysLocalOrReturnsToItsShelf() {
+        val withdraw = PackageSyncCommand.Withdraw(PACK, SHARED_KIT)
+        assertEquals(
+            listOf(Effect.Account(IntakeAccounting.REMOTE_APPLIED), Effect.Withdrawn(PACK), Effect.Settled),
+            Delivery.Applied(PackageState.Gone).settlement(withdraw).effects
+        )
+        assertEquals(
+            listOf(
+                Effect.Account(IntakeAccounting.REMOTE_REFUSED),
+                Effect.Withdrawn(PACK),
+                Effect.Cascade(SyncOperationStatus.ACCESS_LOST, IntakeAccounting.REMOTE_REFUSED),
+                Effect.Settled
+            ),
+            Delivery.AccessLost.settlement(withdraw).effects
+        )
+        assertEquals(
+            listOf(
+                Effect.Account(IntakeAccounting.REMOTE_REFUSED),
+                Effect.Returned(PACK, SHARED_KIT),
+                Effect.LayDown(snapshot),
+                Effect.Cascade(SyncOperationStatus.REFUSED, IntakeAccounting.REMOTE_REFUSED),
+                Effect.Settled
+            ),
+            Delivery.Refused(RefusalReason.STALE, PackageState.Present(snapshot)).settlement(withdraw).effects
+        )
+    }
+
     @Test
     fun staleRepreparesUnderTheSameNumberAndLaysTheSnapshotDown() {
         val settlement = Delivery.Stale(snapshot, notBefore = later).settlement(consume)

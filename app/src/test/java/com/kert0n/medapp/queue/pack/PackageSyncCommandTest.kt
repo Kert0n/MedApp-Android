@@ -48,12 +48,25 @@ class PackageSyncCommandTest {
             PackageSyncCommand.CorrectStock(PACK, tablets("19")),
             PackageSyncCommand.Move(PACK, SHARED_KIT),
             PackageSyncCommand.Delete(PACK),
+            PackageSyncCommand.Withdraw(PACK, SHARED_KIT),
             PackageSyncCommand.Consume(PACK, dose("2"), INTAKE),
             PackageSyncCommand.SetClaim(PACK, tablets("10")),
             PackageSyncCommand.ReleaseClaim(PACK)
         )
-        assertEquals(8, commands.size)
+        assertEquals(9, commands.size)
         assertEquals(listOf(PACK), commands.map { it.packageId }.distinct())
+    }
+
+    /**
+     * «Унёс домой» на проводе — то же удаление, но остатка не меняет и по отказу не спорит заново:
+     * коробка у человека, а чужая правка на сервере — повод решить снова (PLAN E1, E6).
+     */
+    @Test
+    fun carryingHomeKeepsTheAmountAndTakesAnAbsentBoxAsDone() {
+        val withdraw = PackageSyncCommand.Withdraw(PACK, SHARED_KIT)
+        assertEquals(null, withdraw.appliedTo(tablets("20")))
+        assertEquals(com.kert0n.medapp.queue.NotFoundPolicy.APPLIED, withdraw.onNotFound)
+        assertEquals(com.kert0n.medapp.queue.StalePolicy.REFUSE, withdraw.onStale)
     }
 
     @Test

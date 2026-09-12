@@ -6,6 +6,7 @@ import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.pack.PackageStatus
 import com.kert0n.medapp.fixture.queueStorage
 import com.kert0n.medapp.queue.Delivery
+import com.kert0n.medapp.queue.RefusalReason
 import com.kert0n.medapp.queue.PackageState
 import com.kert0n.medapp.queue.settlement
 import com.kert0n.medapp.fixture.COURSE
@@ -158,14 +159,52 @@ class PackageRelocationTest {
         assertEquals(1, commands().size)
     }
 
+    /**
+     * «Унёс домой»: коробка сразу на моей полке и помечена, а серверу — снять её с общей. Публиковать
+     * мою полку незачем (PLAN E6).
+     */
     @Test
-    fun sharedToLocalNeedsTheTargetPublishedFirst() = runTest {
+    fun sharedToLocalIsCarriedHomeAtOnce() = runTest {
         publish(HOME_KIT)
 
-        assertEquals(PackageRelocation.Outcome.TARGET_NEEDS_PUBLICATION, relocation.move(PACK, SHARED_KIT))
+        assertEquals(PackageRelocation.Outcome.MOVED, relocation.move(PACK, SHARED_KIT))
 
-        assertEquals(HOME_KIT, database.packageRepository().find(PACK)?.medKit?.id)
-        assertEquals(emptyList<SyncCommand>(), commands())
+        assertMovedAndStillASource()
+        assertEquals(listOf(PackageSyncCommand.Withdraw(PACK, HOME_KIT)), commands())
+        assertEquals(PackageStatus.CHANGING, requireNotNull(database.packageRepository().find(PACK)).status)
+    }
+
+    /** Сервер коробку забыл: у меня она просто местная — без версий и пометки. */
+    @Test
+    fun theServerForgettingTheBoxLeavesItPlainlyLocal() = runTest {
+        publish(HOME_KIT)
+        relocation.move(PACK, SHARED_KIT)
+
+        theServerAnswers(Delivery.Applied(PackageState.Gone))
+
+        val row = requireNotNull(database.packages().find(PACK))
+        assertEquals(SHARED_KIT, row.pack.medKitId)
+        assertNull(row.pack.syncState().version)
+        assertEquals(PackageStatus.ACTIVE, row.toDomain(VOCABULARY).status)
+        assertEquals(listOf(PACK), database.courses().sourcePackagesOf(COURSE))
+    }
+
+    /** Сервер отказал: коробка возвращается на полку, откуда её взяли, и человек решает заново (E1). */
+    @Test
+    fun aRefusalReturnsTheBoxToTheSharedShelf() = runTest {
+        publish(HOME_KIT)
+        relocation.move(PACK, SHARED_KIT)
+
+        theServerAnswers(Delivery.Refused(RefusalReason.STALE, PackageState.None))
+
+        val pkg = requireNotNull(database.packageRepository().find(PACK))
+        assertEquals(HOME_KIT, pkg.medKit.id)
+        assertEquals(PackageStatus.ACTIVE, pkg.status)
+    }
+
+    private suspend fun theServerAnswers(delivery: Delivery) {
+        val stored = database.syncOperations().all().single().toDomain(VOCABULARY) as StoredSyncOperation.Readable
+        database.queueStorage().settle(stored.operation.id, delivery.settlement(stored.operation.command), LATER)
     }
 
     @Test

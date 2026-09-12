@@ -106,7 +106,8 @@ fun PackageSyncCommand.toPreparedRequest(
             query = versionQuery(version),
             sync = sync, confirmed = confirmed, mine = mine, at = at
         )
-        is PackageSyncCommand.Delete -> prepared(
+        // Унести домой и выбросить на проводе одно и то же: сервер снимает коробку по версии.
+        is PackageSyncCommand.Delete, is PackageSyncCommand.Withdraw -> prepared(
             method = "DELETE",
             path = MedAppRoutes.pack(packageId),
             query = versionQuery(version),

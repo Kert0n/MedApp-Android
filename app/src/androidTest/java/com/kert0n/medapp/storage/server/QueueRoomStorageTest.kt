@@ -105,7 +105,8 @@ class QueueRoomStorageTest {
     @Before
     fun openDatabase() = runTest {
         database = inMemoryDatabase()
-        database.medKits().upsert(medKit().toMedKitStorageEntity())
+        // Полка общая: снимок ложится на коробку только там, где у неё есть сервер (PLAN E6).
+        database.medKits().upsert(medKit(publication = MedKit.Publication.PUBLISHED).toMedKitStorageEntity())
         val paracetamol = pack(quantity = tablets("20"), form = TABLET_FORM)
         database.packages().save(paracetamol, PackageSyncState(PACK, ResourceVersion(3), ResourceVersion(1), at))
     }
@@ -248,6 +249,35 @@ class QueueRoomStorageTest {
         val pkg = requireNotNull(database.packageRepository().find(PACK))
         assertEquals(tablets("17"), pkg.quantity)
         assertEquals(PackageStatus.REMOVING, pkg.status)
+    }
+
+    /** Коробку на местной полке снимок не переставляет и не пересчитывает: он несёт ей только версию (E6). */
+    @Test
+    fun aSnapshotOfABoxOnALocalShelfBringsOnlyTheVersion() = runTest {
+        database.medKits().upsert(medKit().toMedKitStorageEntity())
+
+        database.packageRepository().applySnapshot(snapshot, at)
+
+        val row = requireNotNull(database.packages().find(PACK))
+        assertEquals(tablets("20"), row.toDomain(VOCABULARY).quantity)
+        assertEquals(HOME_KIT, row.pack.medKitId)
+        assertEquals(ResourceVersion(4), row.pack.syncState().version)
+    }
+
+    /**
+     * Унесённую домой коробку человек уже выбросил у себя, а сервер о ней ещё знает: она всё равно
+     * снимается — по версии свежего снимка, — и снимок её обратно не заводит (PLAN E6).
+     */
+    @Test
+    fun aBoxThrownAwayAtHomeIsStillTakenOffTheServer() = runTest {
+        database.syncOperations().enqueue(operation, PackageSyncCommand.Withdraw(PACK, HOME_KIT), at)
+        database.packages().delete(PACK)
+
+        val taken = (storage.take(operation, snapshot, at) as Take.Sending).operation
+
+        assertEquals("DELETE", taken.prepared?.method)
+        assertEquals(ResourceVersion(4), taken.prepared?.drugVersion)
+        assertNull(database.packages().find(PACK))
     }
 
     /** Курс, держащий пачку: назначение и источник, как их пишет активация. */

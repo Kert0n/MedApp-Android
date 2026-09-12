@@ -9,6 +9,7 @@ import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.dose
+import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.fixture.inMemoryDatabase
 import com.kert0n.medapp.fixture.medKit
 import com.kert0n.medapp.fixture.millilitres
@@ -74,7 +75,8 @@ class PackageRoomRepositoryTest {
         database = inMemoryDatabase { sql -> synchronized(counted) { counted += sql } }
         repository = database.packageRepository()
         queue = database.queueRepository()
-        database.medKits().upsert(medKit().toMedKitStorageEntity())
+        // Снимок сервера описывает коробку общей полки: местная серверу не принадлежит (PLAN E6).
+        database.medKits().upsert(medKit(publication = MedKit.Publication.PUBLISHED).toMedKitStorageEntity())
         repository.add(paracetamol)
     }
 

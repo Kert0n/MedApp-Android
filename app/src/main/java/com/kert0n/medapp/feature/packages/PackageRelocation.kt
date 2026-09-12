@@ -29,8 +29,9 @@ import kotlin.uuid.Uuid
  *   выделение курса, если оно есть, едет следом бронью `SetClaim`, иначе на сервере его бы не
  *   было. До ответа обвязка пуста и броней нет — первое подтверждённое число даст снимок ответа
  *   (E1); расход, поставленный позже, идёт после `Create` по номеру;
- * - общая → местная: сервер не умеет снять коробку на полку, которой не знает. Сначала целевая
- *   аптечка публикуется с согласия человека, потом перенос повторяется как общая → общая.
+ * - общая → местная: «унёс домой». Коробка сразу на моей полке, брони сняты, а серверу —
+ *   `Withdraw`: снять её по версии. Для остальных она исчезает, публиковать мою полку незачем.
+ *   Отказ сервера возвращает коробку на полку, откуда её взяли.
  *
  * Изменение, ушедшее серверу, помечает коробку статусом `CHANGING`: пользоваться ею можно, а
  * снимает пометку закрытие последней её команды (PLAN E1).
@@ -60,8 +61,14 @@ class PackageRelocation @Inject constructor(
     internal suspend fun relocate(pkg: Package, target: MedKit, at: Instant): Outcome {
         val from = pkg.medKit
         val to = target.ref
-        if (from.answersToServer && !to.answersToServer) return Outcome.TARGET_NEEDS_PUBLICATION
         return when {
+            from.answersToServer && !to.answersToServer -> {
+                queue.change(from, listOf(withdrawal(pkg)), at) {
+                    carryHome(pkg, to, at)
+                    true
+                }
+                Outcome.MOVED
+            }
             // Коробка на общей полке: переставляет её сервер, и до его ответа она остаётся там,
             // где лежит. Иначе отказ по версии оставил бы её на чужой полке (PLAN E1, E6). Новое
             // место придёт снимком ответа — он же истина по этой коробке.
@@ -85,6 +92,19 @@ class PackageRelocation @Inject constructor(
         }
     }
 
+    /** Команда «унёс домой» — отдельно от записи: разбор полки ставит полку зависимой от неё. */
+    internal fun withdrawal(pkg: Package): QueuedCommand = command(PackageSyncCommand.Withdraw(pkg.id, pkg.medKit.id))
+
+    /**
+     * Локальная половина «унёс домой»: коробка на моей полке, чужих броней у местной коробки нет,
+     * а пометка держится до ответа сервера (PLAN E1, E6).
+     */
+    internal suspend fun carryHome(pkg: Package, to: MedKitRef, at: Instant) {
+        place(pkg, to, at)
+        packages.saveClaims(pkg.id, null)
+        check(packages.mark(pkg.id, PackageStatus.CHANGING)) { "пачка прочитана этой же транзакцией" }
+    }
+
     /** Только место: переход пачки к прочитанному состоянию, без команд (PLAN D7). */
     internal suspend fun place(pkg: Package, to: MedKitRef, at: Instant) {
         check(packages.adjust(PackageAdjustment.Transfer(pkg.id, to), at = at)) { "пачка прочитана этой же транзакцией" }
@@ -106,8 +126,8 @@ class PackageRelocation @Inject constructor(
     /**
      * Чем кончилось. Переставили — экран показывает новую полку; пометили — коробка остаётся на
      * прежней и ждёт ответа сервера; коробки уже нет — закрывает молча; цели нет — просит выбрать
-     * другую; та же полка — говорит об этом; цель местная, а коробка общая — просит согласия на
-     * публикацию цели (PLAN E5, E6); коробка ждёт удаления или выхода — трогать её нельзя (E1).
+     * другую; та же полка — говорит об этом; коробка ждёт удаления или выхода — трогать её нельзя
+     * (PLAN E1, E6).
      */
-    enum class Outcome { MOVED, MARKED, GONE, UNUSABLE, TARGET_GONE, TARGET_IS_THE_SAME, TARGET_NEEDS_PUBLICATION }
+    enum class Outcome { MOVED, MARKED, GONE, UNUSABLE, TARGET_GONE, TARGET_IS_THE_SAME }
 }

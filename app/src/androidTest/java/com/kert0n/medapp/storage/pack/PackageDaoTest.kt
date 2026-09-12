@@ -1,5 +1,6 @@
 package com.kert0n.medapp.storage.pack
 
+import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.value.Money
 import com.kert0n.medapp.domain.value.Quantity
@@ -12,12 +13,14 @@ import com.kert0n.medapp.fixture.fileDatabase
 import com.kert0n.medapp.fixture.inMemoryDatabase
 import com.kert0n.medapp.fixture.save
 import com.kert0n.medapp.fixture.left
+import com.kert0n.medapp.fixture.medKit
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.reopenFileDatabase
 import com.kert0n.medapp.fixture.tablets
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.network.server.ResourceVersion
 import com.kert0n.medapp.storage.database.MedAppDatabase
+import com.kert0n.medapp.storage.medkit.toStorageEntity as toMedKitStorageEntity
 import java.math.BigDecimal
 import java.time.Instant
 import kotlin.uuid.Uuid
@@ -48,8 +51,10 @@ class PackageDaoTest {
     )
 
     @Before
-    fun openDatabase() {
+    fun openDatabase() = runTest {
         database = inMemoryDatabase()
+        // Снимок сервера описывает коробку общей полки: местная серверу не принадлежит (PLAN E6).
+        database.medKits().upsert(medKit(publication = MedKit.Publication.PUBLISHED).toMedKitStorageEntity())
     }
 
     @After

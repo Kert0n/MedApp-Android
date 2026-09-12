@@ -24,7 +24,7 @@ import com.kert0n.medapp.fixture.millilitres
 import com.kert0n.medapp.network.value.VocabularyMiss
 
 /**
- * Круговой тест по **всем одиннадцати** видам команд: исчерпывающего `when` по обоим корням
+ * Круговой тест по **всем двенадцати** видам команд: исчерпывающего `when` по обоим корням
  * сразу у маркера нет, и закрытость набора держит именно этот перечень (PLAN E2, PR 4).
  */
 class SyncCommandStorageConverterTest {
@@ -44,6 +44,7 @@ class SyncCommandStorageConverterTest {
         PackageSyncCommand.CorrectStock(PACK, tablets("18.5")),
         PackageSyncCommand.Move(PACK, SHARED_KIT),
         PackageSyncCommand.Delete(PACK),
+        PackageSyncCommand.Withdraw(PACK, SHARED_KIT),
         PackageSyncCommand.Consume(PACK, dose("1.5"), INTAKE),
         PackageSyncCommand.Consume(PACK, dose("1.5"), INTAKE, claimAfter = tablets("4")),
         PackageSyncCommand.SetClaim(PACK, tablets("6")),
@@ -69,11 +70,11 @@ class SyncCommandStorageConverterTest {
     }
 
     @Test
-    fun elevenKindsAndNoMore() {
+    fun twelveKindsAndNoMore() {
         assertEquals(
             listOf(
                 "PACKAGE_CREATE", "PACKAGE_DESCRIBE", "PACKAGE_CORRECT_STOCK", "PACKAGE_MOVE",
-                "PACKAGE_DELETE", "PACKAGE_CONSUME", "PACKAGE_SET_CLAIM", "PACKAGE_RELEASE_CLAIM",
+                "PACKAGE_DELETE", "PACKAGE_WITHDRAW", "PACKAGE_CONSUME", "PACKAGE_SET_CLAIM", "PACKAGE_RELEASE_CLAIM",
                 "MEDKIT_CREATE", "MEDKIT_DELETE", "MEDKIT_LEAVE"
             ),
             everyKind.map(SyncCommandStorageConverter::kindOf).distinct()
@@ -112,6 +113,11 @@ class SyncCommandStorageConverterTest {
         assertEquals(
             SHARED_KIT,
             SyncCommandStorageConverter.medKitIdOf(PackageSyncCommand.Move(PACK, SHARED_KIT))
+        )
+        // Унесённая домой коробка действует на полке, откуда её унесли: там её и снимают.
+        assertEquals(
+            HOME_KIT,
+            SyncCommandStorageConverter.medKitIdOf(PackageSyncCommand.Withdraw(PACK, HOME_KIT))
         )
     }
 

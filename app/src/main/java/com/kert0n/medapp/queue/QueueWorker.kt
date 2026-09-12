@@ -172,7 +172,9 @@ class QueueWorker @Inject constructor(
                 is QueueAnswer.Snapshot -> known(read.snapshot) { Step.Settled(Delivery.Applied(PackageState.Present(it))) }
                 QueueAnswer.Gone -> Step.Settled(Delivery.Applied(PackageState.Gone))
                 is QueueAnswer.Claim, QueueAnswer.Nothing ->
-                    if (command is PackageSyncCommand.Delete || (command is PackageSyncCommand.CorrectStock && command.actual.isZero)) {
+                    if (command is PackageSyncCommand.Delete || command is PackageSyncCommand.Withdraw ||
+                        (command is PackageSyncCommand.CorrectStock && command.actual.isZero)
+                    ) {
                         Step.Settled(Delivery.Applied(PackageState.Gone))
                     } else {
                         when (val snapshot = snapshotRead(command.packageId)) {

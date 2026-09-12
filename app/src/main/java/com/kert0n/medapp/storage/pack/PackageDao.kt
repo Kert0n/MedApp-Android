@@ -70,6 +70,13 @@ interface PackageDao {
         observedAt: Instant
     ): SnapshotApplied {
         val known = versionsOf(pack.id)
+        // Местная полка серверу не принадлежит: коробка оказывается на ней, только если её унесли
+        // домой, а сервер ещё не согласился. Переставить или пересчитать её снимок не может —
+        // он несёт ей одну версию, по которой коробку снимут с сервера (PLAN E6).
+        if (liesOnLocalShelf(pack.id)) {
+            if (pack.version.laysOver(known?.version)) setVersion(pack.id, pack.version)
+            return SnapshotApplied(pack = false, claims = false)
+        }
         val packLaysDown = pack.version.laysOver(known?.version)
         val claimsLayDown = pack.claimsVersion != null && pack.claimsVersion.laysOver(known?.claimsVersion)
         if (packLaysDown) writeServerPart(pack, observedAt)
@@ -108,6 +115,15 @@ interface PackageDao {
     /** Снимок в записи идёт за живой пачкой; момент появления остаётся прежним. */
     @Query("UPDATE package_records SET name = :name, unit_id = :unitId, form_id = :formId WHERE id = :id")
     suspend fun describeRecord(id: Uuid, name: String, unitId: Uuid, formId: Uuid?)
+
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM packages p JOIN med_kits k ON k.id = p.med_kit_id " +
+            "WHERE p.id = :id AND k.publication = 'LOCAL')"
+    )
+    suspend fun liesOnLocalShelf(id: Uuid): Boolean
+
+    @Query("UPDATE packages SET version = :version WHERE id = :id")
+    suspend fun setVersion(id: Uuid, version: Long?)
 
     @Query("SELECT status FROM packages WHERE id = :id")
     suspend fun statusOf(id: Uuid): PackageStatus?

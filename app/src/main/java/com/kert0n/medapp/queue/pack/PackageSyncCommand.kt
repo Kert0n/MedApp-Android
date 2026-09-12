@@ -35,7 +35,7 @@ sealed interface PackageSyncCommand : SyncCommand {
             is Consume -> amount.unit
             is SetClaim -> amount.unit
             is CorrectStock -> actual.unit.takeUnless { actual.isZero }
-            is Create, is Describe, is Move, is Delete, is ReleaseClaim -> null
+            is Create, is Describe, is Move, is Delete, is Withdraw, is ReleaseClaim -> null
         }
 
     /**
@@ -47,7 +47,7 @@ sealed interface PackageSyncCommand : SyncCommand {
         is Consume -> amount.minusOrZero(this.amount.quantity)
         is CorrectStock -> this.actual
         is Delete -> Quantity.zero(amount.unit)
-        is Create, is Describe, is Move, is SetClaim, is ReleaseClaim -> null
+        is Create, is Describe, is Move, is Withdraw, is SetClaim, is ReleaseClaim -> null
     }
 
     /**
@@ -58,7 +58,7 @@ sealed interface PackageSyncCommand : SyncCommand {
     val onStale: StalePolicy
         get() = when (this) {
             is Consume, is SetClaim, is ReleaseClaim -> StalePolicy.REPREPARE
-            is Create, is Describe, is CorrectStock, is Move, is Delete -> StalePolicy.REFUSE
+            is Create, is Describe, is CorrectStock, is Move, is Delete, is Withdraw -> StalePolicy.REFUSE
         }
 
     /**
@@ -71,7 +71,7 @@ sealed interface PackageSyncCommand : SyncCommand {
             is Create, is Describe, is Move, is Consume -> NotFoundPolicy.ACCESS_LOST
             is CorrectStock -> if (actual.isZero) NotFoundPolicy.APPLIED else NotFoundPolicy.ACCESS_LOST
             is SetClaim -> NotFoundPolicy.REPREPARE
-            is ReleaseClaim, is Delete -> NotFoundPolicy.APPLIED
+            is ReleaseClaim, is Delete, is Withdraw -> NotFoundPolicy.APPLIED
         }
 
     /**
@@ -83,7 +83,7 @@ sealed interface PackageSyncCommand : SyncCommand {
         get() = when (this) {
             is Create -> ConflictPolicy.EXISTS
             is SetClaim -> ConflictPolicy.REPREPARE
-            is Consume, is Describe, is CorrectStock, is Move, is Delete, is ReleaseClaim ->
+            is Consume, is Describe, is CorrectStock, is Move, is Delete, is Withdraw, is ReleaseClaim ->
                 ConflictPolicy.REFUSE
         }
 
@@ -102,7 +102,7 @@ sealed interface PackageSyncCommand : SyncCommand {
             is CorrectStock -> if (actual.isZero) Expected.NOTHING else Expected.SNAPSHOT
             is Consume -> Expected.SNAPSHOT_OR_GONE
             is SetClaim -> Expected.CLAIM
-            is Delete, is ReleaseClaim -> Expected.NOTHING
+            is Delete, is Withdraw, is ReleaseClaim -> Expected.NOTHING
         }
 
     /**
@@ -168,6 +168,19 @@ sealed interface PackageSyncCommand : SyncCommand {
      * за запись о ней, а не за строку (PLAN D3, D6).
      */
     data class Delete(override val packageId: Uuid) : PackageSyncCommand
+
+    /**
+     * Коробку унесли с общей полки [fromMedKitId] домой, на местную (PLAN E6).
+     *
+     * На проводе это то же `DELETE` с версией, что и у [Delete], но смысл другой — поэтому и вид
+     * другой: остаток не меняется, «пачки нет» — желаемое, а не конец коробки, а отказ возвращает
+     * её на полку, откуда взяли. Для остальных коробка исчезает, и сервер о ней больше не знает;
+     * публиковать местную полку незачем.
+     */
+    data class Withdraw(
+        override val packageId: Uuid,
+        val fromMedKitId: Uuid
+    ) : PackageSyncCommand
 
     /**
      * Списать фактически принятое.

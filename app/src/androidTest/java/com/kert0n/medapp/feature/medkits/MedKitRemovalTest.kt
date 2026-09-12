@@ -56,7 +56,7 @@ import org.junit.runner.RunWith
  * настоящей базе: то, ради чего всё это затевалось, — схема даёт убрать аптечку, а история
  * лечения это переживает (PLAN E6, D3, D6). Шесть случаев — по границе публикации источника и
  * цели: серверу об общей полке говорит одна команда аптечки, о местной коробке на общей полке —
- * её публикация, а общее содержимое на местную полку не снимается без публикации цели.
+ * её публикация, а общее содержимое на местную полку уносится домой по коробкам.
  */
 @RunWith(AndroidJUnit4::class)
 class MedKitRemovalTest {
@@ -291,17 +291,54 @@ class MedKitRemovalTest {
         assertEquals("Парацетамол", requireNotNull(database.intakes().find(INTAKE)).toDomain(VOCABULARY).taken?.pkg?.name)
     }
 
-    /** Общее содержимое на местную полку сервер не снимает: сначала публикация цели (PLAN E5, E6). */
+    /**
+     * Общую полку забрали домой: каждая коробка сразу на моей полке, серверу — унести её, и полка
+     * уходит у всех следом, завися от них (PLAN E6).
+     */
     @Test
-    fun aSharedMedKitIntoALocalTargetNeedsTheTargetPublished() = runTest {
+    fun takingASharedMedKitHomeCarriesEveryBoxAndThenRemovesTheShelf() = runTest {
         publish(HOME_KIT)
 
         val outcome = removal.remove(HOME_KIT, transferTo = SHARED_KIT)
 
-        assertEquals(MedKitRemoval.Outcome.TARGET_NEEDS_PUBLICATION, outcome)
-        assertNotNull(database.medKits().find(HOME_KIT))
-        assertEquals(HOME_KIT, database.packageRepository().find(PACK)?.medKit?.id)
-        assertEquals(emptyList<SyncCommand>(), commands())
+        assertEquals(MedKitRemoval.Outcome.MARKED, outcome)
+        assertEquals(SHARED_KIT, database.packageRepository().find(PACK)?.medKit?.id)
+        assertEquals(SHARED_KIT, database.packageRepository().find(OTHER_PACK)?.medKit?.id)
+        assertEquals(PackageStatus.CHANGING, database.packageRepository().find(PACK)?.status)
+        assertEquals(MedKitStatus.REMOVING, database.medKits().find(HOME_KIT)?.toDomain()?.status)
+        assertEquals(listOf(PACK), sourcesOfCourse())
+        val queued = commands()
+        assertEquals(
+            setOf(PackageSyncCommand.Withdraw(PACK, HOME_KIT), PackageSyncCommand.Withdraw(OTHER_PACK, HOME_KIT)),
+            queued.filterIsInstance<PackageSyncCommand.Withdraw>().toSet()
+        )
+        assertEquals(MedKitSyncCommand.Delete(HOME_KIT), queued.last())
+        assertEquals(3, queued.size)
+    }
+
+    /**
+     * Одну коробку унести не вышло: она возвращается на полку, а полка остаётся — иначе сервер
+     * выбросил бы коробку вместе с ней (PLAN E1, E6).
+     */
+    @Test
+    fun aBoxThatCouldNotBeCarriedHomeKeepsTheShelf() = runTest {
+        publish(HOME_KIT)
+        removal.remove(HOME_KIT, transferTo = SHARED_KIT)
+        val rows = database.syncOperations().all()
+        val refused = rows.first().toDomain(VOCABULARY) as StoredSyncOperation.Readable
+        val box = (refused.operation.command as PackageSyncCommand.Withdraw).packageId
+
+        database.queueStorage().settle(
+            refused.operation.id,
+            Delivery.Refused(RefusalReason.STALE, PackageState.None).settlement(refused.operation.command),
+            LATER
+        )
+
+        assertEquals(HOME_KIT, database.packageRepository().find(box)?.medKit?.id)
+        assertEquals(PackageStatus.ACTIVE, database.packageRepository().find(box)?.status)
+        val delete = database.syncOperations().all().last().toDomain(VOCABULARY) as StoredSyncOperation.Readable
+        assertEquals(com.kert0n.medapp.queue.SyncOperationStatus.REFUSED, delete.operation.status)
+        assertEquals(MedKitStatus.ACTIVE, database.medKits().find(HOME_KIT)?.toDomain()?.status)
     }
 
     /** Целевую аптечку удалили, пока человек выбирал: не записано ничего, и сказано почему. */

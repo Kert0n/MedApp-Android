@@ -54,6 +54,18 @@ class Settlement(val transition: Transition, effects: List<Effect> = emptyList()
          */
         data class PackageEnded(val packageId: Uuid, val ending: Ending) : Effect
 
+        /**
+         * Унесённую домой коробку сервер больше не знает: у нас она просто местная — без версий и
+         * броней. Это не конец коробки: она цела и лежит у человека (PLAN E6).
+         */
+        data class Withdrawn(val packageId: Uuid) : Effect
+
+        /**
+         * Унести домой не вышло: коробка возвращается на полку [medKitId], откуда её взяли, — раньше,
+         * чем ляжет ответ сервера, иначе снимку не на что было бы лечь (PLAN E1, E6).
+         */
+        data class Returned(val packageId: Uuid, val medKitId: Uuid) : Effect
+
         /** Чем кончилась коробка по ответу сервера — ровно то, что различает её след. */
         enum class Ending { THROWN_OUT, RECOUNTED, CONSUMED, ACCESS_LOST }
 
@@ -99,7 +111,7 @@ fun Delivery.settlement(command: SyncCommand): Settlement = when (this) {
     )
     is Delivery.Refused -> Settlement(
         Settlement.Transition.Close(SyncOperationStatus.REFUSED, reason.name),
-        listOf(Settlement.Effect.Account(IntakeAccounting.REMOTE_REFUSED)) + state.effects(command) +
+        listOf(Settlement.Effect.Account(IntakeAccounting.REMOTE_REFUSED)) + command.returned() + state.effects(command) +
             Settlement.Effect.Cascade(SyncOperationStatus.REFUSED, IntakeAccounting.REMOTE_REFUSED) +
             Settlement.Effect.Settled
     )
@@ -109,11 +121,7 @@ fun Delivery.settlement(command: SyncCommand): Settlement = when (this) {
     Delivery.AccessLost -> Settlement(
         Settlement.Transition.Close(SyncOperationStatus.ACCESS_LOST),
         listOf(Settlement.Effect.Account(IntakeAccounting.REMOTE_REFUSED)) +
-            listOfNotNull(
-                (command as? PackageSyncCommand)?.let {
-                    Settlement.Effect.PackageEnded(it.packageId, Settlement.Effect.Ending.ACCESS_LOST)
-                }
-            ) +
+            listOfNotNull((command as? PackageSyncCommand)?.gone(Settlement.Effect.Ending.ACCESS_LOST)) +
             Settlement.Effect.Cascade(SyncOperationStatus.ACCESS_LOST, IntakeAccounting.REMOTE_REFUSED) +
             Settlement.Effect.Settled
     )
@@ -122,11 +130,21 @@ fun Delivery.settlement(command: SyncCommand): Settlement = when (this) {
 /** Истина по пачке после закрытия — что положить: снимок, «пачки нет» либо ничего. */
 private fun PackageState.effects(command: SyncCommand): List<Settlement.Effect> = when (this) {
     is PackageState.Present -> listOf(Settlement.Effect.LayDown(snapshot))
-    PackageState.Gone -> listOfNotNull(
-        (command as? PackageSyncCommand)?.let { Settlement.Effect.PackageEnded(it.packageId, it.endsAs()) }
-    )
+    PackageState.Gone -> listOfNotNull((command as? PackageSyncCommand)?.let { it.gone(it.endsAs()) })
     PackageState.None -> emptyList()
 }
+
+/**
+ * Коробки нет на сервере. Для унесённой домой это и было желаемым — она остаётся у нас местной;
+ * для остальных это конец, и [ending] называет его след (PLAN D7, E6).
+ */
+private fun PackageSyncCommand.gone(ending: Settlement.Effect.Ending): Settlement.Effect =
+    if (this is PackageSyncCommand.Withdraw) Settlement.Effect.Withdrawn(packageId)
+    else Settlement.Effect.PackageEnded(packageId, ending)
+
+/** Отказ унести домой возвращает коробку на прежнюю полку; у прочих отказов возвращать нечего. */
+private fun SyncCommand.returned(): List<Settlement.Effect> =
+    if (this is PackageSyncCommand.Withdraw) listOf(Settlement.Effect.Returned(packageId, fromMedKitId)) else emptyList()
 
 /**
  * Чем кончилась коробка, у которой сервер подтвердил «её нет»: каждая команда знает, зачем её

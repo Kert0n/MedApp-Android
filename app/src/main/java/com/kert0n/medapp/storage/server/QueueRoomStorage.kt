@@ -8,6 +8,8 @@ import com.kert0n.medapp.storage.medkit.toStorageEntity as toMedKitStorageEntity
 import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageEnding
 import com.kert0n.medapp.network.pack.PackageSnapshot
+import com.kert0n.medapp.network.pack.PackageSyncState
+import com.kert0n.medapp.queue.pack.toPreparedRequest
 import com.kert0n.medapp.network.server.RawResponse
 import com.kert0n.medapp.queue.Delivery
 import com.kert0n.medapp.queue.PackageState
@@ -90,9 +92,15 @@ class QueueRoomStorage @Inject constructor(
         if (operation.status != SyncOperationStatus.PENDING && operation.status != SyncOperationStatus.SENDING) {
             return@withTransaction null
         }
-        fresh?.let { layDown(it, at) }
+        val command = operation.command
+        // Унесённую домой коробку человек мог уже выбросить у себя. Серверу она всё равно должна
+        // исчезнуть, а свежий снимок, положенный в базу, завёл бы её обратно: он даёт только версию.
+        val carriedAway = command is PackageSyncCommand.Withdraw && packages.find(command.packageId) == null
+        if (!carriedAway) fresh?.let { layDown(it, at) }
         if (operation.prepared == null) {
-            val request = when (val command = operation.command) {
+            val request = when (command) {
+                is PackageSyncCommand.Withdraw if carriedAway && fresh != null ->
+                    command.toPreparedRequest(operation.id, fresh.sync, confirmed = null, mine = null, at = at)
                 is PackageSyncCommand -> {
                     val row = packages.find(command.packageId)
                         ?: return@withTransaction closedByPreparation(operation, Delivery.AccessLost, at)
@@ -182,7 +190,27 @@ class QueueRoomStorage @Inject constructor(
             is Settlement.Effect.Account -> intakes.setAccounting(id, effect.accounting)
             is Settlement.Effect.Cascade -> cascade(id, effect)
             is Settlement.Effect.Settled -> settled(id)
+            is Settlement.Effect.Withdrawn -> withdrawn(effect.packageId)
+            is Settlement.Effect.Returned -> returned(effect.packageId, effect.medKitId)
         }
+    }
+
+    /** Сервер коробку забыл: у нас она местная — без версий, момента сверки и броней (PLAN E6). */
+    private suspend fun withdrawn(packageId: Uuid) {
+        val row = packages.find(packageId) ?: return
+        packages.deleteClaims(packageId)
+        packages.save(row.toDomain(vocabulary.snapshot()), PackageSyncState(packageId))
+    }
+
+    /**
+     * Унести домой не вышло: коробка возвращается на полку, откуда её взяли. Той полки уже нет —
+     * возвращать некуда, и коробка остаётся у человека (PLAN E6).
+     */
+    private suspend fun returned(packageId: Uuid, medKitId: Uuid) {
+        val row = packages.find(packageId) ?: return
+        val shelf = medKits.find(medKitId)?.toRef() ?: return
+        val pkg = row.toDomain(vocabulary.snapshot())
+        if (pkg.medKit != shelf) packages.save(pkg.moveTo(shelf), row.pack.syncState())
     }
 
     /**

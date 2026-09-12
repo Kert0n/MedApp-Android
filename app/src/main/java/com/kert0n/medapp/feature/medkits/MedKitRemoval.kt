@@ -29,8 +29,9 @@ import kotlin.uuid.Uuid
  * что у других участников живо, и вернуть это было бы нечем. Разбирает полку подтверждение —
  * эффектом очереди, там же, где закрывается операция.
  *
- * Снять общее содержимое на местную полку сервер не умеет: сначала цель публикуется с согласия
- * человека (E5), потом разбор повторяется.
+ * Общую полку забирают домой, на местную, по коробкам: каждая сразу у человека, серверу —
+ * «унёс домой», а полка уходит у всех следом и **зависит** от них. Не вышло с коробкой — она
+ * возвращается на полку, и полка остаётся: иначе сервер выбросил бы её вместе с полкой (PLAN E6).
  */
 class MedKitRemoval @Inject constructor(
     private val medKits: MedKitStorageRepository,
@@ -48,10 +49,20 @@ class MedKitRemoval @Inject constructor(
         if (!medKit.status.allowsDecision) return@run Outcome.BUSY
         val target = transferTo?.let { medKits.find(it) ?: return@run Outcome.TARGET_GONE }
         if (target != null && target.id == medKit.id) return@run Outcome.TARGET_IS_THE_SAME
-        if (target != null && medKit.answersToServer && !target.answersToServer) {
-            return@run Outcome.TARGET_NEEDS_PUBLICATION
-        }
         val now = clock.instant()
+        if (medKit.answersToServer && target != null && !target.answersToServer) {
+            val withdrawals = packages.contentsOf(medKitId).filter { it.status.allowsUse }.associateWith { relocation.withdrawal(it) }
+            val delete = QueuedCommand(
+                Uuid.random(),
+                MedKitSyncCommand.Delete(medKitId),
+                dependsOn = withdrawals.values.mapTo(HashSet()) { it.id }
+            )
+            queue.change(medKit.ref, withdrawals.values + delete, now) {
+                for (pkg in withdrawals.keys) relocation.carryHome(pkg, target.ref, now)
+                medKits.mark(medKitId, MedKitStatus.REMOVING)
+            }
+            return@run Outcome.MARKED
+        }
         if (medKit.answersToServer) {
             val delete = QueuedCommand(Uuid.random(), MedKitSyncCommand.Delete(medKitId, target?.id))
             // Коробки выбрасываемой полки выведены из оборота, переносимые — только помечены: ими
@@ -81,9 +92,8 @@ class MedKitRemoval @Inject constructor(
     /**
      * Чем кончилось. Случаи различает поведение экрана: убрали — уходим со списка; пометили —
      * полка остаётся на месте и ждёт согласия сервера; аптечки уже нет — закрываем молча; некуда
-     * переносить — просим выбрать другую; та же — говорим об этом; цель местная, а полка общая —
-     * просим согласия на публикацию цели (PLAN E5, E6); полка уже ждёт другого решения — ждём его
-     * ответа (E1).
+     * переносить — просим выбрать другую; та же — говорим об этом; полка уже ждёт другого решения —
+     * ждём его ответа (PLAN E1, E6).
      */
     enum class Outcome {
         REMOVED,
@@ -91,7 +101,6 @@ class MedKitRemoval @Inject constructor(
         MED_KIT_GONE,
         BUSY,
         TARGET_GONE,
-        TARGET_IS_THE_SAME,
-        TARGET_NEEDS_PUBLICATION
+        TARGET_IS_THE_SAME
     }
 }
