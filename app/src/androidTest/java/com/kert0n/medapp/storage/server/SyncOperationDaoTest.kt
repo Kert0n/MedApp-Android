@@ -6,6 +6,7 @@ import com.kert0n.medapp.fixture.INTAKE
 import com.kert0n.medapp.fixture.OTHER_PACK
 import com.kert0n.medapp.fixture.PACK
 import com.kert0n.medapp.fixture.SHARED_KIT
+import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.inMemoryDatabase
 import com.kert0n.medapp.fixture.pack
@@ -191,6 +192,50 @@ class SyncOperationDaoTest {
         assertEquals("нет ответа", stored.lastError)
         assertEquals(at, stored.lastTriedAt)
         assertEquals(1, stored.attempts)
+    }
+
+    /**
+     * Факт «исход неизвестен» принадлежит запросу: прилипает при потерянном ответе, ставится
+     * сам, когда операцию застали в отправке (процесс умер в полёте), и умирает вместе с запросом
+     * при переподготовке (PLAN E3).
+     */
+    @Test
+    fun unknownOutcomeSticksToTheRequestAndDiesWithIt() = runTest {
+        queue.enqueue(first, PackageSyncCommand.Consume(PACK, dose("1"), INTAKE), createdAt)
+        val frozen = queue.freeze(
+            first, "PUT", "/drugs/$PACK/sync/$first", "{}", null, 3L, null, "20", null, TABLETS.id, createdAt
+        )
+        assertEquals(1, frozen)
+
+        // 429 — сервер не применял: факта нет.
+        queue.settle(first, SyncOperationStatus.PENDING, "429", createdAt, attempted = 1, outcomeUnknown = 0)
+        assertEquals(false, readable(first).outcomeUnknown)
+
+        // Потерянный ответ — факт есть, и следующий известный исход его не стирает.
+        queue.markSending(first)
+        queue.settle(first, SyncOperationStatus.PENDING, "ответ потерян", createdAt, attempted = 1, outcomeUnknown = 1)
+        queue.markSending(first)
+        queue.settle(first, SyncOperationStatus.PENDING, "429", createdAt, attempted = 1, outcomeUnknown = 0)
+        assertEquals(true, readable(first).outcomeUnknown)
+
+        // Переподготовка сбрасывает запрос — и факт вместе с ним; счёт попыток остаётся у операции.
+        queue.markSending(first)
+        queue.reprepare(first, "устарело", createdAt, notBefore = null)
+        val reprepared = readable(first)
+        assertEquals(false, reprepared.outcomeUnknown)
+        assertEquals(3, reprepared.attempts)
+    }
+
+    /** Операция, застигнутая в отправке, — полёт, о котором никто не рассказал: исход неизвестен. */
+    @Test
+    fun anOperationFoundSendingIsTakenWithAnUnknownOutcome() = runTest {
+        queue.enqueue(first, PackageSyncCommand.Consume(PACK, dose("1"), INTAKE), createdAt)
+        queue.freeze(first, "PUT", "/drugs/$PACK/sync/$first", "{}", null, 3L, null, "20", null, TABLETS.id, createdAt)
+        assertEquals(false, readable(first).outcomeUnknown)
+
+        queue.markSending(first)
+
+        assertEquals(true, readable(first).outcomeUnknown)
     }
 
     /** Незакрытые — те, чей исход ещё не установлен: свёртка остатка берёт именно их (PLAN E1). */

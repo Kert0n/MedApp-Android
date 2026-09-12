@@ -40,6 +40,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -208,17 +209,19 @@ class QueueStorageTest {
     fun staleAppliesTheSnapshotDropsTheRequestAndLeavesTheOperationPending() = runTest {
         database.syncOperations().enqueue(operation, PackageSyncCommand.Consume(PACK, dose("3"), INTAKE), at)
         val frozen = (storage.take(operation, null, at) as Take.Sending).operation.prepared
-        // Исход неизвестен — попытка засчитана; она принадлежит этому запросу, а не операции.
-        storage.settle(operation, Delivery.Retry("ответ потерян"), at)
-        storage.take(operation, null, at.plusSeconds(1))
+        // Исход неизвестен — факт принадлежит этому запросу, а не операции.
+        storage.settle(operation, Delivery.Retry("ответ потерян", outcomeUnknown = true), at)
+        val taken = (storage.take(operation, null, at.plusSeconds(1)) as Take.Sending).operation
+        assertTrue(taken.outcomeUnknown)
 
         storage.settle(operation, Delivery.Stale(snapshot), at.plusSeconds(1))
 
         val stored = requireNotNull(database.syncOperations().find(operation)).toDomain(VOCABULARY) as StoredSyncOperation.Readable
         assertEquals(SyncOperationStatus.PENDING, stored.operation.status)
         assertNull(stored.operation.prepared)
-        // Запрос сброшен — сброшен и счёт его попыток: следующий уходит впервые.
-        assertEquals(0, stored.operation.attempts)
+        // Запрос сброшен — сброшен и факт о нём; счёт попыток остаётся у операции как вход задержки.
+        assertFalse(stored.operation.outcomeUnknown)
+        assertEquals(1, stored.operation.attempts)
         assertEquals(tablets("17"), requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY).quantity)
         // Заново — уже по свежему состоянию, а не по прежнему запросу.
         val again = (storage.take(operation, null, at.plusSeconds(2)) as Take.Sending).operation.prepared

@@ -19,6 +19,7 @@ import kotlin.uuid.Uuid
  * временем создания. `package_id` называет затронутую пачку и пуст у команд аптечки: порядок по
  * одной упаковке строится запросом, а не доменной функцией. `answer_*` — ответ сервера,
  * записанный до применения: он есть ровно у `ANSWERED`, и закрытие его стирает.
+ * `outcome_unknown` — замороженный запрос уходил, и исход неизвестен; сбрасывается вместе с ним.
  */
 @Entity(
     tableName = "sync_operations",
@@ -46,7 +47,8 @@ class SyncOperationStorageEntity(
     @Embedded(prefix = "prepared_") val prepared: PreparedRequestStorageColumns? = null,
     @ColumnInfo(name = "answer_status") val answerStatus: Int? = null,
     @ColumnInfo(name = "answer_body") val answerBody: String? = null,
-    @ColumnInfo(name = "not_before") val notBefore: Instant? = null
+    @ColumnInfo(name = "not_before") val notBefore: Instant? = null,
+    @ColumnInfo(name = "outcome_unknown", defaultValue = "0") val outcomeUnknown: Boolean = false
 )
 
 /**
@@ -70,5 +72,6 @@ fun SyncOperation.toStorageEntity(): SyncOperationStorageEntity = SyncOperationS
     prepared = prepared?.toStorageColumns(),
     answerStatus = answer?.status,
     answerBody = answer?.body,
-    notBefore = notBefore
+    notBefore = notBefore,
+    outcomeUnknown = outcomeUnknown
 )

@@ -211,7 +211,8 @@ class SyncOperationRoomRepository @Inject constructor(
             is Delivery.Retry -> {
                 queue.settle(
                     id, SyncOperationStatus.PENDING, outcome.error, at,
-                    attempted = if (outcome.attempted) 1 else 0, notBefore = outcome.notBefore
+                    attempted = if (outcome.attempted) 1 else 0, notBefore = outcome.notBefore,
+                    outcomeUnknown = if (outcome.outcomeUnknown) 1 else 0
                 )
                 Unit
             }

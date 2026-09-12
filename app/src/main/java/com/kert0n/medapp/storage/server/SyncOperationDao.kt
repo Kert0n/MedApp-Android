@@ -123,7 +123,14 @@ interface SyncOperationDao {
         preparedAt: Instant
     ): Int
 
-    @Query("UPDATE sync_operations SET status = 'SENDING' WHERE id = :id AND status IN ('PENDING', 'SENDING')")
+    /**
+     * Берёт замороженный запрос в отправку снова. Операция, которую застали в `SENDING`, — прошлый
+     * полёт умер вместе с процессом, и его исход неизвестен: факт остаётся у запроса.
+     */
+    @Query(
+        "UPDATE sync_operations SET outcome_unknown = CASE WHEN status = 'SENDING' THEN 1 ELSE outcome_unknown END, " +
+            "status = 'SENDING' WHERE id = :id AND status IN ('PENDING', 'SENDING')"
+    )
     suspend fun markSending(id: Uuid): Int
 
     /** Ответ записан до применения: полученное подтверждение не теряется. Только из отправки. */
@@ -142,12 +149,14 @@ interface SyncOperationDao {
 
     /**
      * Закрытие или возврат в ожидание — только незакрытой: закрытая второй раз не закрывается.
-     * Записанный ответ стирается: он либо применён, либо будет получен заново.
+     * Записанный ответ стирается: он либо применён, либо будет получен заново. Неизвестный исход
+     * прилипает к запросу: раз неизвестный — неизвестный, пока запрос не переподготовлен.
      */
     @Query(
         "UPDATE sync_operations SET status = :status, last_error = :lastError, " +
             "last_tried_at = :at, attempts = attempts + :attempted, answer_status = NULL, answer_body = NULL, " +
-            "not_before = :notBefore WHERE id = :id AND status IN ('PENDING', 'SENDING', 'ANSWERED')"
+            "not_before = :notBefore, outcome_unknown = MAX(outcome_unknown, :outcomeUnknown) " +
+            "WHERE id = :id AND status IN ('PENDING', 'SENDING', 'ANSWERED')"
     )
     suspend fun settle(
         id: Uuid,
@@ -155,19 +164,18 @@ interface SyncOperationDao {
         lastError: String? = null,
         at: Instant? = null,
         attempted: Int = 0,
-        notBefore: Instant? = null
+        notBefore: Instant? = null,
+        outcomeUnknown: Int = 0
     ): Int
 
     /**
      * Сбрасывает собранный запрос: версия устарела, и он готовится заново по свежему состоянию
-     * под тем же номером. Не попытка — задержка от этого не растёт.
-     *
-     * Счёт попыток обнуляется вместе с запросом: он принадлежит **запросу**, а не операции, и
-     * говорит одно — уходил ли уже этот замороженный запрос и остался ли его исход неизвестным.
-     * По нему расход решает, значит ли 404 «мы сами опустошили пачку» (PLAN E3).
+     * под тем же номером. Не попытка — задержка от этого не растёт, и счёт попыток остаётся у
+     * операции. Факт «исход неизвестен» принадлежит **запросу** и умирает вместе с ним: по нему
+     * расход решает, значит ли 404 «мы сами опустошили пачку» (PLAN E3).
      */
     @Query(
-        "UPDATE sync_operations SET status = 'PENDING', last_error = :lastError, last_tried_at = :at, not_before = :notBefore, attempts = 0, " +
+        "UPDATE sync_operations SET status = 'PENDING', last_error = :lastError, last_tried_at = :at, not_before = :notBefore, outcome_unknown = 0, " +
             "prepared_method = NULL, prepared_path = NULL, prepared_query = NULL, prepared_body = NULL, " +
             "prepared_drug_version = NULL, prepared_claims_version = NULL, prepared_quantity_before = NULL, " +
             "prepared_mine_before = NULL, prepared_unit_id = NULL, prepared_at = NULL, " +

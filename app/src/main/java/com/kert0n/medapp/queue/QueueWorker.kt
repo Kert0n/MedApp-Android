@@ -127,8 +127,8 @@ class QueueWorker @Inject constructor(
                 is ApiFailure.TooManyRequests ->
                     Step.Settled(Delivery.Retry("429"), retryAfter = failure.retryAfter, stop = true)
                 ApiFailure.Unavailable -> Step.Settled(Delivery.Retry("связи нет", attempted = false), stop = true)
-                ApiFailure.OutcomeUnknown -> Step.Settled(Delivery.Retry("ответ потерян"))
-                is ApiFailure.Protocol -> Step.Settled(Delivery.Retry(failure.reason))
+                ApiFailure.OutcomeUnknown -> Step.Settled(Delivery.Retry("ответ потерян", outcomeUnknown = true))
+                is ApiFailure.Protocol -> Step.Settled(Delivery.Retry(failure.reason, outcomeUnknown = true))
             }
         }
     }
@@ -145,7 +145,8 @@ class QueueWorker @Inject constructor(
     private suspend fun resolve(command: SyncCommand, answer: RawResponse): Step {
         val read = when (val parsed = command.expects.read(answer)) {
             is ApiResult.Success -> parsed.value
-            is ApiResult.Failure -> return Step.Settled(Delivery.Retry((parsed.failure as ApiFailure.Protocol).reason))
+            is ApiResult.Failure ->
+                return Step.Settled(Delivery.Retry((parsed.failure as ApiFailure.Protocol).reason, outcomeUnknown = true))
         }
         return when (command) {
             is PackageSyncCommand -> when (read) {
@@ -225,13 +226,14 @@ class QueueWorker @Inject constructor(
 
     /**
      * 404 значит разное для разных команд (PLAN B4): что именно — говорит команда. У расхода есть
-     * ещё один случай: повтор запроса, который уже уходил и мог уничтожить пачку, дойдя до нуля, —
-     * тогда пачки нет по нашей же причине, и это применение, а не потеря доступа (PLAN E3).
+     * ещё один случай: повтор запроса, который уже уходил с неизвестным исходом и мог уничтожить
+     * пачку, дойдя до нуля, — тогда пачки нет по нашей же причине, и это применение, а не потеря
+     * доступа (PLAN E3). Известный исход — 429, обрыв до сервера — такого не значит.
      */
     private suspend fun notFound(operation: SyncOperation, request: PreparedRequest): Delivery = when (val command = operation.command) {
         is PackageSyncCommand -> when (command.onNotFound) {
             NotFoundPolicy.ACCESS_LOST ->
-                if (command is PackageSyncCommand.Consume && operation.attempts > 0 && command.emptiedBy(request)) {
+                if (command is PackageSyncCommand.Consume && operation.outcomeUnknown && command.emptiedBy(request)) {
                     Delivery.Applied(PackageState.Gone)
                 } else {
                     Delivery.AccessLost

@@ -126,7 +126,12 @@ class QueueWorkerTest {
                     Preparation.AlreadyApplied -> return Take.Closed(Delivery.Applied(PackageState.None)).also { settle(id, it.delivery, at) }
                 }
             }
-            return Take.Sending(operation.with(status = SyncOperationStatus.SENDING, prepared = prepared).also { operations[id] = it })
+            // Операция, найденная в отправке, — прошлый полёт умер вместе с процессом: исход неизвестен.
+            val flightLost = operation.status == SyncOperationStatus.SENDING && operation.prepared != null
+            return Take.Sending(
+                operation.with(status = SyncOperationStatus.SENDING, prepared = prepared, outcomeUnknown = operation.outcomeUnknown || flightLost)
+                    .also { operations[id] = it }
+            )
         }
 
         override suspend fun answered(id: Uuid, answer: RawResponse, at: Instant) {
@@ -156,8 +161,8 @@ class QueueWorkerTest {
             (state as? PackageState.Present)?.let { learn(it.snapshot) }
             val operation = operations.getValue(id)
             operations[id] = if (outcome is Delivery.Stale) {
-                // Счёт попыток принадлежит запросу: сброшен запрос — сброшен и он.
-                operation.with(status = SyncOperationStatus.PENDING, attempts = 0, dropPrepared = true, dropAnswer = true, notBefore = outcome.notBefore, dropNotBefore = outcome.notBefore == null)
+                // Факт о запросе умирает вместе с запросом; счёт попыток остаётся у операции.
+                operation.with(status = SyncOperationStatus.PENDING, dropPrepared = true, dropAnswer = true, notBefore = outcome.notBefore, dropNotBefore = outcome.notBefore == null, outcomeUnknown = false)
             } else {
                 operation.with(
                     status = when (outcome) {
@@ -171,7 +176,8 @@ class QueueWorkerTest {
                     lastTriedAt = at,
                     dropAnswer = true,
                     notBefore = (outcome as? Delivery.Retry)?.notBefore,
-                    dropNotBefore = (outcome as? Delivery.Retry)?.notBefore == null
+                    dropNotBefore = (outcome as? Delivery.Retry)?.notBefore == null,
+                    outcomeUnknown = operation.outcomeUnknown || (outcome as? Delivery.Retry)?.outcomeUnknown == true
                 )
             }
         }
@@ -185,10 +191,12 @@ class QueueWorkerTest {
             notBefore: Instant? = this.notBefore,
             dropPrepared: Boolean = false,
             dropAnswer: Boolean = false,
-            dropNotBefore: Boolean = false
+            dropNotBefore: Boolean = false,
+            outcomeUnknown: Boolean = this.outcomeUnknown
         ) = SyncOperation(
             id, command, sequence, createdAt, payloadVersion, if (dropPrepared) null else prepared, groupId, dependsOn,
-            status, attempts, lastError, lastTriedAt, if (dropAnswer) null else answer, if (dropNotBefore) null else notBefore
+            status, attempts, lastError, lastTriedAt, if (dropAnswer) null else answer, if (dropNotBefore) null else notBefore,
+            outcomeUnknown = outcomeUnknown
         )
     }
 
@@ -252,10 +260,12 @@ class QueueWorkerTest {
         attempts: Int = 0,
         lastTriedAt: Instant? = null,
         status: SyncOperationStatus = SyncOperationStatus.PENDING,
-        prepared: PreparedRequest? = null
+        prepared: PreparedRequest? = null,
+        outcomeUnknown: Boolean = false
     ) = SyncOperation(
         id = id, command = command, sequence = sequence, createdAt = EARLIER, payloadVersion = 1,
-        prepared = prepared, status = status, attempts = attempts, lastTriedAt = lastTriedAt
+        prepared = prepared, status = status, attempts = attempts, lastTriedAt = lastTriedAt,
+        outcomeUnknown = outcomeUnknown
     )
 
     /** Снимок с другой версией пачки: то, что сервер знает сейчас, а устройство — ещё нет. */
@@ -353,12 +363,13 @@ class QueueWorkerTest {
      */
     @Test
     fun aRepeatedConsumptionThatEmptiedThePackageIsAppliedNotLost() = runTest {
+        // Операция застала смерть процесса в отправке: исход прошлого полёта неизвестен.
         val everything = PackageSyncCommand.Consume(PACK, dose("20"), INTAKE)
         val frozen = everything.toPreparedRequest(
             INTAKE, PackageSyncState(PACK, ResourceVersion(3)), tablets("20"), null, EARLIER
         )
         val storage = Storage(
-            listOf(operation(everything, status = SyncOperationStatus.SENDING, attempts = 1, prepared = frozen))
+            listOf(operation(everything, status = SyncOperationStatus.SENDING, prepared = frozen))
         )
         val transport = Transport { ApiResult.Failure(ApiFailure.NotFound) }
 
@@ -368,18 +379,18 @@ class QueueWorkerTest {
     }
 
     /**
-     * Счёт попыток принадлежит запросу, а не операции: после переподготовки уходит **другой**
-     * запрос, и 404 на нём — не наш расход, дошедший до нуля, а исчезнувшая пачка. Иначе прошлый
-     * неизвестный исход подписывал бы применение тому, чего не было.
+     * Факт «исход неизвестен» принадлежит запросу, а не операции: после переподготовки уходит
+     * **другой** запрос, и 404 на нём — не наш расход, дошедший до нуля, а исчезнувшая пачка.
+     * Иначе прошлый неизвестный исход подписывал бы применение тому, чего не было.
      */
     @Test
-    fun aRepreparedConsumptionDoesNotInheritTheAttemptsOfTheOldRequest() = runTest {
+    fun aRepreparedConsumptionDoesNotInheritTheUnknownOutcomeOfTheOldRequest() = runTest {
         val everything = PackageSyncCommand.Consume(PACK, dose("20"), INTAKE)
         val frozen = everything.toPreparedRequest(
             INTAKE, PackageSyncState(PACK, ResourceVersion(3)), tablets("20"), null, EARLIER
         )
         val storage = Storage(
-            listOf(operation(everything, status = SyncOperationStatus.SENDING, attempts = 1, prepared = frozen))
+            listOf(operation(everything, status = SyncOperationStatus.SENDING, attempts = 1, prepared = frozen, outcomeUnknown = true))
         )
         var attempts = 0
         val transport = transport(fresh = snapshotWithVersion(7)) {
@@ -394,6 +405,49 @@ class QueueWorkerTest {
         assertEquals(2, transport.sent.size)
         assertEquals(Delivery.Stale(snapshotWithVersion(7)), storage.settled[0].second)
         assertEquals(Delivery.AccessLost, storage.settled[1].second)
+    }
+
+    /**
+     * 429 — исход известен: сервер запрос не применил. Пачка, исчезнувшая до повтора, исчезла не
+     * по нашей причине, и 404 на повторе — утрата доступа, а не наш расход до нуля. Число попыток
+     * тут ни при чём: решает факт «исход прошлой отправки неизвестен», а его нет.
+     */
+    @Test
+    fun aConsumptionRateLimitedAndThenNotFoundIsAccessLost() = runTest {
+        val everything = PackageSyncCommand.Consume(PACK, dose("20"), INTAKE)
+        val storage = Storage(listOf(operation(everything)))
+        var limited = true
+        val transport = transport {
+            if (limited) ApiResult.Failure(ApiFailure.TooManyRequests(30.seconds)) else ApiResult.Failure(ApiFailure.NotFound)
+        }
+        worker(storage, transport).drain()
+        assertFalse(storage.operations.getValue(INTAKE).outcomeUnknown)
+
+        limited = false
+        QueueWorker(storage, transport, resolver(true), Clock.fixed(now.plusSeconds(31), ZoneOffset.UTC)).drain()
+
+        assertEquals(2, transport.sent.size)
+        assertEquals(Delivery.AccessLost, storage.settled.last().second)
+    }
+
+    /** Потерянный ответ — исход неизвестен: 404 на повторе того же запроса — наш расход до нуля. */
+    @Test
+    fun aConsumptionWithALostAnswerAndThenNotFoundIsAppliedAsGone() = runTest {
+        val everything = PackageSyncCommand.Consume(PACK, dose("20"), INTAKE)
+        val storage = Storage(listOf(operation(everything)))
+        var lost = true
+        val transport = transport {
+            if (lost) ApiResult.Failure(ApiFailure.OutcomeUnknown) else ApiResult.Failure(ApiFailure.NotFound)
+        }
+        worker(storage, transport).drain()
+        assertTrue(storage.operations.getValue(INTAKE).outcomeUnknown)
+
+        lost = false
+        QueueWorker(storage, transport, resolver(true), Clock.fixed(now.plusSeconds(31), ZoneOffset.UTC)).drain()
+
+        assertEquals(2, transport.sent.size)
+        assertSame(transport.sent[0], transport.sent[1])
+        assertEquals(Delivery.Applied(PackageState.Gone), storage.settled.last().second)
     }
 
     /** 404 на первой же отправке — пачки нет не по нашей причине: доступ утрачен. */
@@ -533,7 +587,7 @@ class QueueWorkerTest {
         val first = worker(storage, transport).drain()
         assertEquals(0, first.settled)
         // Срок повтора — в исходе и в базе, а не в памяти прохода: две секунды после первой неудачи.
-        assertEquals(Delivery.Retry("ответ потерян", notBefore = now.plusSeconds(2)), storage.settled.single().second)
+        assertEquals(Delivery.Retry("ответ потерян", notBefore = now.plusSeconds(2), outcomeUnknown = true), storage.settled.single().second)
         assertEquals(SyncOperationStatus.PENDING, storage.operations.getValue(INTAKE).status)
         assertNotNull(first.retryAt)
 

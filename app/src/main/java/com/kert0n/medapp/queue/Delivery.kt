@@ -27,10 +27,17 @@ sealed interface Delivery {
     /**
      * Ответа не было: связь, сервер, ограничение частоты, ответ не по форме. Повтор тем же
      * запросом, не раньше [notBefore] — срок живёт в базе вместе с операцией, а не в памяти
-     * прохода. Обрыв до сервера — не попытка ([attempted] = `false`): задержка от него не растёт,
-     * и при связи очередь уходит сразу.
+     * прохода. Случая три, и поведение их различает: обрыв до сервера — не попытка
+     * ([attempted] = `false`), задержка от него не растёт; сервер ответил, что не применял
+     * (429), — попытка с известным исходом; ответ потерян или не по форме — попытка, чей исход
+     * неизвестен ([outcomeUnknown]), и этот факт остаётся у запроса до его переподготовки.
      */
-    data class Retry(val error: String, val notBefore: Instant? = null, val attempted: Boolean = true) : Delivery
+    data class Retry(
+        val error: String,
+        val notBefore: Instant? = null,
+        val attempted: Boolean = true,
+        val outcomeUnknown: Boolean = false
+    ) : Delivery
 
     /** Пачки или аптечки на сервере для нас больше нет: отправлять некуда. */
     data object AccessLost : Delivery
