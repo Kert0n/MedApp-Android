@@ -1,5 +1,7 @@
 package com.kert0n.medapp.presentation
 
+import com.kert0n.medapp.domain.Unavailability
+
 /**
  * Что экран показывает вместо содержимого, пока содержимого нет. Случая три, и человек различает
  * их по тому, что может сделать: при [Loading] — ждать, при [Failed] — нажать «повторить», при
@@ -14,7 +16,7 @@ sealed interface ScreenState<out T> {
     data object Loading : ScreenState<Nothing>
 
     /** Не вышло, и названа причина: текст по ней берёт экран из `R.string.*`. */
-    data class Failed(val reason: LoadFailure) : ScreenState<Nothing>
+    data class Failed(val reason: Unavailability) : ScreenState<Nothing>
 
     data class Ready<T>(val value: T) : ScreenState<T>
 }

@@ -1,6 +1,6 @@
 package com.kert0n.medapp.feature.bootstrap
 
-import com.kert0n.medapp.presentation.LoadFailure
+import com.kert0n.medapp.domain.Unavailability
 
 /**
  * С чего начинается приложение. Случая четыре, и каждый ведёт человека к своему действию:
@@ -16,7 +16,7 @@ sealed interface AppStartState {
     data object Checking : AppStartState
 
     /** Настройка не прошла, и названо почему; повтор осмыслен по правилам самой причины. */
-    data class Setup(val reason: LoadFailure) : AppStartState
+    data class Setup(val reason: Unavailability) : AppStartState
 
     data object KeyLost : AppStartState
 

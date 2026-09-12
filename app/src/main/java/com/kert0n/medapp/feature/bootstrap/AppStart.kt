@@ -1,11 +1,9 @@
 package com.kert0n.medapp.feature.bootstrap
 
+import com.kert0n.medapp.domain.account.AccountReadiness
+import com.kert0n.medapp.domain.account.DeviceAccount
 import com.kert0n.medapp.domain.value.Vocabulary
-import com.kert0n.medapp.network.account.AccountRegistration
-import com.kert0n.medapp.network.server.ApiFailure
-import com.kert0n.medapp.network.server.ApiResult
-import com.kert0n.medapp.network.value.VocabularyResolver
-import com.kert0n.medapp.presentation.LoadFailure
+import com.kert0n.medapp.domain.value.VocabularyLibrary
 import javax.inject.Inject
 
 /**
@@ -14,44 +12,28 @@ import javax.inject.Inject
  * запуск требует сети (PLAN C3). Экран настройки с повтором честнее пустого списка,
  * притворяющегося работающим приложением.
  *
- * Сценарий ничего не изобретает: регистрацию целиком держит [AccountRegistration], словарь —
- * [VocabularyResolver]. Здесь решается только, что из их исходов значит для человека.
+ * Сценарий видит доменные порты, а не сеть: знакомство с сервером — такое же действие, как
+ * остальные, и кто его выполняет по проводу, здесь не знают (PLAN H1).
  */
 class AppStart @Inject constructor(
-    private val registration: AccountRegistration,
-    private val vocabulary: VocabularyResolver
+    private val account: DeviceAccount,
+    private val vocabulary: VocabularyLibrary
 ) {
 
-    suspend fun begin(): AppStartState = when (val outcome = registration.ensure()) {
-        AccountRegistration.Outcome.Ready -> vocabularyKnown()
-        // Сохранённое есть, но не открывается: молча завести вторую учётку поверх локальных
-        // данных нельзя — это решение человека (PLAN G2).
-        AccountRegistration.Outcome.Unreadable -> AppStartState.KeyLost
-        // Не записались — значит на сервере ничего нет: исход настройки, а не сбой (PLAN G2).
-        AccountRegistration.Outcome.NotStored -> AppStartState.Setup(LoadFailure.DEVICE_STORAGE)
-        is AccountRegistration.Outcome.Failed -> AppStartState.Setup(outcome.failure.asLoadFailure())
+    suspend fun begin(): AppStartState = when (val readiness = account.ensure()) {
+        AccountReadiness.Ready -> vocabularyKnown()
+        AccountReadiness.KeyLost -> AppStartState.KeyLost
+        is AccountReadiness.NotReady -> AppStartState.Setup(readiness.reason)
     }
 
     /**
      * Словарь нужен, чтобы показать хоть одно количество; **свежесть** его — не условие старта.
      * Он только растёт, и уже настроенное приложение обязано открываться без связи (PLAN J3):
-     * поэтому дочитывается он, лишь когда не знаем ни одной единицы.
+     * поэтому пополняется он, лишь когда не знаем ни одной единицы.
      */
     private suspend fun vocabularyKnown(): AppStartState {
-        if (vocabulary.snapshot() != Vocabulary.empty) return AppStartState.Ready
-        return when (val read = vocabulary.refresh()) {
-            is ApiResult.Success -> AppStartState.Ready
-            is ApiResult.Failure -> AppStartState.Setup(read.failure.asLoadFailure())
-        }
+        if (vocabulary.known() != Vocabulary.empty) return AppStartState.Ready
+        val problem = vocabulary.refresh() ?: return AppStartState.Ready
+        return AppStartState.Setup(problem)
     }
-}
-
-/**
- * Отказ сети словами экрана. Коды и причины остаются в сети: экрану нужно знать, что показать и
- * есть ли смысл в повторе, а не то, каким статусом ответил сервер.
- */
-private fun ApiFailure.asLoadFailure(): LoadFailure = when (this) {
-    ApiFailure.Unavailable -> LoadFailure.NO_CONNECTION
-    ApiFailure.Unauthorized, ApiFailure.RegistrationRefused -> LoadFailure.NOT_AUTHORIZED
-    else -> LoadFailure.SERVER_UNAVAILABLE
 }

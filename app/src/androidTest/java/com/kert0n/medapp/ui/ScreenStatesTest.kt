@@ -7,7 +7,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.kert0n.medapp.presentation.LoadFailure
+import com.kert0n.medapp.domain.Unavailability
 import com.kert0n.medapp.ui.theme.MedAppTheme
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -37,7 +37,7 @@ class ScreenStatesTest {
     fun failureIsNamedInWordsAndOffersRetry() {
         var retried = 0
         compose.setContent {
-            MedAppTheme { ErrorMessage(LoadFailure.NO_CONNECTION, onRetry = { retried++ }) }
+            MedAppTheme { ErrorMessage(Unavailability.NO_CONNECTION, onRetry = { retried++ }) }
         }
 
         compose.onNodeWithText("Нет связи с сервером. Проверьте подключение.").assertIsDisplayed()
@@ -54,7 +54,7 @@ class ScreenStatesTest {
     @Test
     fun aRefusedAccountIsNotOfferedAPointlessRetry() {
         compose.setContent {
-            MedAppTheme { ErrorMessage(LoadFailure.NOT_AUTHORIZED, onRetry = {}) }
+            MedAppTheme { ErrorMessage(Unavailability.SERVER_REFUSED_US, onRetry = {}) }
         }
 
         compose.onNodeWithText("Сервер не принял учётную запись этого устройства.").assertIsDisplayed()

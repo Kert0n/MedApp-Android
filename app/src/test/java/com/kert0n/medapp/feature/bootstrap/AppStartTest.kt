@@ -1,145 +1,105 @@
 package com.kert0n.medapp.feature.bootstrap
 
-import com.kert0n.medapp.domain.value.DosageForm
+import com.kert0n.medapp.domain.Unavailability
+import com.kert0n.medapp.domain.account.AccountReadiness
+import com.kert0n.medapp.domain.account.DeviceAccount
 import com.kert0n.medapp.domain.value.QuantityUnit
 import com.kert0n.medapp.domain.value.Vocabulary
-import com.kert0n.medapp.network.account.AccountCredentials
-import com.kert0n.medapp.network.account.AccountRegistration
-import com.kert0n.medapp.network.account.CredentialSource
-import com.kert0n.medapp.network.account.CredentialsSaved
-import com.kert0n.medapp.network.account.StoredAccount
-import com.kert0n.medapp.network.server.MedAppApi
-import com.kert0n.medapp.network.server.medAppHttpClient
-import com.kert0n.medapp.network.value.VocabularyResolver
-import com.kert0n.medapp.network.value.VocabularyStore
-import com.kert0n.medapp.presentation.LoadFailure
-import io.ktor.client.engine.mock.MockEngine
-import io.ktor.client.engine.mock.respond
-import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpStatusCode
-import io.ktor.http.headersOf
+import com.kert0n.medapp.domain.value.VocabularyLibrary
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * Начало работы приложения (PLAN C3, G2). Проверяется решение сценария, а не чужая механика:
- * регистрацию держит `AccountRegistration`, словарь — `VocabularyResolver`, здесь — что их исходы
- * значат для человека.
+ * Начало работы приложения (PLAN C3, G2, J3). Сценарий видит доменные порты, поэтому проверяется
+ * его решение, а не чужая механика: как устройство знакомится с сервером по проводу, здесь не
+ * знают — это забота сети и её собственных тестов.
  */
 class AppStartTest {
 
     private val tablets = QuantityUnit(Uuid.parse("00000000-0000-4000-8000-000000000001"), "таблетка")
 
-    private class Memory(var account: StoredAccount, private val writable: Boolean = true) : CredentialSource {
-        override suspend fun read(): StoredAccount = account
-        override suspend fun save(credentials: AccountCredentials): CredentialsSaved {
-            if (!writable) return CredentialsSaved.LOST
-            account = StoredAccount.Pending(credentials)
-            return CredentialsSaved.SAVED
-        }
-
-        override suspend fun confirm(): CredentialsSaved {
-            (account as? StoredAccount.Pending)?.let { account = StoredAccount.Present(it.credentials) }
-            return CredentialsSaved.SAVED
+    private class Account(private val readiness: AccountReadiness) : DeviceAccount {
+        var asked = 0
+        override suspend fun ensure(): AccountReadiness {
+            asked++
+            return readiness
         }
     }
 
-    private class Words(var known: Vocabulary, val fresh: Vocabulary? = null) : VocabularyStore {
-        var saved = 0
-        override suspend fun snapshot(): Vocabulary = known
-        override suspend fun save(units: List<QuantityUnit>, forms: List<DosageForm>) {
-            saved++
-            known = fresh ?: Vocabulary(units, forms)
+    private class Library(
+        private var vocabulary: Vocabulary,
+        private val problem: Unavailability? = null
+    ) : VocabularyLibrary {
+        var refreshed = 0
+        override suspend fun known(): Vocabulary = vocabulary
+        override suspend fun refresh(): Unavailability? {
+            refreshed++
+            if (problem == null) vocabulary = Vocabulary(listOf(QuantityUnit(Uuid.random(), "штука")), emptyList())
+            return problem
         }
-    }
-
-    /** Сеть отвечает по-разному в зависимости от того, что проверяем. */
-    private fun api(answer: (String) -> Pair<String, HttpStatusCode>) = MedAppApi(
-        medAppHttpClient(
-            MockEngine { request ->
-                val (body, status) = answer(request.url.encodedPath)
-                respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
-            },
-            "https://example.invalid"
-        )
-    )
-
-    private fun start(
-        stored: Memory,
-        words: Words,
-        answer: (String) -> Pair<String, HttpStatusCode> = { path ->
-            when (path) {
-                "/v1/auth/token" -> """{"accessToken":"t"}""" to HttpStatusCode.OK
-                "/v1/quantity-units" -> """[{"id":"${tablets.id}","name":"таблетка"}]""" to HttpStatusCode.OK
-                "/v1/form-types" -> "[]" to HttpStatusCode.OK
-                else -> "" to HttpStatusCode.Created
-            }
-        }
-    ): AppStart {
-        val service = api(answer)
-        return AppStart(AccountRegistration(service, stored, "токен"), VocabularyResolver(words, service))
     }
 
     @Test
     fun aFreshDeviceRegistersAndReadsTheVocabulary() = runTest {
-        val words = Words(Vocabulary.empty)
+        val library = Library(Vocabulary.empty)
 
-        val state = start(Memory(StoredAccount.Absent), words).begin()
+        val state = AppStart(Account(AccountReadiness.Ready), library).begin()
 
         assertEquals(AppStartState.Ready, state)
-        assertEquals(1, words.saved)
+        assertEquals(1, library.refreshed)
     }
 
     /**
      * Сохранённое есть, но не открывается: приложение спрашивает, а не заводит молча вторую
-     * учётку поверх локальных данных (PLAN G2).
+     * учётную запись поверх локальных данных (PLAN G2).
      *
      * Красная проверка: свести утрату ключа к обычному отказу — экран предложит «повторить»,
      * и повтор пойдёт регистрировать заново.
      */
     @Test
     fun aLostKeyAsksTheHumanInsteadOfRegisteringAgain() = runTest {
-        val state = start(Memory(StoredAccount.Unreadable), Words(Vocabulary.empty)).begin()
+        val state = AppStart(Account(AccountReadiness.KeyLost), Library(Vocabulary.empty)).begin()
 
         assertEquals(AppStartState.KeyLost, state)
     }
 
-    /** Не записались — на сервере ничего нет: это исход настройки, и повторить её можно (G2). */
+    /** Причина отказа доезжает до экрана как есть: он по ней и выбирает, что сказать. */
     @Test
-    fun credentialsThatCouldNotBeStoredAreASetupOutcome() = runTest {
-        val stored = Memory(StoredAccount.Absent, writable = false)
+    fun theReasonOfARefusedSetupReachesTheScreen() = runTest {
+        for (reason in Unavailability.entries) {
+            val account = Account(AccountReadiness.NotReady(reason))
 
-        val state = start(stored, Words(Vocabulary.empty)).begin()
+            val state = AppStart(account, Library(Vocabulary.empty)).begin()
 
-        assertEquals(AppStartState.Setup(LoadFailure.DEVICE_STORAGE), state)
+            assertEquals(AppStartState.Setup(reason), state)
+        }
     }
 
-    /** Соединение не установилось — запрос никуда не ушёл, и это отсутствие связи, а не неизвестный исход. */
+    /** Словарь нужен, чтобы показать хоть одно количество: без него настройка не закончена. */
     @Test
-    fun withoutConnectionTheSetupScreenSaysSoAndKeepsTheRetry() = runTest {
-        val state = start(Memory(StoredAccount.Absent), Words(Vocabulary.empty)) {
-            throw java.net.ConnectException("связи нет")
-        }.begin()
+    fun withoutAnyVocabularyTheSetupIsNotDone() = runTest {
+        val library = Library(Vocabulary.empty, problem = Unavailability.NO_CONNECTION)
 
-        assertEquals(AppStartState.Setup(LoadFailure.NO_CONNECTION), state)
+        val state = AppStart(Account(AccountReadiness.Ready), library).begin()
+
+        assertEquals(AppStartState.Setup(Unavailability.NO_CONNECTION), state)
     }
 
     /**
      * Настроенное приложение открывается без связи: словарь только растёт, снимок уже есть, и
      * свежесть его условием старта не является (PLAN J3).
      *
-     * Красная проверка: дочитывать словарь всегда — этот случай краснеет отказом сети.
+     * Красная проверка: пополнять словарь всегда — этот случай краснеет отказом сети.
      */
     @Test
     fun anAlreadySetUpAppStartsWithoutConnection() = runTest {
-        val words = Words(Vocabulary(listOf(tablets), emptyList()))
-        val stored = Memory(StoredAccount.Present(AccountCredentials(Uuid.random(), "p".repeat(32))))
+        val library = Library(Vocabulary(listOf(tablets), emptyList()), problem = Unavailability.NO_CONNECTION)
 
-        val state = start(stored, words) { throw java.net.ConnectException("связи нет") }.begin()
+        val state = AppStart(Account(AccountReadiness.Ready), library).begin()
 
         assertEquals(AppStartState.Ready, state)
-        assertEquals(0, words.saved)
+        assertEquals(0, library.refreshed)
     }
 }

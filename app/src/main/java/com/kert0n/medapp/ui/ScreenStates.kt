@@ -20,7 +20,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.annotation.StringRes
 import com.kert0n.medapp.R
-import com.kert0n.medapp.presentation.LoadFailure
+import com.kert0n.medapp.domain.Unavailability
 
 /**
  * Ожидание. Подписи нет, но она есть у экранного чтеца: кружок сам по себе ему ничего не говорит.
@@ -65,12 +65,12 @@ fun EmptyState(
 }
 
 /**
- * Не вышло, и сказано почему. Повтор предлагается там, где он осмыслен: при [LoadFailure] без
- * повтора кнопки нет — нажимать на неё значило бы обещать человеку то, чего не будет.
+ * Не вышло, и сказано почему. Повтор предлагается там, где он осмыслен: у причины без повтора
+ * кнопки нет — нажимать на неё значило бы обещать человеку то, чего не будет.
  */
 @Composable
 fun ErrorMessage(
-    reason: LoadFailure,
+    reason: Unavailability,
     modifier: Modifier = Modifier,
     onRetry: (() -> Unit)? = null
 ) = ErrorMessage(
@@ -80,7 +80,7 @@ fun ErrorMessage(
 )
 
 /**
- * Та же беда словами вызывающего — для случаев, у которых своей [LoadFailure] нет: утрата ключа
+ * Та же беда словами вызывающего — для случаев, у которых своей [Unavailability] нет: утрата ключа
  * это не «не загрузилось», а состояние, из которого человек выходит решением.
  */
 @Composable
@@ -120,14 +120,14 @@ private fun StateFrame(modifier: Modifier, content: @Composable () -> Unit) {
 
 /** Текст причины — её свойство: экран не выбирает, какими словами называть отказ. */
 @get:StringRes
-private val LoadFailure.text: Int
+private val Unavailability.text: Int
     get() = when (this) {
-        LoadFailure.NO_CONNECTION -> R.string.failure_no_connection
-        LoadFailure.SERVER_UNAVAILABLE -> R.string.failure_server_unavailable
-        LoadFailure.NOT_AUTHORIZED -> R.string.failure_not_authorized
-        LoadFailure.DEVICE_STORAGE -> R.string.failure_device_storage
+        Unavailability.NO_CONNECTION -> R.string.failure_no_connection
+        Unavailability.SERVER_SILENT -> R.string.failure_server_unavailable
+        Unavailability.SERVER_REFUSED_US -> R.string.failure_not_authorized
+        Unavailability.DEVICE_STORAGE -> R.string.failure_device_storage
     }
 
 /** Повтор тем же осмыслен не всегда: отказ в пропуске им не лечится (PLAN G2). */
-private val LoadFailure.isWorthRetrying: Boolean
-    get() = this != LoadFailure.NOT_AUTHORIZED
+private val Unavailability.isWorthRetrying: Boolean
+    get() = this != Unavailability.SERVER_REFUSED_US
