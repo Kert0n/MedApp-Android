@@ -156,7 +156,8 @@ class QueueWorkerTest {
             (state as? PackageState.Present)?.let { learn(it.snapshot) }
             val operation = operations.getValue(id)
             operations[id] = if (outcome is Delivery.Stale) {
-                operation.with(status = SyncOperationStatus.PENDING, dropPrepared = true, dropAnswer = true, notBefore = outcome.notBefore, dropNotBefore = outcome.notBefore == null)
+                // Счёт попыток принадлежит запросу: сброшен запрос — сброшен и он.
+                operation.with(status = SyncOperationStatus.PENDING, attempts = 0, dropPrepared = true, dropAnswer = true, notBefore = outcome.notBefore, dropNotBefore = outcome.notBefore == null)
             } else {
                 operation.with(
                     status = when (outcome) {
@@ -346,7 +347,69 @@ class QueueWorkerTest {
     }
 
     /**
-     * 409 у `sync` — версия устарела, запрос отвергнут до применения (PLAN B3, E3): состояние
+     * Последняя доза: расход списал пачку до нуля, сервер её уничтожил, ответ потерялся — и повтор
+     * отвечает 404 (PLAN B4). Пачки нет по нашей же причине, значит расход применён, а доступ не
+     * утрачен.
+     */
+    @Test
+    fun aRepeatedConsumptionThatEmptiedThePackageIsAppliedNotLost() = runTest {
+        val everything = PackageSyncCommand.Consume(PACK, dose("20"), INTAKE)
+        val frozen = everything.toPreparedRequest(
+            INTAKE, PackageSyncState(PACK, ResourceVersion(3)), tablets("20"), null, EARLIER
+        )
+        val storage = Storage(
+            listOf(operation(everything, status = SyncOperationStatus.SENDING, attempts = 1, prepared = frozen))
+        )
+        val transport = Transport { ApiResult.Failure(ApiFailure.NotFound) }
+
+        worker(storage, transport).drain()
+
+        assertEquals(Delivery.Applied(PackageState.Gone), storage.settled.single().second)
+    }
+
+    /**
+     * Счёт попыток принадлежит запросу, а не операции: после переподготовки уходит **другой**
+     * запрос, и 404 на нём — не наш расход, дошедший до нуля, а исчезнувшая пачка. Иначе прошлый
+     * неизвестный исход подписывал бы применение тому, чего не было.
+     */
+    @Test
+    fun aRepreparedConsumptionDoesNotInheritTheAttemptsOfTheOldRequest() = runTest {
+        val everything = PackageSyncCommand.Consume(PACK, dose("20"), INTAKE)
+        val frozen = everything.toPreparedRequest(
+            INTAKE, PackageSyncState(PACK, ResourceVersion(3)), tablets("20"), null, EARLIER
+        )
+        val storage = Storage(
+            listOf(operation(everything, status = SyncOperationStatus.SENDING, attempts = 1, prepared = frozen))
+        )
+        var attempts = 0
+        val transport = transport(fresh = snapshotWithVersion(7)) {
+            attempts++
+            // Первая отправка — тот же замороженный запрос: версия устарела. Вторая — уже другой.
+            if (attempts == 1) ApiResult.Failure(ApiFailure.PreconditionFailed) else ApiResult.Failure(ApiFailure.NotFound)
+        }
+        transport.snapshotAnswer = ApiResult.Success(snapshotWithVersion(7))
+
+        worker(storage, transport).drain()
+
+        assertEquals(2, transport.sent.size)
+        assertEquals(Delivery.Stale(snapshotWithVersion(7)), storage.settled[0].second)
+        assertEquals(Delivery.AccessLost, storage.settled[1].second)
+    }
+
+    /** 404 на первой же отправке — пачки нет не по нашей причине: доступ утрачен. */
+    @Test
+    fun aFirstConsumptionMeetingANotFoundIsAccessLost() = runTest {
+        val everything = PackageSyncCommand.Consume(PACK, dose("20"), INTAKE)
+        val storage = Storage(listOf(operation(everything)))
+        val transport = transport { ApiResult.Failure(ApiFailure.NotFound) }
+
+        worker(storage, transport).drain()
+
+        assertEquals(Delivery.AccessLost, storage.settled.single().second)
+    }
+
+    /**
+     * 412 у `sync` — версия устарела, запрос отвергнут до применения (PLAN B3, E3): состояние
      * читается и ложится в базу, запрос готовится заново под тем же номером и уходит тем же
      * проходом — со свежей версией.
      */
@@ -356,7 +419,7 @@ class QueueWorkerTest {
         var attempts = 0
         val transport = transport(fresh = snapshotWithVersion(3)) {
             attempts++
-            if (attempts == 1) ApiResult.Failure(ApiFailure.Conflict) else ApiResult.Success(RawResponse(200, snapshotJson.replace("\"version\":4", "\"version\":8")))
+            if (attempts == 1) ApiResult.Failure(ApiFailure.PreconditionFailed) else ApiResult.Success(RawResponse(200, snapshotJson.replace("\"version\":4", "\"version\":8")))
         }
         transport.snapshotAnswer = ApiResult.Success(snapshotWithVersion(7))
 
@@ -376,12 +439,12 @@ class QueueWorkerTest {
         assertEquals(SyncOperationStatus.APPLIED, storage.operations.getValue(INTAKE).status)
     }
 
-    /** Потерянный ответ, за которым пришёл 409: своя бронь уже равна заявленной — расход применён. */
+    /** Потерянный ответ, за которым пришёл 412: своя бронь уже равна заявленной — расход применён. */
     @Test
     fun staleSyncWhoseClaimAlreadyMatchesIsAppliedWithoutResending() = runTest {
         val frozen = sync.toPreparedRequest(INTAKE, PackageSyncState(PACK, ResourceVersion(3), ResourceVersion(1)), tablets("20"), tablets("7"), EARLIER)
         val storage = Storage(listOf(operation(sync, status = SyncOperationStatus.SENDING, prepared = frozen)))
-        val transport = Transport { ApiResult.Failure(ApiFailure.Conflict) }
+        val transport = Transport { ApiResult.Failure(ApiFailure.PreconditionFailed) }
         transport.snapshotAnswer = ApiResult.Success(snapshot) // mine = 4 = claimAfter, было 7
 
         val report = worker(storage, transport).drain()
@@ -389,6 +452,27 @@ class QueueWorkerTest {
         assertEquals(1, report.settled)
         assertEquals(1, transport.sent.size)
         assertEquals(Delivery.Applied(PackageState.Present(snapshot)), storage.settled.single().second)
+    }
+
+    /**
+     * 409 у `sync` — тот же номер с другим телом (PLAN B4, E3). Повторять нечем: журнал сервера
+     * ответит так же всегда, а переподготовка тела не меняет — значит, это дефект, и операция
+     * закрывается отказом, не уходя второй раз.
+     */
+    @Test
+    fun aSyncUnderTheSameNumberWithAnotherBodyIsRefusedNotReprepared() = runTest {
+        val storage = Storage(listOf(operation(sync)))
+        val transport = transport(fresh = snapshotWithVersion(3)) { ApiResult.Failure(ApiFailure.Conflict) }
+        transport.snapshotAnswer = ApiResult.Success(snapshot)
+
+        worker(storage, transport).drain()
+
+        assertEquals(1, transport.sent.size)
+        assertEquals(
+            Delivery.Refused(RefusalReason.INVALID, PackageState.Present(snapshot)),
+            storage.settled.single().second
+        )
+        assertEquals(SyncOperationStatus.REFUSED, storage.operations.getValue(INTAKE).status)
     }
 
     /** Чужая правка перекрыла описание: отказ с названной причиной, истина прочитана, человек смотрит заново. */
@@ -563,6 +647,20 @@ class QueueWorkerTest {
 
         assertEquals(0, transport.snapshots)
         assertEquals(Delivery.Refused(RefusalReason.INVALID, PackageState.None), storage.settled.single().second)
+    }
+
+    /** 409 на создании — пачка с нашим номером уже есть: читаем, она наша, значит уже применено. */
+    @Test
+    fun createUnderAnIdentifierThatIsAlreadyOursIsApplied() = runTest {
+        val create = PackageSyncCommand.Create(PACK, HOME_KIT, tablets("20"), com.kert0n.medapp.domain.pack.PackageSharedFacts("Парацетамол", TABLET_FORM))
+        val storage = Storage(listOf(operation(create)))
+        val transport = Transport { ApiResult.Failure(ApiFailure.Conflict) }
+        transport.snapshotAnswer = ApiResult.Success(snapshot)
+
+        worker(storage, transport).drain()
+
+        assertEquals(Delivery.Applied(PackageState.Present(snapshot)), storage.settled.single().second)
+        assertEquals(SyncOperationStatus.APPLIED, storage.operations.getValue(INTAKE).status)
     }
 
     /** Расход больше остатка — отказ по количеству, пачка остаётся какой её знает сервер: удалять её нечем. */

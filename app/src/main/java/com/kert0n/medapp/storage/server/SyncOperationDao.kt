@@ -161,9 +161,13 @@ interface SyncOperationDao {
     /**
      * Сбрасывает собранный запрос: версия устарела, и он готовится заново по свежему состоянию
      * под тем же номером. Не попытка — задержка от этого не растёт.
+     *
+     * Счёт попыток обнуляется вместе с запросом: он принадлежит **запросу**, а не операции, и
+     * говорит одно — уходил ли уже этот замороженный запрос и остался ли его исход неизвестным.
+     * По нему расход решает, значит ли 404 «мы сами опустошили пачку» (PLAN E3).
      */
     @Query(
-        "UPDATE sync_operations SET status = 'PENDING', last_error = :lastError, last_tried_at = :at, not_before = :notBefore, " +
+        "UPDATE sync_operations SET status = 'PENDING', last_error = :lastError, last_tried_at = :at, not_before = :notBefore, attempts = 0, " +
             "prepared_method = NULL, prepared_path = NULL, prepared_query = NULL, prepared_body = NULL, " +
             "prepared_drug_version = NULL, prepared_claims_version = NULL, prepared_quantity_before = NULL, " +
             "prepared_mine_before = NULL, prepared_unit_id = NULL, prepared_at = NULL, " +

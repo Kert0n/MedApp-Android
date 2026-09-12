@@ -5,6 +5,7 @@ import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.QuantityUnit
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
+import com.kert0n.medapp.queue.ConflictPolicy
 import com.kert0n.medapp.queue.Expected
 import com.kert0n.medapp.queue.NotFoundPolicy
 import com.kert0n.medapp.queue.RefusalReason
@@ -72,6 +73,19 @@ sealed interface PackageSyncCommand : SyncCommand {
             is CorrectStock -> if (actual.isZero) NotFoundPolicy.APPLIED else NotFoundPolicy.ACCESS_LOST
             is SetClaim -> NotFoundPolicy.REPREPARE
             is ReleaseClaim, is Delete -> NotFoundPolicy.APPLIED
+        }
+
+    /**
+     * 409: у создания — «уже есть», у заявления брони — «уже заявлена». У расхода это тот же номер
+     * с другим телом: переподготовка тела не меняет, значит такой ответ — дефект, а не состояние
+     * сервера (PLAN E3). Версия сюда не относится: она отвечает 412.
+     */
+    val onConflict: ConflictPolicy
+        get() = when (this) {
+            is Create -> ConflictPolicy.EXISTS
+            is SetClaim -> ConflictPolicy.REPREPARE
+            is Consume, is Describe, is CorrectStock, is Move, is Delete, is ReleaseClaim ->
+                ConflictPolicy.REFUSE
         }
 
     /** 400: у расхода — больше остатка, единственный отказ по условию, что у него есть; у прочих — ввод. */
@@ -190,6 +204,16 @@ sealed interface PackageSyncCommand : SyncCommand {
          * версии, отличается от расхода, который сервер не видел (решение владельца, PLAN E3).
          * Без блока брони или при броне, которую расход не менял, судить нечем — `false`.
          */
+        /**
+         * Опустошил бы этот расход пачку: доза не меньше подтверждённого остатка, по которому
+         * готовился запрос. Пачка, списанная до нуля, сервером уничтожается, и повтор такого
+         * расхода отвечает 404 (PLAN B4): это наш же расход, дошедший до нуля, а не утрата доступа.
+         */
+        fun emptiedBy(prepared: PreparedRequest): Boolean {
+            val before = prepared.quantityBefore ?: return false
+            return amount.quantity.amount >= before.amount
+        }
+
         fun provenAppliedBy(snapshot: PackageSnapshotNetworkDTO, prepared: PreparedRequest): Boolean {
             val wanted = claimAfter?.takeUnless { it.isZero } ?: return false
             val before = prepared.mineBefore ?: return false

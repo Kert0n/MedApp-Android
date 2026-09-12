@@ -5,7 +5,7 @@ import com.kert0n.medapp.network.account.AccessTokenNetworkDTO
 import com.kert0n.medapp.network.account.AccessTokenThrottled
 import com.kert0n.medapp.network.account.AccessTokenUnavailable
 import com.kert0n.medapp.network.account.AccountCredentials
-import com.kert0n.medapp.network.account.AccountRegisteredNetworkDTO
+import com.kert0n.medapp.network.account.AccountPostNetworkDTO
 import com.kert0n.medapp.network.account.AccountSnapshotNetworkDTO
 import com.kert0n.medapp.network.medkit.InvitationNetworkDTO
 import com.kert0n.medapp.network.medkit.MedKitCreatedNetworkDTO
@@ -16,7 +16,6 @@ import com.kert0n.medapp.network.medkit.MembershipPostNetworkDTO
 import com.kert0n.medapp.network.pack.ClaimNetworkDTO
 import com.kert0n.medapp.network.pack.ClaimPatchNetworkDTO
 import com.kert0n.medapp.network.pack.ClaimPostNetworkDTO
-import com.kert0n.medapp.network.pack.PackageConsumeNetworkDTO
 import com.kert0n.medapp.network.pack.PackagePatchNetworkDTO
 import com.kert0n.medapp.network.pack.PackagePostNetworkDTO
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
@@ -61,10 +60,14 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
 
     // Учётная запись
 
-    /** Повторять нельзя: повтор даст вторую учётку. */
-    suspend fun register(registrationToken: String): ApiResult<AccountRegisteredNetworkDTO> =
-        call(HttpMethod.Post, MedAppRoutes.REGISTER, HttpStatusCode.OK, required(AccountRegisteredNetworkDTO.serializer())) {
+    /**
+     * Учётные данные придумывает клиент, поэтому повтор безопасен: второй учётки он не заводит, а
+     * отвечает `409` по занятому логину (PLAN B1). Тела в ответе нет.
+     */
+    suspend fun register(account: AccountCredentials, registrationToken: String): ApiResult<Unit> =
+        call(HttpMethod.Post, MedAppRoutes.REGISTER, HttpStatusCode.Created, none) {
             header(REGISTRATION_TOKEN_HEADER, registrationToken)
+            json(AccountPostNetworkDTO(account.login, account.password))
         }
 
     /** Состояния сервера не меняет: неудача значит «пропуска нет», а не «исход неизвестен». */
@@ -76,7 +79,7 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
             required(AccessTokenNetworkDTO.serializer()),
             command = false
         ) {
-            basicAuth(credentials.login.toString(), credentials.key)
+            basicAuth(credentials.login.toString(), credentials.password)
         }
 
     // Снимок и словари
@@ -147,12 +150,6 @@ class MedAppApi @Inject constructor(@MedAppHttp private val http: HttpClient) {
     ): ApiResult<PackageSnapshotNetworkDTO> =
         call(HttpMethod.Put, MedAppRoutes.packageIn(targetMedKitId, packageId), HttpStatusCode.OK, required(PackageSnapshotNetworkDTO.serializer())) {
             version(version)
-        }
-
-    /** `null` в успехе — пачка кончилась и уничтожена: сервер ответил нулём байтов. */
-    suspend fun consume(packageId: Uuid, intake: PackageConsumeNetworkDTO): ApiResult<PackageSnapshotNetworkDTO?> =
-        call(HttpMethod.Post, MedAppRoutes.intakes(packageId), HttpStatusCode.OK, optional(PackageSnapshotNetworkDTO.serializer())) {
-            json(intake)
         }
 
     /** `null` в успехе — пачка кончилась и уничтожена; повтор безопасен с тем же [syncId]. */

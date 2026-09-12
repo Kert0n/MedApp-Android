@@ -11,7 +11,6 @@ import com.kert0n.medapp.network.medkit.MedKitPostNetworkDTO
 import com.kert0n.medapp.network.medkit.MembershipPostNetworkDTO
 import com.kert0n.medapp.network.pack.ClaimPatchNetworkDTO
 import com.kert0n.medapp.network.pack.ClaimPostNetworkDTO
-import com.kert0n.medapp.network.pack.PackageConsumeNetworkDTO
 import com.kert0n.medapp.network.pack.PackagePatchNetworkDTO
 import com.kert0n.medapp.network.pack.PackagePostNetworkDTO
 import com.kert0n.medapp.network.pack.PackageSnapshotNetworkDTO
@@ -53,6 +52,8 @@ class ContractProbe {
         override suspend fun read(): StoredAccount = StoredAccount.Present(account)
         override suspend fun save(credentials: AccountCredentials): CredentialsSaved =
             error("проба учёток не заводит: они заведены один раз и лежат в local.properties")
+
+        override suspend fun confirm(): CredentialsSaved = CredentialsSaved.SAVED
     }
 
     companion object {
@@ -162,12 +163,15 @@ class ContractProbe {
 
     @Test
     fun foreignRegistrationTokenIsRefusedWithoutAnAccount() = runBlocking {
-        assertEquals(ApiFailure.RegistrationRefused, failure(anonymous.register("not-the-build-token")))
+        // Токен сборки проверяется первым: придуманные данные до учётки не доходят.
+        val invented = AccountCredentials.random()
+        assertEquals(ApiFailure.RegistrationRefused, failure(anonymous.register(invented, "not-the-build-token")))
+        assertEquals(ApiFailure.Unauthorized, failure(anonymous.token(invented)))
     }
 
     @Test
-    fun wrongKeyIsNotAccepted() = runBlocking {
-        val wrong = AccountCredentials(ownerAccount.login, "not-the-key")
+    fun wrongPasswordIsNotAccepted() = runBlocking {
+        val wrong = AccountCredentials(ownerAccount.login, "not-the-password")
         assertEquals(ApiFailure.Unauthorized, failure(anonymous.token(wrong)))
     }
 
@@ -252,11 +256,17 @@ class ContractProbe {
     fun consumptionAnswersWithTheSnapshotUntilThePackageIsGone() = runBlocking {
         val pack = newPackage(newKit(), amount = "10").pack
 
-        val left = requireNotNull(success(owner.consume(pack.id, PackageConsumeNetworkDTO("4", pack.version)))) {
-            "после частичного расхода пачка остаётся"
-        }.pack
+        val left = requireNotNull(
+            success(owner.synchronise(pack.id, Uuid.random(), PackageSyncNetworkDTO("4", pack.version)))
+        ) { "после частичного расхода пачка остаётся" }.pack
         assertEquals("6.000000", left.amount)
-        assertNull(success(owner.consume(pack.id, PackageConsumeNetworkDTO("6", left.version))))
+
+        // Пачка кончилась: сервер уничтожил её и ответил нулём байтов, а повтор того же расхода
+        // отвечает уже 404 — пачки нет (PLAN B4). На этом стоит закрытие расхода применённым.
+        val last = PackageSyncNetworkDTO("6", left.version)
+        val lastId = Uuid.random()
+        assertNull(success(owner.synchronise(pack.id, lastId, last)))
+        assertEquals(ApiFailure.NotFound, failure(owner.synchronise(pack.id, lastId, last)))
     }
 
     @Test
@@ -323,7 +333,7 @@ class ContractProbe {
     }
 
     /**
-     * 409 у `sync` — устаревшая версия, и запрос **не применён** (PLAN B3, E3): остаток тот же, а
+     * 412 у `sync` — устаревшая версия, и запрос **не применён** (PLAN B3, E3): остаток тот же, а
      * тот же номер с той же дельтой и свежей версией сервер принимает. Внеплановый расход — тот же
      * `sync` без блока брони. На этом стоит переподготовка очереди под тем же `syncId`.
      */
@@ -337,7 +347,9 @@ class ContractProbe {
             operationId, PackageSyncState(pack.id, version = ResourceVersion(pack.version.number + 1)), null, null, Instant.EPOCH
         )
 
-        assertEquals(ApiFailure.Conflict, failure(owner.send(stale)))
+        assertEquals(ApiFailure.PreconditionFailed, failure(owner.send(stale)))
+        // 428 сюда не приходит: расход без версии клиент не выражает вовсе — это отвергает сама
+        // форма запроса (`PackageSyncNetworkDTO`, проверено в `WireContractTest`).
         val untouched = success(owner.packageSnapshot(pack.id))
         assertEquals("10.000000", untouched.pack.amount)
         assertEquals(pack.version, untouched.pack.version)

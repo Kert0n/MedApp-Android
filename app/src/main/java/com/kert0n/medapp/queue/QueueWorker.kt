@@ -116,14 +116,13 @@ class QueueWorker @Inject constructor(
                 resolve(taken.command, result.value)
             }
             is ApiResult.Failure -> when (val failure = result.failure) {
-                ApiFailure.Conflict, ApiFailure.PreconditionFailed ->
-                    // Версия устарела либо объект уже есть: сервер отверг запрос до применения.
-                    // Что делать дальше, знает команда; истина в любом случае читается.
-                    Step.Settled(stale(taken.command, request))
+                // Версия устарела — сервер отверг запрос до применения; 409 о версии не говорит.
+                ApiFailure.PreconditionFailed -> Step.Settled(stale(taken.command, request))
+                ApiFailure.Conflict -> Step.Settled(conflict(taken.command))
                 ApiFailure.PreconditionRequired -> Step.Settled(refused(taken.command, RefusalReason.INVALID))
                 is ApiFailure.Invalid ->
                     Step.Settled(refused(taken.command, (taken.command as? PackageSyncCommand)?.onInvalid ?: RefusalReason.INVALID))
-                ApiFailure.NotFound -> Step.Settled(notFound(taken.command))
+                ApiFailure.NotFound -> Step.Settled(notFound(taken, request))
                 ApiFailure.Unauthorized, ApiFailure.RegistrationRefused -> Step.Unauthorized
                 is ApiFailure.TooManyRequests ->
                     Step.Settled(Delivery.Retry("429"), retryAfter = failure.retryAfter, stop = true)
@@ -188,8 +187,6 @@ class QueueWorker @Inject constructor(
     private suspend fun stale(command: SyncCommand, request: PreparedRequest): Delivery = when (command) {
         is PackageSyncCommand -> snapshotThen(command.packageId) { snapshot ->
             when {
-                // 409 у создания — «уже есть»: пачка с нашим номером видна нам, значит наша.
-                command is PackageSyncCommand.Create -> Delivery.Applied(PackageState.Present(snapshot))
                 command is PackageSyncCommand.Consume && command.provenAppliedBy(snapshot, request) ->
                     Delivery.Applied(PackageState.Present(snapshot))
                 command.onStale == StalePolicy.REPREPARE -> Delivery.Stale(snapshot)
@@ -197,6 +194,22 @@ class QueueWorker @Inject constructor(
             }
         }
         is MedKitSyncCommand -> Delivery.Refused(RefusalReason.STALE, PackageState.None)
+        else -> command.unknownRoot()
+    }
+
+    /**
+     * 409 — не о версии (её отвергает 412), а о занятом номере: объект с ним уже есть, бронь уже
+     * заявлена или под этим номером уже применили другое тело. Последнее — дефект клиента:
+     * переподготовка тела не меняет, и сервер ответит так же всегда (PLAN E3).
+     */
+    private suspend fun conflict(command: SyncCommand): Delivery = when (command) {
+        is PackageSyncCommand -> when (command.onConflict) {
+            ConflictPolicy.EXISTS -> snapshotThen(command.packageId) { Delivery.Applied(PackageState.Present(it)) }
+            ConflictPolicy.REPREPARE -> snapshotThen(command.packageId) { Delivery.Stale(it) }
+            ConflictPolicy.REFUSE -> refused(command, RefusalReason.INVALID)
+        }
+        // Аптечка с нашим номером уже есть, участник уже вступил — желаемое уже так (PLAN B4).
+        is MedKitSyncCommand -> Delivery.Applied(PackageState.None)
         else -> command.unknownRoot()
     }
 
@@ -210,10 +223,19 @@ class QueueWorker @Inject constructor(
         else -> Delivery.Refused(reason, PackageState.None)
     }
 
-    /** 404 значит разное для разных команд (PLAN B4): что именно — говорит команда. */
-    private suspend fun notFound(command: SyncCommand): Delivery = when (command) {
+    /**
+     * 404 значит разное для разных команд (PLAN B4): что именно — говорит команда. У расхода есть
+     * ещё один случай: повтор запроса, который уже уходил и мог уничтожить пачку, дойдя до нуля, —
+     * тогда пачки нет по нашей же причине, и это применение, а не потеря доступа (PLAN E3).
+     */
+    private suspend fun notFound(operation: SyncOperation, request: PreparedRequest): Delivery = when (val command = operation.command) {
         is PackageSyncCommand -> when (command.onNotFound) {
-            NotFoundPolicy.ACCESS_LOST -> Delivery.AccessLost
+            NotFoundPolicy.ACCESS_LOST ->
+                if (command is PackageSyncCommand.Consume && operation.attempts > 0 && command.emptiedBy(request)) {
+                    Delivery.Applied(PackageState.Gone)
+                } else {
+                    Delivery.AccessLost
+                }
             NotFoundPolicy.REPREPARE -> snapshotThen(command.packageId) { Delivery.Stale(it) }
             NotFoundPolicy.APPLIED ->
                 if (command is PackageSyncCommand.ReleaseClaim) snapshotThen(command.packageId) { Delivery.Applied(PackageState.Present(it)) }
