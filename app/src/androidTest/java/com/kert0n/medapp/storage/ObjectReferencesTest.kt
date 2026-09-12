@@ -23,8 +23,7 @@ import com.kert0n.medapp.storage.course.toStorageEntity as toCourseStorageEntity
 import com.kert0n.medapp.storage.course.toTimeStorageEntities
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.storage.medkit.toStorageEntity as toMedKitStorageEntity
-import com.kert0n.medapp.storage.pack.toDetailsStorageEntity
-import com.kert0n.medapp.storage.pack.toStorageEntity as toPackageStorageEntity
+import com.kert0n.medapp.fixture.save
 import com.kert0n.medapp.storage.stock.toStorageEntity as toMovementStorageEntity
 import com.kert0n.medapp.storage.value.toStorageEntity
 import java.time.Instant
@@ -71,7 +70,7 @@ class ObjectReferencesTest {
     @Test
     fun packageCarriesItsMedKitAsARef() = runTest {
         val onTheDacha = pack(medKit = medKit(id = SHARED_KIT, name = "Дача").ref)
-        database.packages().save(onTheDacha.toPackageStorageEntity(), onTheDacha.toDetailsStorageEntity())
+        database.packages().save(onTheDacha)
 
         val restored = requireNotNull(database.packages().find(PACK)).toDomain(VOCABULARY)
         assertEquals(SHARED_KIT, restored.medKit.id)
@@ -81,7 +80,7 @@ class ObjectReferencesTest {
     @Test
     fun courseIsReadWithItsPackagesInOneTransaction() = runTest {
         for (pkg in listOf(pack(id = PACK), pack(id = OTHER_PACK, quantity = tablets("12")))) {
-            database.packages().save(pkg.toPackageStorageEntity(), pkg.toDetailsStorageEntity())
+            database.packages().save(pkg)
         }
         val plan = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 4)))
         database.courses().saveCourse(
@@ -92,23 +91,21 @@ class ObjectReferencesTest {
 
         val restored = requireNotNull(database.courses().findPlan(COURSE)).toPlan(VOCABULARY)
         assertEquals(listOf(PACK, OTHER_PACK), restored.sources.map { it.pkg.id })
-        // Ссылка несёт то, что курсу нужно знать о пачке, — и не несёт остатка.
+        // Ссылка несёт то, что курсу нужно знать о пачке, — и не несёт ни остатка, ни места.
         assertEquals(TABLETS, restored.sources.last().pkg.unit)
-        assertTrue(restored.sources.last().pkg.suppliesStock)
-        assertEquals(HOME_KIT, restored.sources.first().pkg.medKit.id)
+        assertEquals("Парацетамол", restored.sources.first().pkg.name)
     }
 
     @Test
     fun aHundredMovementsLoadTheirPackagesInOneQuery() = runTest {
         val paracetamol = pack(id = PACK)
-        database.packages().save(paracetamol.toPackageStorageEntity(), paracetamol.toDetailsStorageEntity())
+        database.packages().save(paracetamol)
         for (i in 0 until 100) {
             val movement = StockMovement.Recount(
                 id = Uuid.parse("00000000-0000-4000-8000-%012x".format(0x1000 + i)),
                 pkg = paracetamol.ref,
                 before = tablets("20"),
                 after = tablets("19"),
-                medKit = medKit().ref,
                 occurredAt = Instant.EPOCH.plusSeconds(i.toLong()),
                 observedAt = LATER.plusSeconds(i.toLong())
             )
@@ -119,7 +116,7 @@ class ObjectReferencesTest {
         val history = database.stockMovements().ofPackage(PACK).map { it.toDomain(VOCABULARY) }
 
         assertEquals(100, history.size)
-        assertTrue(history.all { it.pkg.id == PACK && it.pkg.medKit.id == HOME_KIT })
+        assertTrue(history.all { it.pkg.id == PACK && it.pkg.name == "Парацетамол" })
         // Room грузит связь одним `IN`-запросом на всю выборку (и повторяет его для вложенных
         // связей пачки), а не по запросу на строку: сто строк — не сто чтений.
         val packageReads = synchronized(queries) {

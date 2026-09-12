@@ -26,7 +26,7 @@ import kotlinx.serialization.json.jsonPrimitive
  * колонкой, знает слой хранения, а не сама величина (PLAN F1, AGENTS).
  *
  * У общего маркера `SyncCommand` исчерпывающего `when` нет — цена деления команд по понятиям
- * (E2). Вместо него набор закрыт круговым тестом по всем одиннадцати видам.
+ * (E2). Вместо него набор закрыт круговым тестом по всем двенадцати видам.
  */
 object SyncCommandStorageConverter {
 
@@ -43,6 +43,7 @@ object SyncCommandStorageConverter {
             is PackageSyncCommand.CorrectStock -> PACKAGE_CORRECT_STOCK
             is PackageSyncCommand.Move -> PACKAGE_MOVE
             is PackageSyncCommand.Delete -> PACKAGE_DELETE
+            is PackageSyncCommand.Withdraw -> PACKAGE_WITHDRAW
             is PackageSyncCommand.Consume -> PACKAGE_CONSUME
             is PackageSyncCommand.SetClaim -> PACKAGE_SET_CLAIM
             is PackageSyncCommand.ReleaseClaim -> PACKAGE_RELEASE_CLAIM
@@ -62,6 +63,7 @@ object SyncCommandStorageConverter {
         is MedKitSyncCommand -> command.medKitId
         is PackageSyncCommand.Create -> command.medKitId
         is PackageSyncCommand.Move -> command.targetMedKitId
+        is PackageSyncCommand.Withdraw -> command.fromMedKitId
         else -> null
     }
 
@@ -121,6 +123,11 @@ object SyncCommandStorageConverter {
             targetMedKitId = fields.uuid("targetMedKitId")
         )
         PACKAGE_DELETE -> PackageSyncCommand.Delete(packageId = fields.uuid("packageId"))
+        PACKAGE_WITHDRAW -> PackageSyncCommand.Withdraw(
+            packageId = fields.uuid("packageId"),
+            fromMedKitId = fields.uuid("fromMedKitId"),
+            carried = fields.quantity("carried", vocabulary)
+        )
         PACKAGE_CONSUME -> PackageSyncCommand.Consume(
             packageId = fields.uuid("packageId"),
             amount = Dose(fields.quantity("amount", vocabulary)),
@@ -160,6 +167,10 @@ object SyncCommandStorageConverter {
             is PackageSyncCommand.Move ->
                 put("targetMedKitId", JsonPrimitive(command.targetMedKitId.toString()))
             is PackageSyncCommand.Delete -> Unit
+            is PackageSyncCommand.Withdraw -> {
+                put("fromMedKitId", JsonPrimitive(command.fromMedKitId.toString()))
+                putQuantity("carried", command.carried)
+            }
             is PackageSyncCommand.Consume -> {
                 putQuantity("amount", command.amount.quantity)
                 put("intakeId", JsonPrimitive(command.intakeId.toString()))
@@ -182,6 +193,7 @@ object SyncCommandStorageConverter {
     private const val PACKAGE_CORRECT_STOCK = "PACKAGE_CORRECT_STOCK"
     private const val PACKAGE_MOVE = "PACKAGE_MOVE"
     private const val PACKAGE_DELETE = "PACKAGE_DELETE"
+    private const val PACKAGE_WITHDRAW = "PACKAGE_WITHDRAW"
     private const val PACKAGE_CONSUME = "PACKAGE_CONSUME"
     private const val PACKAGE_SET_CLAIM = "PACKAGE_SET_CLAIM"
     private const val PACKAGE_RELEASE_CLAIM = "PACKAGE_RELEASE_CLAIM"

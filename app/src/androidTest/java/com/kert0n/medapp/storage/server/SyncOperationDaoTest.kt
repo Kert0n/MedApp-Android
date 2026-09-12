@@ -126,6 +126,28 @@ class SyncOperationDaoTest {
         assertNull(queue.find(second)!!.operation.packageId)
     }
 
+    /**
+     * Внутри полки — строго по номеру: полка ждёт расход, поставленный на её коробку раньше, а
+     * расход другой коробки той же полки, поставленный позже, ждёт полку. Чужая полка не ждёт никого
+     * (PLAN E3).
+     *
+     * Красная проверка: порядок только по пачке пропускает полку раньше расхода.
+     */
+    @Test
+    fun withinAShelfTheQueueGoesStrictlyByNumber() = runTest {
+        val elsewhere = Uuid.random()
+        queue.enqueue(first, PackageSyncCommand.Consume(PACK, dose("2"), INTAKE), createdAt, medKitId = SHARED_KIT)
+        queue.enqueue(second, MedKitSyncCommand.Delete(SHARED_KIT), createdAt)
+        queue.enqueue(third, PackageSyncCommand.Consume(OTHER_PACK, dose("1"), INTAKE), createdAt, medKitId = SHARED_KIT)
+        queue.enqueue(elsewhere, PackageSyncCommand.CorrectStock(Uuid.random(), tablets("3")), createdAt, medKitId = HOME_KIT)
+
+        assertEquals(listOf(first, elsewhere), queue.ready(createdAt.plusSeconds(60)).map { it.operation.id })
+        queue.settle(first, SyncOperationStatus.APPLIED, null, createdAt, attempted = 0)
+        assertEquals(listOf(second, elsewhere), queue.ready(createdAt.plusSeconds(60)).map { it.operation.id })
+        queue.settle(second, SyncOperationStatus.APPLIED, null, createdAt, attempted = 0)
+        assertEquals(listOf(third, elsewhere), queue.ready(createdAt.plusSeconds(60)).map { it.operation.id })
+    }
+
     @Test
     fun dependenciesTravelInTheirOwnTable() = runTest {
         queue.enqueue(first, MedKitSyncCommand.Create(HOME_KIT), createdAt)

@@ -1,6 +1,7 @@
 package com.kert0n.medapp.storage.course
 
 import com.kert0n.medapp.domain.course.Course
+import com.kert0n.medapp.domain.course.CourseCompletion
 import com.kert0n.medapp.domain.course.CourseDraft
 import com.kert0n.medapp.domain.course.CourseDraftProjection
 import com.kert0n.medapp.domain.course.CourseProjection
@@ -75,7 +76,8 @@ interface CourseStorageRepository {
      * Изменённый состав препарата — пачка привязана, отвязана или переставлена — с его
      * выделениями: источники и назначения пачек активному курсу пишутся одной транзакцией, потому
      * что это два представления одного отношения (PLAN F1, F2). Условно по редакции [expected];
-     * `false` — плана уже нет. Пачку, занятую другим курсом, отвергает база.
+     * `false` — писать некуда: плана уже нет, он другой редакции, либо состав называет коробку,
+     * которой больше нет (PLAN F5). Пачку, занятую другим курсом, отвергает база.
      */
     suspend fun updateSources(course: Course, expected: Revision): Boolean
 
@@ -93,7 +95,11 @@ interface CourseStorageRepository {
      * Конец лечения: запись закрывается **вместе** с удалением плана. Строки `courses` после
      * этого не существует, а `course_records` остаётся навсегда (PLAN D5, F5).
      *
+     * Принимает [CourseCompletion.Closing] целиком: закрытая запись и отменённые пункты — половины
+     * одного события, и порознь их не бывает. Разобрать их на аргументы значило бы позволить
+     * записать одну без другой.
+     *
      * Будущие пункты отменяются, назначения освобождаются; снятие броней ставит служба очереди.
      */
-    suspend fun close(record: CourseRecord, cancelled: List<CourseIntake> = emptyList())
+    suspend fun close(closing: CourseCompletion.Closing)
 }

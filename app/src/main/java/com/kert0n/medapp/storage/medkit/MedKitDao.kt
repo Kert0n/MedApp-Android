@@ -37,6 +37,7 @@ interface MedKitDao {
     @Query("SELECT * FROM med_kits WHERE id = :id")
     suspend fun find(id: Uuid): MedKitStorageEntity?
 
+    /** Пустую строку аптечки: содержимое к этому моменту либо переехало, либо удалено (PLAN E6). */
     @Query("DELETE FROM med_kits WHERE id = :id")
-    suspend fun delete(id: Uuid)
+    suspend fun delete(id: Uuid): Int
 }

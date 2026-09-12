@@ -32,7 +32,9 @@ class MedKitPublication @Inject constructor(private val api: MedAppApi) {
 
     suspend fun publish(medKit: MedKit, packages: List<Package>): Outcome {
         require(packages.all { it.medKit.id == medKit.id }) { "публикуются пачки этой аптечки" }
-        val published = medKit.publish()
+        // На провод уходит местная аптечка: у общей писателей уже несколько, и «публикуется
+        // текущее местное состояние» перестало быть правдой. Переключает её хранение (PLAN E5).
+        check(!medKit.answersToServer) { "публикуется местная аптечка, а эта уже общая" }
         val onServer: Map<Uuid, PackageSnapshotNetworkDTO> = when (val created = api.createMedKit(MedKitPostNetworkDTO(medKit.id))) {
             is ApiResult.Success -> emptyMap()
             is ApiResult.Failure -> when (created.failure) {
@@ -64,7 +66,7 @@ class MedKitPublication @Inject constructor(private val api: MedAppApi) {
                     if (deleted.failure != ApiFailure.NotFound) return refused(medKit.id, deleted.failure)
             }
         }
-        return Outcome.Published(published, snapshots)
+        return Outcome.Published(snapshots)
     }
 
     /** Завести пачку; уже есть — прочитать и довести до местной. */
@@ -124,10 +126,7 @@ class MedKitPublication @Inject constructor(private val api: MedAppApi) {
     /** Чем кончилась публикация: аптечка на сервере целиком — или её там нет. */
     sealed interface Outcome {
 
-        data class Published(
-            val medKit: MedKit,
-            val packages: List<PackageSnapshotNetworkDTO>
-        ) : Outcome
+        data class Published(val packages: List<PackageSnapshotNetworkDTO>) : Outcome
 
         /**
          * Не опубликована. [rolledBack] = `true` — на сервере ничего нет; `false` — на сервере

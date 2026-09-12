@@ -9,6 +9,8 @@ import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.millilitres
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.dose
+import com.kert0n.medapp.domain.value.Quantity
+import com.kert0n.medapp.fixture.TABLETS
 import com.kert0n.medapp.fixture.tablets
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -105,7 +107,7 @@ class PackageQueueStateTest {
         val stored = pack(quantity = tablets("20"))
         val recount = PackageSyncCommand.CorrectStock(PACK, tablets("30"))
         val state = PackageQueueState(stored, listOf(recount))
-        assertEquals(stored.correctTo(tablets("30")).quantity, state.amount)
+        assertEquals(tablets("30"), state.amount)
     }
 
     @Test

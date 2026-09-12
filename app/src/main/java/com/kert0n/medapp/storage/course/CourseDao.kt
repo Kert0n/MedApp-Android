@@ -6,6 +6,8 @@ import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
 import com.kert0n.medapp.domain.course.Revision
+import com.kert0n.medapp.domain.pack.PackageRef
+import com.kert0n.medapp.domain.value.Vocabulary
 import java.time.Instant
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.Flow
@@ -64,7 +66,9 @@ interface CourseDao {
      * Пересчитанные выделения живого плана. Запись условна по редакции: план, закрытый или уже
      * пересчитанный между чтением и записью, не возвращается и не переписывается результатом,
      * посчитанным из прошлого состава — ноль изменённых строк значит, что писать некуда
-     * (PLAN D5, F5).
+     * (PLAN D5, F5). Состав из коробок, которых больше нет, тоже некуда писать: курс, прочитанный
+     * до того, как коробку выбросили, не воскрешает её источником — ответ `false`, а не
+     * исключение ключа.
      *
      * Меняются только редакция, время правки, источники и число доз мимо плана: доза и
      * расписание действующего курса неизменны, и пересчёт обеспечения их не касается.
@@ -75,6 +79,8 @@ interface CourseDao {
         sources: List<CourseSourceStorageEntity>,
         expected: Revision
     ): Boolean {
+        val named = sources.map { it.packageId }
+        if (livingPackagesAmong(named).size != named.size) return false
         val revised = reviseIfRevisionIs(
             course.id, expected.number, course.revision, course.takenOffPlan, course.updatedAt
         )
@@ -164,6 +170,17 @@ interface CourseDao {
     @Query("SELECT package_id FROM course_sources WHERE course_id = :courseId")
     suspend fun sourcePackagesOf(courseId: Uuid): List<Uuid>
 
+    /**
+     * Какое лечение держит эту коробку источником — по составу, а не по назначениям: назначения
+     * бывают только у начатого, а состав есть и у черновика (PLAN D5, F1).
+     */
+    @Query("SELECT course_id FROM course_sources WHERE package_id = :packageId")
+    suspend fun coursesHolding(packageId: Uuid): List<Uuid>
+
+    /** Какие из названных коробок ещё есть: источником бывает только живая (PLAN D3). */
+    @Query("SELECT id FROM packages WHERE id IN (:packageIds)")
+    suspend fun livingPackagesAmong(packageIds: List<Uuid>): List<Uuid>
+
     @Query("DELETE FROM courses WHERE id = :id")
     suspend fun deletePlan(id: Uuid)
 
@@ -185,4 +202,40 @@ interface CourseDao {
 
     @Query("DELETE FROM active_package_assignments WHERE course_id = :courseId")
     suspend fun releaseAssignmentsOf(courseId: Uuid)
+}
+
+/**
+ * Источник не переживает коробку: **каждое** лечение, державшее пачку [pkg], теряет её доменным
+ * переходом — с ростом редакции и освобождением назначения, — а не молча каскадом схемы
+ * (PLAN D5, F5). Зовётся один раз, из двери конца коробки, и только оттуда.
+ *
+ * Лечение ищется по составу, а не по назначениям: назначения бывают только у начатого, а состав
+ * есть и у черновика, и вырезанный каскадом источник черновика человек обнаружил бы сам, вернувшись
+ * к недоделанному курсу.
+ */
+suspend fun CourseDao.releaseSource(pkg: PackageRef, vocabulary: Vocabulary, at: Instant) {
+    for (courseId in coursesHolding(pkg.id)) {
+        val row = findPlan(courseId) ?: continue
+        if (row.isDraft) {
+            val draft = row.toDraft(vocabulary).detach(pkg, at)
+            saveCourse(
+                course = draft.toStorageEntity(),
+                times = draft.schedule?.toTimeStorageEntities(draft.id).orEmpty(),
+                sources = draft.medicine.toSourceStorageEntities(draft.id)
+            )
+        } else {
+            val plan = row.toPlan(vocabulary)
+            val detached = plan.detach(pkg, at)
+            // Ноль изменённых строк здесь незаконен: план прочитан этой же транзакцией. Молча
+            // пропустить значило бы оставить курс с источником, которого уже нет.
+            check(
+                updateAllocations(
+                    detached.toStorageEntity(),
+                    detached.medicine.toSourceStorageEntities(detached.id),
+                    plan.revision
+                )
+            ) { "курс $courseId прочитан этой же транзакцией, а выделения писать некуда" }
+        }
+    }
+    releasePackage(pkg.id)
 }

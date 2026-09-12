@@ -3,9 +3,12 @@ package com.kert0n.medapp.storage.pack
 import androidx.room.withTransaction
 import com.kert0n.medapp.domain.pack.Claims
 import com.kert0n.medapp.domain.pack.Package
+import com.kert0n.medapp.domain.pack.PackageAfter
 import com.kert0n.medapp.domain.pack.PackageAvailability
+import com.kert0n.medapp.domain.pack.PackageEnding
 import com.kert0n.medapp.domain.pack.PackageFacts
 import com.kert0n.medapp.domain.pack.PackageProjection
+import com.kert0n.medapp.domain.pack.PackageStatus
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.domain.value.Vocabulary
 import com.kert0n.medapp.queue.PackageQueueState
@@ -14,6 +17,7 @@ import com.kert0n.medapp.network.pack.PackageSnapshot
 import com.kert0n.medapp.network.pack.PackageSyncState
 import com.kert0n.medapp.storage.course.CourseDao
 import com.kert0n.medapp.storage.course.CourseReallocation
+import com.kert0n.medapp.storage.course.releaseSource
 import com.kert0n.medapp.storage.course.toSourceStorageEntities
 import com.kert0n.medapp.storage.course.toStorageEntity as toCourseStorageEntity
 import com.kert0n.medapp.storage.database.MedAppDatabase
@@ -53,16 +57,35 @@ class PackageRoomRepository @Inject constructor(
     override fun list(query: PackageQuery, today: LocalDate): Flow<List<PackageProjection>> =
         onChange { listing(query, today) }
 
-    override suspend fun add(pkg: Package, sync: PackageSyncState) =
-        packages.save(pkg.toStorageEntity(sync), pkg.toDetailsStorageEntity())
+    override suspend fun add(pkg: Package, sync: PackageSyncState) = save(pkg, sync)
+
+    private suspend fun save(pkg: Package, sync: PackageSyncState) = packages.save(pkg, sync)
 
     override suspend fun describe(packageId: Uuid, facts: PackageFacts): Boolean =
         change(packageId) { it.describe(facts) }
 
-    override suspend fun loseAccess(packageId: Uuid): Boolean = database.withTransaction {
-        val changed = change(packageId) { it.loseAccess() }
-        if (changed) packages.deleteClaims(packageId)
-        changed
+    override suspend fun mark(packageId: Uuid, status: PackageStatus): Boolean =
+        change(packageId) {
+            when (status) {
+                PackageStatus.CHANGING -> it.markChanging()
+                PackageStatus.REMOVING -> it.markRemoving()
+                PackageStatus.LOST -> it.markLost()
+                PackageStatus.ACTIVE -> throw IllegalArgumentException("пометку снимает ответ полки, а не решение")
+            }
+        }
+
+    override suspend fun end(ending: PackageEnding, at: Instant): Boolean = database.withTransaction {
+        if (packages.find(ending.record.id) == null) return@withTransaction false
+        finish(ending, at)
+        true
+    }
+
+    private suspend fun finish(ending: PackageEnding, at: Instant) =
+        packages.end(ending, courses, movements, vocabulary.snapshot(), at)
+
+    override suspend fun contentsOf(medKitId: Uuid): List<Package> = database.withTransaction {
+        val words = vocabulary.snapshot()
+        packages.ofMedKit(medKitId).map { it.toDomain(words) }
     }
 
     /**
@@ -73,10 +96,7 @@ class PackageRoomRepository @Inject constructor(
         database.withTransaction {
             val stored = packages.find(packageId) ?: return@withTransaction false
             val changed = transition(stored.toDomain(vocabulary.snapshot()))
-            packages.save(
-                changed.toStorageEntity(stored.pack.syncState()),
-                changed.toDetailsStorageEntity()
-            )
+            save(changed, stored.pack.syncState())
             true
         }
 
@@ -94,19 +114,22 @@ class PackageRoomRepository @Inject constructor(
         at: Instant
     ): Boolean = database.withTransaction {
         val stored = packages.find(adjustment.packageId) ?: return@withTransaction false
-        val applied = adjustment.applyTo(stored.toDomain(vocabulary.snapshot()), at)
-        // Версии и время сверки остаются те, что записал снимок сервера: их двигает сеть (E4).
-        packages.save(
-            applied.pack.toStorageEntity(stored.pack.syncState()),
-            applied.pack.toDetailsStorageEntity()
-        )
-        movements.insert(applied.movement.toMovementStorageEntity())
-        reallocation?.let { (plan, expected) ->
-            courses.updateAllocations(
-                plan.toCourseStorageEntity(),
-                plan.medicine.toSourceStorageEntities(plan.id),
-                expected
-            )
+        when (val after = adjustment.applyTo(stored.toDomain(vocabulary.snapshot()), at)) {
+            is PackageAfter.Left -> {
+                after.trace?.let { movements.insert(it.toMovementStorageEntity()) }
+                // Версии и время сверки остаются те, что записал снимок сервера: их двигает сеть (E4).
+                save(after.pkg, stored.pack.syncState())
+                // Пересчитанное обеспечение относится к пережившей переход коробке. У кончившейся
+                // источник уже снят доменным переходом внутри конца, и считать по ней нечего.
+                reallocation?.let { (plan, expected) ->
+                    courses.updateAllocations(
+                        plan.toCourseStorageEntity(),
+                        plan.medicine.toSourceStorageEntities(plan.id),
+                        expected
+                    )
+                }
+            }
+            is PackageAfter.Ended -> finish(after.ending, at)
         }
         true
     }
@@ -165,10 +188,7 @@ class PackageRoomRepository @Inject constructor(
         unclosed: List<SyncOperationStorageRow>,
         words: Vocabulary
     ): PackageProjection {
-        val commands = unclosed.mapNotNull {
-            (it.toDomain(words) as? StoredSyncOperation.Readable)?.operation?.command as? PackageSyncCommand
-        }
-        val state = PackageQueueState(pkg, commands)
+        val state = PackageQueueState(pkg, commandsOf(unclosed, words))
         val availability = PackageAvailability(
             pkg = pkg,
             effective = state.amount,
@@ -176,6 +196,12 @@ class PackageRoomRepository @Inject constructor(
         )
         return pkg.projection(availability, state.hasUnconfirmedChanges)
     }
+
+    /** Команды пачки из строк очереди; нечитаемую после обновления приложения пропускаем (PLAN F4). */
+    private fun commandsOf(rows: List<SyncOperationStorageRow>, words: Vocabulary): List<PackageSyncCommand> =
+        rows.mapNotNull {
+            (it.toDomain(words) as? StoredSyncOperation.Readable)?.operation?.command as? PackageSyncCommand
+        }
 
     /**
      * Незакрытые операции всего списка — одним чтением на порцию: спрашивать очередь про каждую
@@ -193,6 +219,7 @@ class PackageRoomRepository @Inject constructor(
         /** Из чего складывается доступность: пачка с её сведениями и бронями, очередь, выделения. */
         val AVAILABILITY_TABLES = arrayOf(
             "packages",
+            "package_records",
             "package_details",
             "claims",
             "sync_operations",

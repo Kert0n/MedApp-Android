@@ -2,13 +2,13 @@ package com.kert0n.medapp.feature.intake
 
 import com.kert0n.medapp.domain.course.CourseCompletion
 import com.kert0n.medapp.domain.course.CourseProgress
+import com.kert0n.medapp.domain.pack.PackageAfter
 import com.kert0n.medapp.domain.pack.PackageAvailability
 import com.kert0n.medapp.feature.course.CourseClosing
 import com.kert0n.medapp.domain.intake.CourseIntake
 import com.kert0n.medapp.domain.intake.IntakeProjection
 import com.kert0n.medapp.domain.intake.IntakeRejected
 import com.kert0n.medapp.domain.intake.IntakeStatus
-import com.kert0n.medapp.domain.medkit.MedKit
 import com.kert0n.medapp.domain.value.Dose
 import com.kert0n.medapp.domain.value.Quantity
 import com.kert0n.medapp.queue.intake.IntakeAccounting
@@ -79,25 +79,35 @@ class IntakeConfirmation @Inject constructor(
         val finished = completion.reached
 
         // Выделение пачки после приёма и бронь, которая уезжает вместе с расходом (PLAN D5, E2).
+        // Местную коробку расход опустошает здесь же, и кончившаяся коробка источником не бывает:
+        // курс теряет её тем же решением, что записывает приём (D3). У общей истина — сервер.
+        val spendsLocally = !pkg.medKit.answersToServer
+        val emptied = spendsLocally && pkg.consume(amount) is PackageAfter.Ended
         val allocated = course.sources.firstOrNull { it.pkg == pkg.ref }?.allocatedDoses
-        val reallocation = if (allocated == null || finished) null else {
-            val availableAfter = PackageAvailability(pkg, effective = pkg.quantity).availableToMe.minusOrZero(amount.quantity)
-            val doses = course.dosesAfterIntake(pkg.ref, amount, availableAfter)
-            if (doses == allocated) null else CourseReallocation(course.allocate(pkg.ref, doses, now), course.revision)
+        val reallocation = when {
+            allocated == null || finished -> null
+            // Кончившуюся коробку курс теряет её же концом — одним переходом внутри записи приёма
+            // (PLAN D3, D5). Второй раз отвязывать нечего, и считать по ней обеспечение не из чего.
+            emptied -> null
+            else -> {
+                val availableAfter = PackageAvailability(pkg, effective = pkg.quantity).availableToMe.minusOrZero(amount.quantity)
+                val doses = course.dosesAfterIntake(pkg.ref, amount, availableAfter)
+                if (doses == allocated) null else CourseReallocation(course.allocate(pkg.ref, doses, now), course.revision)
+            }
         }
         val claimAfter = when {
             allocated == null -> null
-            finished -> Quantity.zero(amount.unit)
+            finished || emptied -> Quantity.zero(amount.unit)
             else -> (reallocation?.course ?: course).allocatedOf(pkg.ref)
         }
 
         val consume = QueuedCommand(Uuid.random(), PackageSyncCommand.Consume(pkg.id, amount, intake.id, claimAfter))
         val release = QueuedCommand(Uuid.random(), PackageSyncCommand.ReleaseClaim(pkg.id), dependsOn = setOf(consume.id))
             .takeIf { claimAfter?.isZero == true }
-        val sync = if (pkg.medKit.publication == MedKit.Publication.PUBLISHED) {
-            IntakeSyncState(intake.id, IntakeAccounting.PENDING, consume.id)
-        } else {
+        val sync = if (spendsLocally) {
             IntakeSyncState(intake.id, IntakeAccounting.LOCAL_APPLIED)
+        } else {
+            IntakeSyncState(intake.id, IntakeAccounting.PENDING, consume.id)
         }
         val outcome = IntakeOutcome(confirmed, setOf(IntakeStatus.PLANNED, IntakeStatus.MISSED), sync, reallocation)
         val recorded = queue.change(pkg.medKit, listOfNotNull(consume, release), now) { intakes.record(outcome) }

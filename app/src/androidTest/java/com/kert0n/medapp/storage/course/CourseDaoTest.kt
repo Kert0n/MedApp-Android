@@ -8,6 +8,7 @@ import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.course
 import com.kert0n.medapp.fixture.courseRecord
 import com.kert0n.medapp.fixture.inMemoryDatabase
+import com.kert0n.medapp.fixture.save
 import com.kert0n.medapp.fixture.pack
 import com.kert0n.medapp.fixture.rejectedByDatabase
 import com.kert0n.medapp.fixture.schedule
@@ -43,7 +44,7 @@ class CourseDaoTest {
         database = inMemoryDatabase()
         for (id in listOf(PACK, OTHER_PACK)) {
             val pkg = pack(id = id)
-            database.packages().save(pkg.toPackageStorageEntity(), pkg.toDetailsStorageEntity())
+            database.packages().save(pkg)
         }
     }
 
@@ -74,6 +75,28 @@ class CourseDaoTest {
         val restored = requireNotNull(courses.findPlan(COURSE)).toPlan(VOCABULARY)
         assertEquals(listOf(PACK, OTHER_PACK), restored.sources.map { it.pkg.id })
         assertEquals(plan.sources, restored.sources)
+    }
+
+    /**
+     * Пачку выбросили: курс теряет её как источник, но сам остаётся — лечение назначено человеку,
+     * а не коробке (PLAN D5, D3). Снимает источник доменный переход, и редакция уходит вперёд:
+     * тот, кто читал курс до этого, узнает, что состав уже другой.
+     */
+    @Test
+    fun aReleasedSourceLeavesTheCourseAndMovesItsRevision() = runTest {
+        val plan = activeCourse(sources = listOf(source(PACK, 5), source(OTHER_PACK, 4)))
+        courses.saveCourse(
+            plan.toStorageEntity(),
+            plan.schedule.toTimeStorageEntities(COURSE),
+            plan.medicine.toSourceStorageEntities(COURSE)
+        )
+
+        courses.releaseSource(pack(id = PACK).ref, VOCABULARY, LATER)
+        assertEquals(1, database.packages().delete(PACK))
+
+        val left = requireNotNull(courses.findPlan(COURSE)).toPlan(VOCABULARY)
+        assertEquals(listOf(OTHER_PACK), left.sources.map { it.pkg.id })
+        assertEquals(plan.revision.next(), left.revision)
     }
 
     /** Уникальность позиции ловит сбой перетаскивания: два источника на одном месте невозможны. */
@@ -217,9 +240,13 @@ class CourseDaoTest {
         assertEquals(corrected.revision, restored.revision)
     }
 
-    /** Источник не переживает удаления пачки молча: `RESTRICT` не даёт остаться без пачки. */
+    /**
+     * Состав курса не меняется мимо самого курса: пока пачка в источниках, строки её не убрать.
+     * Каскад дал бы верный набор строк при прежней редакции — курс не узнал бы, что изменился
+     * (PLAN D5, F2).
+     */
     @Test
-    fun packageWithASourceCannotBeDeleted() = runTest {
+    fun aPackageHeldAsASourceIsNotRemovedSilently() = runTest {
         val plan = activeCourse(sources = listOf(source(PACK, 5)))
         courses.saveCourse(
             plan.toStorageEntity(),
@@ -227,7 +254,9 @@ class CourseDaoTest {
             plan.medicine.toSourceStorageEntities(COURSE)
         )
 
-        val refusal = rejectedByDatabase { database.packages().delete(PACK) }
+        val refusal = runCatching { database.packages().delete(PACK) }.exceptionOrNull()
+
         assertTrue("$refusal", refusal is SQLiteConstraintException)
+        assertEquals(listOf(PACK), courses.sourcePackagesOf(COURSE))
     }
 }

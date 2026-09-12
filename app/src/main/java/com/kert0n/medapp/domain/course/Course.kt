@@ -1,6 +1,7 @@
 package com.kert0n.medapp.domain.course
 
 import com.kert0n.medapp.domain.pack.Availability
+import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.pack.PackageRef
 import com.kert0n.medapp.domain.value.DosageForm
 import com.kert0n.medapp.domain.value.Dose
@@ -131,9 +132,10 @@ class Course(
 
     /**
      * Пачки действующего курса менять можно: это не изменение дозы или календаря (PLAN D5).
-     * Годится ли пачка, решает назначение: та же форма, та же единица.
+     * Годится ли пачка, решает назначение: та же форма, та же единица. Подключается живая
+     * коробка — та, что у человека на руках в этой транзакции.
      */
-    fun attach(pkg: PackageRef, doses: Doses, at: Instant): Result<Course> =
+    fun attach(pkg: Package, doses: Doses, at: Instant): Result<Course> =
         medicine.attach(pkg, doses, dose, form)
             .map { changed(medicine = it, revision = revision.next(), updatedAt = at) }
 

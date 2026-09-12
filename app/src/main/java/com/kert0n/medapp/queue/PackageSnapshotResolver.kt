@@ -9,10 +9,15 @@ import javax.inject.Inject
 
 /**
  * Разрешает всё, что снимок пачки называет, — единицу, форму, аптечку — и собирает его в домен
- * одним исходом. Вопрос у всех ссылок один: «в снимке названо то, чего локально ещё нет», и
- * ответ на него один — ждать с названной причиной, не закрывая операцию (PLAN E3, E4). Словарь
- * дочитывается с сервера; аптечку дочитать нечем до полного снимка; снимок, нарушающий инварианты
- * домена, — данные сервера, а не ошибка программиста, и из прохода исключением не выходит.
+ * одним исходом (PLAN E3, E4). Незнакомое бывает двух родов, и ответы на них разные:
+ *
+ * - **словарь** ещё не дочитан — единица или форма появятся, стоит прочитать словарь: ждать с
+ *   названной причиной, не закрывая операцию;
+ * - **полка** незнакома — коробка ушла туда, где нас нет: сосед переставил её в свою полку. Ждать
+ *   нечего, это окончательный ответ — [Resolution.Elsewhere], и для нас это утрата доступа (E6).
+ *
+ * Снимок, нарушающий инварианты домена, — данные сервера, а не ошибка программиста, и из прохода
+ * исключением не выходит.
  *
  * Хранение получает только [Resolution.Resolved] и ничего не разрешает само.
  */
@@ -23,7 +28,7 @@ class PackageSnapshotResolver @Inject constructor(
 
     suspend fun resolve(snapshot: PackageSnapshotNetworkDTO, at: Instant): Resolution {
         val medKit = storage.medKit(snapshot.pack.medKitId)
-            ?: return Resolution.Unresolved("аптечка ${snapshot.pack.medKitId} неизвестна", stop = false)
+            ?: return Resolution.Elsewhere(snapshot.pack.medKitId)
         val resolution = try {
             vocabulary.resolve { snapshot.toDomain(it, medKit, addedAt = at, observedAt = at) }
         } catch (invalid: IllegalArgumentException) {
@@ -40,6 +45,9 @@ class PackageSnapshotResolver @Inject constructor(
     sealed interface Resolution {
 
         data class Resolved(val snapshot: PackageSnapshot) : Resolution
+
+        /** Коробка на полке [medKitId], которой у нас нет: туда, где нас нет. Окончательно. */
+        data class Elsewhere(val medKitId: kotlin.uuid.Uuid) : Resolution
 
         /** [stop] — словарь не дочитался из-за связи: дальше в этом проходе идти незачем. */
         data class Unresolved(val reason: String, val stop: Boolean) : Resolution

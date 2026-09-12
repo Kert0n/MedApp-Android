@@ -1,0 +1,201 @@
+package com.kert0n.medapp.storage
+
+import com.kert0n.medapp.queue.medkit.PublicationStorage
+import com.kert0n.medapp.storage.course.CourseStorageRepository
+import com.kert0n.medapp.storage.intake.IntakeStorageRepository
+import com.kert0n.medapp.storage.medkit.MedKitStorageRepository
+import com.kert0n.medapp.storage.pack.PackageStorageRepository
+import com.kert0n.medapp.storage.stock.StockMovementStorageRepository
+import java.lang.reflect.Method
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * Хранению передаётся **действие**, а не прочитанный экземпляр (PLAN F5). Правило проект знает
+ * давно — `CourseDraft.Activation`, `CourseCompletion.Closing`, `IntakeOutcome`,
+ * `PackageAdjustment`, — и KDoc `IntakeOutcome` формулирует его прямо: «Готового нового состояния
+ * пачки сюда не передают: посчитанное по прочитанному когда-то раньше, оно легло бы поверх
+ * нынешнего».
+ *
+ * Нарушали его дважды, и оба раза молча: `discard(packageId)` брал идентификатор и ничего больше,
+ * поэтому спутники конца коробки собирались вызывающими вразнобой, а `published(medKit)` писал
+ * аптечку, прочитанную **до сети**, и терял сделанное человеком, пока сеть шла. Ни то ни другое
+ * не видно в ревью без такой проверки — как не видно каскада, поставленного «на всякий случай»
+ * (`ForeignKeysTest`).
+ *
+ * Поэтому каждый метод порта хранения назван здесь своей формой **и подписью**. Одного имени мало:
+ * метод с прежним именем, но принимающий теперь прочитанную сущность вместо действия, или его
+ * перегрузка рядом прошли бы проверку по имени незамеченными (CodeRabbit на #17). Незнакомый метод
+ * или изменившаяся подпись — падение: договор пополняется явно, а не молчаливым умолчанием.
+ */
+class WriteContractTest {
+
+    /** Чем метод берёт то, что пишет, — и почему этого достаточно. */
+    private enum class Shape {
+
+        /** Спрашивает, не меняет. */
+        READ,
+
+        /** Значение-действие: всё, чего порознь не бывает, приходит одним типом. */
+        ACTION,
+
+        /** Заведение: спорить не с чем, вещи ещё не было. */
+        CREATION,
+
+        /** Сущность вместе с редакцией, из которой её правили: устаревшее не запишется. */
+        GUARDED,
+
+        /** Идентификатор и названные поля: прочитанный экземпляр не передаётся вовсе. */
+        NAMED_FIELDS,
+
+        /** Пришедшее с провода: истина по нему — сервер, и спорить с ним нечем. */
+        SNAPSHOT,
+
+        /**
+         * Прочитанный экземпляр без токена редакции — **долг**, а не форма. Каждый такой метод
+         * назван ниже вместе с причиной и сроком; новый добавить молча нельзя.
+         */
+        UNGUARDED
+    }
+
+    /** Форма метода и его подпись — `(параметры): возврат` простыми именами типов. */
+    private data class Clause(val shape: Shape, val signature: String)
+
+    private infix fun Shape.by(signature: String) = Clause(this, signature)
+
+    private val contract: Map<String, Clause> = mapOf(
+        // Упаковка
+        "PackageStorageRepository.observe" to (Shape.READ by "(Uuid): Flow<PackageProjection>"),
+        "PackageStorageRepository.find" to (Shape.READ by "(Uuid): Package"),
+        "PackageStorageRepository.list" to (Shape.READ by "(PackageQuery, LocalDate): Flow<List<PackageProjection>>"),
+        "PackageStorageRepository.contentsOf" to (Shape.READ by "(Uuid): List<Package>"),
+        "PackageStorageRepository.observeSyncState" to (Shape.READ by "(Uuid): Flow<PackageSyncState>"),
+        "PackageStorageRepository.add" to (Shape.CREATION by "(Package, PackageSyncState): Unit"),
+        "PackageStorageRepository.describe" to (Shape.NAMED_FIELDS by "(Uuid, PackageFacts): Boolean"),
+        "PackageStorageRepository.saveClaims" to (Shape.NAMED_FIELDS by "(Uuid, Claims): Unit"),
+        "PackageStorageRepository.mark" to (Shape.NAMED_FIELDS by "(Uuid, PackageStatus): Boolean"),
+        "PackageStorageRepository.end" to (Shape.ACTION by "(PackageEnding, Instant): Boolean"),
+        "PackageStorageRepository.adjust" to (Shape.ACTION by "(PackageAdjustment, CourseReallocation, Instant): Boolean"),
+        "PackageStorageRepository.applySnapshot" to (Shape.SNAPSHOT by "(PackageSnapshot, Instant): SnapshotApplied"),
+        // Лечение
+        "CourseStorageRepository.observeDrafts" to (Shape.READ by "(): Flow<List<CourseDraftProjection>>"),
+        "CourseStorageRepository.observePlan" to (Shape.READ by "(Uuid): Flow<CourseProjection>"),
+        "CourseStorageRepository.observeRecords" to (Shape.READ by "(): Flow<List<CourseRecordProjection>>"),
+        "CourseStorageRepository.observeRecord" to (Shape.READ by "(Uuid): Flow<CourseRecordProjection>"),
+        "CourseStorageRepository.findDraft" to (Shape.READ by "(Uuid): CourseDraft"),
+        "CourseStorageRepository.findPlan" to (Shape.READ by "(Uuid): Course"),
+        "CourseStorageRepository.findRecord" to (Shape.READ by "(Uuid): CourseRecord"),
+        "CourseStorageRepository.courseHolding" to (Shape.READ by "(Uuid): Uuid"),
+        "CourseStorageRepository.rename" to (Shape.NAMED_FIELDS by "(Uuid, String, String): Boolean"),
+        // `long` — редакция: `value class Revision` на JVM разворачивается в своё число.
+        "CourseStorageRepository.setTotalDoses" to (Shape.GUARDED by "(Course, long): Boolean"),
+        "CourseStorageRepository.updateSources" to (Shape.GUARDED by "(Course, long): Boolean"),
+        "CourseStorageRepository.reallocate" to (Shape.ACTION by "(CourseReallocation): Boolean"),
+        "CourseStorageRepository.activate" to (Shape.ACTION by "(CourseDraft\$Activation, List<CourseIntake>): Unit"),
+        "CourseStorageRepository.close" to (Shape.ACTION by "(CourseCompletion\$Closing): Unit"),
+        // Черновик — сам себе правка: человек держит его на экране целиком, и записывается он
+        // целиком же, а начатое лечение поверх не затирается (проверка живёт в реализации).
+        "CourseStorageRepository.saveDraft" to (Shape.UNGUARDED by "(CourseDraft): Boolean"),
+        // Аптечка
+        "MedKitStorageRepository.observeAll" to (Shape.READ by "(): Flow<List<MedKitProjection>>"),
+        "MedKitStorageRepository.observe" to (Shape.READ by "(Uuid): Flow<MedKitProjection>"),
+        "MedKitStorageRepository.observeSyncedAt" to (Shape.READ by "(Uuid): Flow<Instant>"),
+        "MedKitStorageRepository.find" to (Shape.READ by "(Uuid): MedKit"),
+        "MedKitStorageRepository.delete" to (Shape.NAMED_FIELDS by "(Uuid): Boolean"),
+        "MedKitStorageRepository.mark" to (Shape.NAMED_FIELDS by "(Uuid, MedKitStatus): Boolean"),
+        "MedKitStorageRepository.applyServerParticipants" to (Shape.NAMED_FIELDS by "(Uuid, long, Instant): Unit"),
+        // Долг: заведение и правка местных сведений одним методом. Пока у него нет ни одного
+        // вызывающего в продукте; экран правки придёт в PR 7 и должен принести названные поля,
+        // как `rename` у записи эпизода, — иначе он затрёт то, что сделал сосед.
+        "MedKitStorageRepository.save" to (Shape.UNGUARDED by "(MedKit, Instant): Unit"),
+        // Публикация
+        "PublicationStorage.medKit" to (Shape.READ by "(Uuid): MedKit"),
+        "PublicationStorage.contentsOf" to (Shape.READ by "(Uuid): List<Package>"),
+        "PublicationStorage.publish" to (Shape.SNAPSHOT by "(Uuid, List<PackageSnapshot>, Instant): PublicationStorage\$Switch"),
+        // Приём
+        "IntakeStorageRepository.observeOfCourse" to (Shape.READ by "(Uuid): Flow<List<IntakeProjection>>"),
+        "IntakeStorageRepository.ofCourse" to (Shape.READ by "(Uuid): List<? extends Intake>"),
+        "IntakeStorageRepository.find" to (Shape.READ by "(Uuid): Intake"),
+        "IntakeStorageRepository.syncStateOf" to (Shape.READ by "(Uuid): IntakeSyncState"),
+        "IntakeStorageRepository.plannedBefore" to (Shape.READ by "(Instant): List<CourseIntake>"),
+        "IntakeStorageRepository.save" to (Shape.ACTION by "(RecordedIntake): Unit"),
+        "IntakeStorageRepository.record" to (Shape.ACTION by "(IntakeOutcome): Boolean"),
+        "IntakeStorageRepository.materialise" to (Shape.CREATION by "(List<CourseIntake>): Integer"),
+        "IntakeStorageRepository.prunePlanned" to (Shape.NAMED_FIELDS by "(Uuid, Set<ScheduledOccurrence>): Integer"),
+        // История остатка — только дописывается.
+        "StockMovementStorageRepository.observeOfPackage" to (Shape.READ by "(Uuid): Flow<List<StockMovement>>"),
+        "StockMovementStorageRepository.ofPackage" to (Shape.READ by "(Uuid): List<? extends StockMovement>"),
+        "StockMovementStorageRepository.observedBetween" to (Shape.READ by "(Instant, Instant): List<? extends StockMovement>"),
+        "StockMovementStorageRepository.record" to (Shape.CREATION by "(StockMovement): Unit")
+    )
+
+    /**
+     * Долг назван поимённо: список закрыт, и новый метод, принимающий прочитанный экземпляр без
+     * редакции, в него молча не попадёт — его придётся приписать сюда руками и объяснить.
+     */
+    private val known: Set<String> = setOf(
+        "CourseStorageRepository.saveDraft",
+        "MedKitStorageRepository.save"
+    )
+
+    private val ports = listOf(
+        PackageStorageRepository::class.java,
+        CourseStorageRepository::class.java,
+        MedKitStorageRepository::class.java,
+        IntakeStorageRepository::class.java,
+        StockMovementStorageRepository::class.java,
+        PublicationStorage::class.java
+    )
+
+    /**
+     * Методы портов по имени — списком подписей: перегрузка даёт под одним именем две строки, и
+     * договор с одной подписью её не пропустит.
+     */
+    private fun methods(): Map<String, List<String>> = ports.flatMap { port ->
+        port.declaredMethods
+            .filterNot { it.isSynthetic || it.isBridge }
+            // Kotlin дописывает к имени хеш, когда аргумент — `value class` (`Revision`):
+            // договор называет метод так, как он записан в исходнике.
+            .map { "${port.simpleName}.${it.name.substringBefore('-')}" to signatureOf(it) }
+    }.groupBy({ it.first }, { it.second })
+
+    /**
+     * `(параметры): возврат` простыми именами. У `suspend` на JVM последний параметр —
+     * `Continuation<? super T>`, а возврат — `Object`: настоящий возврат читается из продолжения.
+     */
+    private fun signatureOf(method: Method): String {
+        val params = method.genericParameterTypes.map { it.typeName }
+        val suspending = params.lastOrNull()?.startsWith("kotlin.coroutines.Continuation") == true
+        val arguments = if (suspending) params.dropLast(1) else params
+        val returns = if (suspending) params.last().substringAfter("? super ").removeSuffix(">") else method.genericReturnType.typeName
+        return "(${arguments.joinToString(", ") { simple(it) }}): ${simple(returns)}"
+    }
+
+    private fun simple(type: String): String = type.replace(Regex("""\b(?:[a-z_]\w*\.)+(?=[A-Za-z_])"""), "")
+
+    @Test
+    fun everyPortMethodNamesItsShapeAndSignature() {
+        val found = methods()
+        assertTrue("у портов не нашлось ни одного метода — читается не то", found.isNotEmpty())
+        assertEquals("методы без договора: ${found.keys - contract.keys}", emptySet<String>(), found.keys - contract.keys)
+        assertEquals("договор называет то, чего нет: ${contract.keys - found.keys}", emptySet<String>(), contract.keys - found.keys)
+        val changed = found.filter { (name, signatures) -> signatures != listOf(contract.getValue(name).signature) }
+        assertEquals(
+            "подпись разошлась с договором (или появилась перегрузка) — форму нужно назвать заново: " +
+                changed.map { (name, signatures) -> "$name: договор ${contract.getValue(name).signature}, в коде $signatures" },
+            emptyMap<String, List<String>>(),
+            changed
+        )
+    }
+
+    @Test
+    fun onlyTheNamedDebtTakesAReadEntityWithoutARevision() {
+        val unguarded = contract.filterValues { it.shape == Shape.UNGUARDED }.keys
+        assertEquals(
+            "прочитанный экземпляр без редакции принимает метод, которого нет в списке долга",
+            known,
+            unguarded
+        )
+    }
+}

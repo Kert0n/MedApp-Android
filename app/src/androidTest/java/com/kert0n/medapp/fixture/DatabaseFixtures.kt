@@ -4,6 +4,9 @@ import androidx.room.Room
 import androidx.test.platform.app.InstrumentationRegistry
 import com.kert0n.medapp.storage.database.MedAppDatabase
 import com.kert0n.medapp.storage.medkit.toStorageEntity as toMedKitStorageEntity
+import com.kert0n.medapp.storage.pack.toDetailsStorageEntity as toPackageDetailsStorageEntity
+import com.kert0n.medapp.storage.pack.toStorageEntity as toPackageStorageEntity
+import com.kert0n.medapp.storage.pack.toStorageEntity as toRecordStorageEntity
 import com.kert0n.medapp.storage.value.toStorageEntity
 import kotlinx.coroutines.runBlocking
 
@@ -75,11 +78,11 @@ fun MedAppDatabase.courseRepository() = com.kert0n.medapp.storage.course.CourseR
 )
 
 fun MedAppDatabase.intakeRepository() = com.kert0n.medapp.storage.intake.IntakeRoomRepository(
-    this, intakes(), packages(), courses(), vocabulary()
+    this, intakes(), packages(), courses(), stockMovements(), vocabulary()
 )
 
 fun MedAppDatabase.medKitRepository() = com.kert0n.medapp.storage.medkit.MedKitRoomRepository(
-    this, medKits(), packages()
+    this, medKits(), packages(), vocabulary()
 )
 
 fun MedAppDatabase.queueRepository() = com.kert0n.medapp.storage.server.SyncOperationRoomRepository(
@@ -91,5 +94,44 @@ fun MedAppDatabase.transactions() = com.kert0n.medapp.storage.database.RoomTrans
 
 /** Порт очереди для работника — транзакции взятия и применения исхода. */
 fun MedAppDatabase.queueStorage() = com.kert0n.medapp.storage.server.QueueRoomStorage(
-    this, syncOperations(), packages(), intakes(), medKits(), vocabulary()
+    this, syncOperations(), packages(), intakes(), medKits(), courses(), stockMovements(), vocabulary()
 )
+
+/**
+ * Пачка целиком в базу: запись о коробке, живая строка и сведения — как их пишет репозиторий.
+ * Тестам DAO не нужно повторять сборку трёх строк, чтобы положить одну пачку.
+ */
+suspend fun com.kert0n.medapp.storage.pack.PackageDao.save(
+    pkg: com.kert0n.medapp.domain.pack.Package,
+    sync: com.kert0n.medapp.network.pack.PackageSyncState = com.kert0n.medapp.network.pack.PackageSyncState(pkg.id)
+) = save(
+    pkg.record.toRecordStorageEntity(),
+    pkg.toPackageStorageEntity(sync),
+    pkg.toPackageDetailsStorageEntity()
+)
+
+/** Служба очереди поверх той же базы: пара «изменение и команда» одной транзакцией. */
+fun MedAppDatabase.queueService() = com.kert0n.medapp.queue.QueueService(transactions(), queueStorage())
+
+/**
+ * Сценарии над одной базой с остановленными часами [now]: удаление и перенос коробки, уборка
+ * полки. Собираются вместе, потому что аптечка зовёт шаги коробки, и граф один.
+ */
+class Scenarios(database: MedAppDatabase, now: java.time.Instant) {
+    private val clock = java.time.Clock.fixed(now, java.time.ZoneOffset.UTC)
+    private val packages = database.packageRepository()
+    private val medKits = database.medKitRepository()
+    private val courses = database.courseRepository()
+    private val queue = database.queueService()
+    private val transactions = database.transactions()
+
+    val packageRemoval = com.kert0n.medapp.feature.packages.PackageRemoval(
+        packages, queue, transactions, clock
+    )
+    val packageRelocation = com.kert0n.medapp.feature.packages.PackageRelocation(
+        packages, medKits, courses, queue, transactions, clock
+    )
+    val medKitRemoval = com.kert0n.medapp.feature.medkits.MedKitRemoval(
+        medKits, packages, packageRemoval, packageRelocation, queue, transactions, clock
+    )
+}

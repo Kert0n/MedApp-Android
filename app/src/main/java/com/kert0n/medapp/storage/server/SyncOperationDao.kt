@@ -18,6 +18,10 @@ interface SyncOperationDao {
      * Номер выдаёт база: он монотонен и уникален, а `UNIQUE` ловит гонку двух постановок.
      * Команда своего номера не знает — он принадлежит очереди, а не тому, что предстоит
      * доставить (PLAN E2).
+     *
+     * [medKitId] — полка, **на которой команда действует**: там лежит коробка, когда её трогают, или
+     * это сама полка. Её называет тот, кто ставит команду, — ему это известно, а команде не всегда.
+     * По ней очередь держит порядок полки ([ready]).
      */
     @Transaction
     suspend fun enqueue(
@@ -25,7 +29,8 @@ interface SyncOperationDao {
         command: SyncCommand,
         createdAt: Instant,
         groupId: Uuid? = null,
-        dependsOn: Set<Uuid> = emptySet()
+        dependsOn: Set<Uuid> = emptySet(),
+        medKitId: Uuid? = SyncCommandStorageConverter.medKitIdOf(command)
     ): SyncOperation {
         val operation = SyncOperation(
             id = id,
@@ -36,7 +41,7 @@ interface SyncOperationDao {
             groupId = groupId,
             dependsOn = dependsOn
         )
-        insert(operation.toStorageEntity())
+        insert(operation.toStorageEntity(medKitId))
         insertDependencies(
             dependsOn.map { SyncOperationDependencyStorageEntity(id, it) }
         )
@@ -84,6 +89,16 @@ interface SyncOperationDao {
     )
     suspend fun unclosedOfPackages(packageIds: List<Uuid>): List<SyncOperationStorageRow>
 
+    /**
+     * Сколько у полки незакрытых **своих** команд — о ней самой, а не о её коробках: пометка полки
+     * держится на них, а коробки следят за собой сами (PLAN E1).
+     */
+    @Query(
+        "SELECT COUNT(*) FROM sync_operations WHERE med_kit_id = :medKitId AND package_id IS NULL " +
+            "AND status NOT IN ('APPLIED', 'REFUSED', 'ACCESS_LOST')"
+    )
+    suspend fun unclosedOwnOfMedKit(medKitId: Uuid): Int
+
     @Transaction
     @Query("SELECT * FROM sync_operations WHERE status = :status ORDER BY sequence")
     suspend fun withStatus(status: SyncOperationStatus): List<SyncOperationStorageRow>
@@ -92,6 +107,10 @@ interface SyncOperationDao {
      * Готовые к работе: ожидающие, отправлявшиеся в момент смерти процесса и получившие ответ,
      * который ещё не применён, — у которых каждая зависимость **применена** — зависимость значит «нужен эффект», и закрытая отказом её не
      * даёт. Порядок — номер очереди; кто ещё не готов, ждёт своей зависимости.
+     *
+     * **Внутри полки — строго по номеру** (PLAN E3): операция ждёт, пока не закрыта более ранняя по
+     * той же коробке **или по той же полке**. Полка ждёт расход, поставленный на её коробку раньше, а
+     * расход, поставленный позже, ждёт полку — и ответ одной не подвешивает другую.
      */
     @Transaction
     @Query(
@@ -101,7 +120,8 @@ interface SyncOperationDao {
             "  SELECT 1 FROM sync_operation_dependencies d JOIN sync_operations p ON p.id = d.depends_on_id " +
             "  WHERE d.operation_id = o.id AND p.status != 'APPLIED'" +
             ") AND NOT EXISTS (" +
-            "  SELECT 1 FROM sync_operations e WHERE e.package_id = o.package_id AND e.sequence < o.sequence " +
+            "  SELECT 1 FROM sync_operations e WHERE (e.package_id = o.package_id OR e.med_kit_id = o.med_kit_id) " +
+            "  AND e.sequence < o.sequence " +
             "  AND e.status IN ('PENDING', 'SENDING', 'ANSWERED')" +
             ") ORDER BY sequence"
     )

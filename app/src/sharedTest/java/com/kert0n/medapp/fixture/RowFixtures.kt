@@ -27,6 +27,7 @@ import com.kert0n.medapp.storage.stock.toStorageEntity as toMovementStorageEntit
 fun Package.toStorageRow(sync: PackageSyncState = PackageSyncState(id)): PackageStorageRow =
     PackageStorageRow(
         pack = toStorageEntity(sync),
+        record = record.toStorageEntity(),
         details = toDetailsStorageEntity(),
         claims = claims?.toClaimsStorageEntity(id),
         medKit = medKit.row()
@@ -35,18 +36,14 @@ fun Package.toStorageRow(sync: PackageSyncState = PackageSyncState(id)): Package
 /** Строка аптечки по ссылке: имя и место у ссылки не спрашивают, их даёт фикстура. */
 fun MedKitRef.row(): MedKitStorageEntity = medKit(id = id, publication = publication).toMedKitStorageEntity()
 
-/** Строка ссылки: серверная часть пачки с тем, что ссылка о ней знает; остаток — фикстурный. */
+/** Строка ссылки: запись о коробке с тем, что ссылка о ней знает; момент появления — фикстурный. */
 fun PackageRef.toStorageRow(): PackageRefStorageRow = PackageRefStorageRow(
-    pack = pack(
+    record = pack(
         id = id,
-        medKit = medKit,
         name = name,
         quantity = com.kert0n.medapp.domain.value.Quantity(java.math.BigDecimal("20"), unit),
-        form = form,
-        lifecycle = lifecycle,
-        access = access
-    ).toStorageEntity(PackageSyncState(id)),
-    medKit = medKit.row()
+        form = form
+    ).record.toStorageEntity()
 )
 
 fun Intake.toStorageRow(sync: IntakeSyncState = IntakeSyncState(id)): IntakeStorageRow =
@@ -56,19 +53,5 @@ fun Intake.toStorageRow(sync: IntakeSyncState = IntakeSyncState(id)): IntakeStor
         taken = taken?.pkg?.toStorageRow()
     )
 
-fun StockMovement.toStorageRow(): StockMovementStorageRow {
-    return StockMovementStorageRow(
-        movement = toMovementStorageEntity(),
-        pack = pkg.toStorageRow(),
-        medKit = when (this) {
-            is StockMovement.Receipt -> medKit.row()
-            is StockMovement.Recount -> medKit.row()
-            is StockMovement.Disposal -> medKit.row()
-            is StockMovement.RemoteChange -> medKit.row()
-            is StockMovement.AccessLoss -> medKit.row()
-            is StockMovement.Transfer -> null
-        },
-        source = (this as? StockMovement.Transfer)?.source?.row(),
-        target = (this as? StockMovement.Transfer)?.target?.row()
-    )
-}
+fun StockMovement.toStorageRow(): StockMovementStorageRow =
+    StockMovementStorageRow(movement = toMovementStorageEntity(), pack = pkg.toStorageRow())

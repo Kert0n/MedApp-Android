@@ -4,7 +4,6 @@ import com.kert0n.medapp.domain.course.CourseDraft
 import com.kert0n.medapp.domain.course.CourseRecord
 import com.kert0n.medapp.domain.intake.IntakeStatus
 import com.kert0n.medapp.domain.intake.UnplannedIntake
-import com.kert0n.medapp.domain.pack.Package
 import com.kert0n.medapp.domain.stock.StockMovement
 import com.kert0n.medapp.fixture.COURSE
 import com.kert0n.medapp.fixture.HOME_KIT
@@ -17,6 +16,7 @@ import com.kert0n.medapp.fixture.TABLET_FORM
 import com.kert0n.medapp.fixture.SHARED_KIT
 import com.kert0n.medapp.fixture.activeCourse
 import com.kert0n.medapp.fixture.course
+import com.kert0n.medapp.fixture.closing
 import com.kert0n.medapp.fixture.courseRecord
 import com.kert0n.medapp.fixture.dose
 import com.kert0n.medapp.fixture.inMemoryDatabase
@@ -52,6 +52,7 @@ import kotlin.uuid.Uuid
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import com.kert0n.medapp.domain.course.Revision
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -148,7 +149,7 @@ class TransactionBoundariesTest {
         val ibuprofen = pack(id = OTHER_PACK, quantity = tablets("10"), form = TABLET_FORM)
         packages.add(ibuprofen)
 
-        val extended = activation.course.attach(ibuprofen.ref, 3.doses, LATER).getOrThrow()
+        val extended = activation.course.attach(ibuprofen, 3.doses, LATER).getOrThrow()
         assertTrue(courses.updateSources(extended, expected = activation.course.revision))
         assertEquals(COURSE, courses.courseHolding(PACK))
         assertEquals(COURSE, courses.courseHolding(OTHER_PACK))
@@ -160,6 +161,49 @@ class TransactionBoundariesTest {
         assertEquals(listOf(OTHER_PACK), requireNotNull(courses.findPlan(COURSE)).sources.map { it.pkg.id })
     }
 
+    /**
+     * Курс не воскрешает удалённое: состав, прочитанный до того, как коробку выбросили, называет
+     * коробку, которой нет, — и «писать некуда» вместо исключения ключа (PLAN D3, F5). Так же
+     * отвечает состав из прежней редакции — курс её уже потерял и редакцию поднял.
+     */
+    @Test
+    fun sourcesReadBeforeThePackageWasThrownOutAreNotWrittenBack() = runTest {
+        val activation = draft()
+        courses.activate(activation, planned = listOf(plannedIntake()))
+        val ibuprofen = pack(id = OTHER_PACK, quantity = tablets("10"), form = TABLET_FORM)
+        packages.add(ibuprofen)
+        val extended = activation.course.attach(ibuprofen, 3.doses, LATER).getOrThrow()
+
+        assertTrue(packages.end(ibuprofen.thrownOut(Uuid.random(), LATER), LATER))
+        assertFalse(courses.updateSources(extended, expected = activation.course.revision))
+        assertEquals(listOf(PACK), requireNotNull(courses.findPlan(COURSE)).sources.map { it.pkg.id })
+
+        // Коробку выбросили, и курс потерял её доменным переходом: редакция ушла вперёд.
+        val current = requireNotNull(courses.findPlan(COURSE))
+        val stale = current.detach(paracetamol.ref, LATER)
+        assertFalse(courses.updateSources(stale, expected = Revision(current.revision.number - 1)))
+        assertEquals(current.revision, requireNotNull(courses.findPlan(COURSE)).revision)
+    }
+
+    /**
+     * Черновик теряет коробку так же, как начатое лечение, — доменным переходом. Пачку он не
+     * занимает, назначения у него нет, и по назначениям его не найти; каскад вырезал бы источник
+     * молча, и человек, вернувшись к недоделанному курсу, не нашёл бы пачки и не узнал бы, куда
+     * она делась (PLAN D5, F2).
+     */
+    @Test
+    fun aDraftLosesTheBoxItHeldWhenTheBoxEnds() = runTest {
+        val ibuprofen = pack(id = OTHER_PACK, quantity = tablets("10"), form = TABLET_FORM)
+        packages.add(ibuprofen)
+        assertTrue(courses.saveDraft(course(dose = dose("2"), form = TABLET_FORM, sources = listOf(source(ibuprofen, 3)))))
+        assertEquals(listOf(OTHER_PACK), database.courses().sourcePackagesOf(COURSE))
+
+        assertTrue(packages.end(ibuprofen.thrownOut(Uuid.random(), LATER), LATER))
+
+        assertEquals(emptyList<Uuid>(), database.courses().sourcePackagesOf(COURSE))
+        assertNotNull(courses.findDraft(COURSE))
+    }
+
     /** Пересчёт обеспечения состав не меняет: иначе назначения пачек разошлись бы с источниками. */
     @Test
     fun reallocationWithAnotherCompositionIsRefused() = runTest {
@@ -167,7 +211,7 @@ class TransactionBoundariesTest {
         courses.activate(activation, planned = listOf(plannedIntake()))
         val ibuprofen = pack(id = OTHER_PACK, quantity = tablets("10"), form = TABLET_FORM)
         packages.add(ibuprofen)
-        val extended = activation.course.attach(ibuprofen.ref, 3.doses, LATER).getOrThrow()
+        val extended = activation.course.attach(ibuprofen, 3.doses, LATER).getOrThrow()
 
         val failure = runCatching {
             courses.reallocate(CourseReallocation(extended, activation.course.revision))
@@ -183,10 +227,7 @@ class TransactionBoundariesTest {
         courses.activate(activation, planned = listOf(plannedIntake()))
 
         val closed = activation.record.close(CourseRecord.Outcome.CANCELLED, LATER)
-        courses.close(
-            record = closed,
-            cancelled = listOf(plannedIntake().cancel(LATER))
-        )
+        courses.close(closing(record = closed, cancelled = listOf(plannedIntake().cancel(LATER))))
 
         assertNull(courses.findPlan(COURSE))
         val record = requireNotNull(courses.findRecord(COURSE))
@@ -292,10 +333,7 @@ class TransactionBoundariesTest {
         courses.activate(activation, planned = listOf(plannedIntake()))
         assertTrue(intakes.record(confirmedOutcome()))
 
-        courses.close(
-            record = activation.record.close(CourseRecord.Outcome.CANCELLED, LATER),
-            cancelled = listOf(plannedIntake().cancel(LATER))
-        )
+        courses.close(closing(record = activation.record.close(CourseRecord.Outcome.CANCELLED, LATER), cancelled = listOf(plannedIntake().cancel(LATER))))
 
         assertEquals(IntakeStatus.TAKEN, requireNotNull(intakes.find(INTAKE)).status)
         assertEquals(
@@ -395,9 +433,7 @@ class TransactionBoundariesTest {
     fun adjustmentDoesNotResurrectAClosedPlan() = runTest {
         val activation = draft()
         courses.activate(activation)
-        courses.close(
-            record = activation.record.close(CourseRecord.Outcome.CANCELLED, LATER)
-        )
+        courses.close(closing(activation.record.close(CourseRecord.Outcome.CANCELLED, LATER)))
 
         packages.adjust(
             PackageAdjustment.Recount(PACK, tablets("17"), movementId),
@@ -432,7 +468,7 @@ class TransactionBoundariesTest {
     fun aDraftDoesNotResurrectAFinishedEpisode() = runTest {
         val activation = draft()
         courses.activate(activation)
-        courses.close(activation.record.close(CourseRecord.Outcome.COMPLETED, LATER))
+        courses.close(closing(activation.record.close(CourseRecord.Outcome.COMPLETED, LATER)))
 
         assertFalse(courses.saveDraft(course(title = "Старый черновик")))
         assertNull(courses.findDraft(COURSE))
@@ -492,7 +528,7 @@ class TransactionBoundariesTest {
 
         val disposal = database.stockMovements().ofPackage(PACK).single().toDomain(VOCABULARY)
         assertEquals(tablets("20"), (disposal as StockMovement.Disposal).amount)
-        assertEquals(Package.Lifecycle.ARCHIVED, requireNotNull(packages.find(PACK)).lifecycle)
+        assertNull(packages.find(PACK))
     }
 
     /**
@@ -503,7 +539,7 @@ class TransactionBoundariesTest {
     fun renamingDoesNotReopenAClosedRecord() = runTest {
         val activation = draft()
         courses.activate(activation)
-        courses.close(activation.record.close(CourseRecord.Outcome.COMPLETED, LATER))
+        courses.close(closing(activation.record.close(CourseRecord.Outcome.COMPLETED, LATER)))
 
         assertTrue(courses.rename(COURSE, "Другое название", note = null))
 
@@ -565,8 +601,9 @@ class TransactionBoundariesTest {
         assertEquals(tablets("15"), requireNotNull(packages.find(PACK)).quantity)
     }
 
+    /** Кончившаяся коробка строки не оставляет, а её след держится за запись и остаётся (D3, D7). */
     @Test
-    fun disposalToZeroArchivesAndKeepsTheTrace() = runTest {
+    fun disposalToZeroEndsThePackAndKeepsTheTrace() = runTest {
         packages.adjust(
             PackageAdjustment.Disposal(
                 PACK,
@@ -577,21 +614,24 @@ class TransactionBoundariesTest {
             at = LATER
         )
 
-        val archived = requireNotNull(packages.find(PACK))
-        assertEquals(Package.Lifecycle.ARCHIVED, archived.lifecycle)
+        assertNull(packages.find(PACK))
         assertEquals(1, database.stockMovements().ofPackage(PACK).size)
     }
 
+    /**
+     * Перенос меняет место и только его: остаток он не трогает, а в истории расхода ему места
+     * нет — где коробка лежит, знает сама пачка (PLAN D7).
+     */
     @Test
-    fun transferMovesThePackageAndRecordsBothEnds() = runTest {
+    fun transferMovesThePackageAndLeavesNoTrace() = runTest {
         packages.adjust(
-            PackageAdjustment.Transfer(PACK, medKit(id = SHARED_KIT, name = "Дача").ref, movementId),
+            PackageAdjustment.Transfer(PACK, medKit(id = SHARED_KIT, name = "Дача").ref),
             at = LATER
         )
 
         assertEquals(SHARED_KIT, requireNotNull(packages.find(PACK)).medKit.id)
-        val transfer = database.stockMovements().ofPackage(PACK).single().toDomain(VOCABULARY)
-        assertEquals(StockMovement.Transfer::class, transfer::class)
+        assertEquals(tablets("20"), requireNotNull(packages.find(PACK)).quantity)
+        assertTrue(database.stockMovements().ofPackage(PACK).isEmpty())
     }
 
     /** Упавшая команда очереди откатывает и остаток, и движение: половины пересчёта не бывает. */
